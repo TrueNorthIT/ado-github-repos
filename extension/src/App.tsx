@@ -7,10 +7,16 @@ import { TextField } from "azure-devops-ui/TextField";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Link } from "azure-devops-ui/Link";
+import { Icon } from "azure-devops-ui/Icon";
 import { Table, ITableColumn, SimpleTableCell } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { fetchConnections, getProjectCtx, PermissionError, ProjectCtx } from "./connections";
 import { fetchMetadata } from "./github";
+import { RepoBrowser, hubClick } from "./Browser";
+import { connectNav } from "./hostNav";
+import { clearCache } from "./githubBrowse";
+import { BrowseState, serialize } from "./lib/browseState";
+import { parseRepoUrl, isGitHubDotCom } from "./lib/repoUrl";
 import { getTokens, signIn, signOut } from "./auth";
 import { Connection, filterRows, mergeRows, Row } from "./lib/rows";
 import { relativeTime } from "./lib/tokens";
@@ -21,14 +27,25 @@ function cell(col: ITableColumn<Row>, rowIndex: number, columnIndex: number, tex
   return <SimpleTableCell key={`c${columnIndex}`} columnIndex={columnIndex} tableColumn={col}>{text}</SimpleTableCell>;
 }
 
-const columns: ITableColumn<Row>[] = [
+const columns = (open: (repo: string) => void): ITableColumn<Row>[] => [
   {
     id: "name",
     name: "Repository",
     width: -40,
     renderCell: (rowIndex, columnIndex, tableColumn, row) => (
       <SimpleTableCell key="name" columnIndex={columnIndex} tableColumn={tableColumn}>
-        <Link href={row.url} target="_blank" rel="noopener noreferrer">{row.label}</Link>
+        {(() => {
+          const ref = parseRepoUrl(row.url);
+          // github.com repos open in the hub; the icon still opens GitHub itself (B-1).
+          if (!ref || !isGitHubDotCom(ref)) return <Link href={row.url} target="_blank" rel="noopener noreferrer">{row.label}</Link>;
+          const repo = `${ref.owner}/${ref.repo}`;
+          return (
+            <>
+              <Link href={serialize({ repo })} onClick={hubClick(() => open(repo))}>{row.label}</Link>
+              <a className="gh-open-ext" href={row.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.label} on GitHub`} title="Open on GitHub"><Icon iconName="OpenInNewWindow" /></a>
+            </>
+          );
+        })()}
       </SimpleTableCell>
     ),
   },
@@ -51,6 +68,14 @@ export function App() {
   const [notice, setNotice] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [filterText, setFilterText] = React.useState("");
+
+  // The address bar (host hash) decides between the list and the file browser.
+  const [nav, setNav] = React.useState<BrowseState | null>(null);
+  const goRef = React.useRef<(s: BrowseState) => void>(() => {});
+  const go = React.useCallback((s: BrowseState) => goRef.current(s), []);
+  React.useEffect(() => {
+    connectNav(setNav).then((g) => (goRef.current = g), () => setNav((n) => n ?? {}));
+  }, []);
 
   // Connections, once.
   React.useEffect(() => {
@@ -86,6 +111,7 @@ export function App() {
 
   const merged = React.useMemo(() => mergeRows(connections ?? [], meta), [connections, meta]);
   const rows = filterRows(merged.rows, filterText);
+  const listColumns = React.useMemo(() => columns((repo) => go({ repo })), [go]);
 
   const doSignIn = async () => {
     setNotice(null);
@@ -99,6 +125,7 @@ export function App() {
   };
   const doSignOut = async () => {
     await signOut();
+    clearCache();
     setSignedIn(false);
     setMeta(undefined);
   };
@@ -106,6 +133,15 @@ export function App() {
   const commandBarItems = signedIn
     ? [{ id: "out", text: "Sign out of GitHub", iconProps: { iconName: "SignOut" }, onActivate: () => { void doSignOut(); } }]
     : [{ id: "in", text: "Sign in with GitHub", iconProps: { iconName: "Contact" }, isPrimary: true, disabled: busy, onActivate: () => { void doSignIn(); } }];
+
+  const signInOut = commandBarItems;
+  if (nav === null) return <Page className="flex-grow" />;
+  if (nav.repo)
+    return (
+      <Page className="flex-grow">
+        <RepoBrowser state={{ ...nav, repo: nav.repo }} go={go} signedIn={signedIn} signIn={doSignIn} busy={busy} commandBarItems={signInOut} />
+      </Page>
+    );
 
   return (
     <Page className="flex-grow">
@@ -148,7 +184,7 @@ export function App() {
               width={{ value: 300 } as any}
             />
             <Card className="flex-grow bolt-table-card" contentProps={{ contentPadding: false }}>
-              <Table<Row> columns={columns} itemProvider={new ArrayItemProvider(rows)} role="table" />
+              <Table<Row> columns={listColumns} itemProvider={new ArrayItemProvider(rows)} role="table" />
             </Card>
           </>
         )}

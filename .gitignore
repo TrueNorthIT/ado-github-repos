@@ -4,3 +4,5 @@ dist/
 local.settings.json
 .env
 coverage/
+.vitest/
+dist-dev/

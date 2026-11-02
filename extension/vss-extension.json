@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "name": "GitHub Repos",
-  "description": "Lists the GitHub repositories connected to a project, under Repos.",
+  "description": "Lists and browses the GitHub repositories connected to a project, under Repos.",
   "publisher": "TrueNorthIT",
   "public": false,
   "categories": ["Azure Repos"],

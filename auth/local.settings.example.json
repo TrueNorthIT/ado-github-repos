@@ -5,9 +5,11 @@
     "FUNCTIONS_WORKER_RUNTIME": "node",
     "GITHUB_CLIENT_ID": "<github app client id>",
     "GITHUB_CLIENT_SECRET": "<github app client secret>",
-    "ALLOWED_ORIGINS": "https://PUBLISHER_ID.gallerycdn.vsassets.io",
+    "ALLOWED_ORIGINS": "https://localhost:3000",
     "STATE_SECRET": "<long random string>",
     "AUTH_BASE_URL": "http://localhost:7071"
   },
-  "Host": { "CORS": "" }
+  "Host": {
+    "CORS": ""
+  }
 }

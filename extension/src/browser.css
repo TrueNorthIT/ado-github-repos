@@ -1,0 +1,72 @@
+/* Layout: a full-height split view like Repos -> Files. */
+.gh-shell { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.gh-shell .vss-Splitter--container { flex: 1 1 auto; min-height: 0; min-width: 0; }
+.gh-left { background: var(--palette-black-alpha-2, rgba(0, 0, 0, .02)); min-width: 0; overflow: hidden; }
+.gh-left-inner { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.gh-left-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 8px 16px; flex: 0 0 auto; }
+.gh-repo-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.25rem; }
+.gh-tree-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 0 16px; }
+.gh-tree { background: transparent; }
+.gh-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-right { background: var(--palette-black-alpha-4, rgba(0, 0, 0, .04)); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.gh-right-inner { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.gh-topbar { display: flex; align-items: center; gap: 24px; padding: 8px 16px 0; flex: 0 0 auto; }
+.gh-scroll { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 16px 16px; gap: 0; }
+.gh-title { margin: 16px 0 8px; font-size: 1.75rem; font-weight: 600; line-height: 2rem; }
+.gh-tabs { flex: 0 0 auto; margin: 0 -16px; padding: 0 16px; background: transparent; position: static; }
+.gh-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 16px; padding-top: 16px; }
+
+.gh-branch .bolt-button { font-weight: 600; }
+.gh-ico { flex: 0 0 auto; vertical-align: middle; }
+.gh-entry-icon { display: inline-flex; margin-right: 8px; align-items: center; }
+
+/* The path bar / find-file box */
+.gh-find { position: relative; display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; height: 32px; }
+.gh-crumbs { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; height: 100%; cursor: text; }
+.gh-sep { opacity: .6; }
+.gh-crumb-last { opacity: .75; }
+.gh-find-hint { background: none; border: 0; padding: 0; font: inherit; color: inherit; opacity: .6; cursor: text; text-align: left; }
+.gh-find-fill { flex: 1 1 auto; align-self: stretch; }
+.gh-find-input { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; position: relative; }
+.gh-find-input input { flex: 1 1 auto; min-width: 0; font: inherit; color: inherit; background: var(--background-color, transparent); border: 1px solid var(--communication-background, #0078d4); padding: 4px 8px; outline: none; }
+.gh-find-pop { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin-top: 2px; max-height: 60vh; overflow: auto; background: var(--callout-background-color, #fff); box-shadow: 0 6px 18px rgba(0, 0, 0, .25); }
+.gh-find-pop ul { list-style: none; margin: 0; padding: 4px 0; }
+.gh-find-pop li { padding: 5px 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-find-pop li.selected { background: var(--palette-primary-tint-30, rgba(0, 120, 212, .15)); }
+.gh-find-pop li b { color: var(--communication-foreground, #0078d4); font-weight: 700; }
+.gh-find-note { padding: 8px 12px; opacity: .75; font-size: .875rem; }
+
+/* Cards */
+.gh-card { background: var(--callout-background-color, #fff); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); flex: 0 0 auto; }
+.gh-card-fill { flex: 1 1 auto; min-height: 420px; display: flex; }
+.gh-card-fill > .bolt-card-content, .gh-card-fill > div { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.gh-card-image > .bolt-card-content { padding: 24px; align-items: flex-start; }
+.gh-code { flex: 1 1 0; min-height: 0; }
+.gh-plain { margin: 0; padding: 8px; overflow: auto; white-space: pre; font-family: Consolas, monospace; }
+.gh-image { max-width: 100%; }
+.gh-cant-preview { padding: 24px; }
+.gh-h3 { margin: 0 0 8px; }
+.gh-readme .bolt-card-content, .gh-readme.bolt-card { padding: 16px 32px; }
+.gh-name-link { color: inherit; text-decoration: none; }
+.gh-name-link:hover { text-decoration: underline; }
+.gh-open-ext { margin-left: 8px; color: inherit; vertical-align: middle; }
+
+/* contain + relative: even a position:fixed descendant stays inside the README box (defence in depth against UI redress). */
+.gh-markdown { flex: 1 1 auto; min-width: 0; line-height: 1.5; overflow-wrap: anywhere; color: var(--text-primary-color, inherit); position: relative; contain: layout paint; }
+.gh-markdown img { max-width: 100%; }
+.gh-markdown a { color: var(--communication-foreground, #0078d4); }
+.gh-markdown pre { overflow: auto; padding: 12px; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
+.gh-markdown code { font-family: Consolas, monospace; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); padding: 0 .25em; }
+.gh-markdown pre code { background: none; padding: 0; }
+.gh-markdown table { border-collapse: collapse; display: block; overflow: auto; }
+.gh-markdown th, .gh-markdown td { border: 1px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); padding: 4px 10px; }
+.gh-markdown blockquote { margin: 0; padding-left: 1em; border-left: 4px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-markdown h1, .gh-markdown h2 { border-bottom: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); padding-bottom: .3em; }
+.gh-markdown .anchor { display: none; }
+
+/* Native Files view: no accent bar on the selected tree row, tab strip on the page background. */
+.gh-tree .bolt-list-row.selected .bolt-list-cell:first-child { border-left: 0; }
+.gh-tabs.bolt-tabbar.sticky { background-color: transparent; position: static; }
+.gh-tabs .bolt-tabbar-tabs { background-color: transparent; }
+.gh-branch { min-width: 220px; }
+.gh-branch .bolt-button { width: 100%; justify-content: flex-start; }
