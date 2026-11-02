@@ -335,7 +335,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
         signedIn={signedIn}
         signIn={doSignIn}
         busy={busy}
-        commandBarItems={(url) => [switcher((r) => ({ repo: r, prTab: "mine" })), openOnGitHub(url), ...extra]}
+        commandBarItems={(url) => [openOnGitHub(url), ...extra] /* no repo switcher: a PR belongs to one repo */}
       />
     );
   } else {

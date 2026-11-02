@@ -324,7 +324,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
         titleSize={TitleSize.Large /* 21px; see Browser.tsx. Weight is set to native's 400 in browser.css */}
         titleAriaLevel={1}
         commandBarItems={commandBarItems(pr?.url ?? `https://github.com/${repo}/pull/${n}`)}
-        backButtonProps={{ iconProps: { iconName: "ArrowLeft" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: () => go(list) }}
+        backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: () => go(list) }}
       />
       <div className="gh-pr-sub">
         {pr ? <Meta pr={pr} repo={repo} /> : <div className="gh-pr-meta" />}

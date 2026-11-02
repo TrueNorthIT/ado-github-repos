@@ -175,3 +175,7 @@
 
 /* Native PR description body sits 32px inside its card (16px content padding + 16px): measured on dev.azure.com */
 .gh-pr-desc .gh-markdown { margin-left: 16px; margin-right: 16px; }
+
+/* Long PR titles truncate like native rather than being clipped by the fixed-height header (seen live in 0.17.0) */
+.gh-pr-header .bolt-header-title-area, .gh-pr-header .bolt-header-title-row { min-width: 0; }
+.gh-pr-header .bolt-header-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
