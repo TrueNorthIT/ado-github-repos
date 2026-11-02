@@ -26,32 +26,52 @@ export async function signOut() {
   }
 }
 
-/** Returns a usable token set (refreshing if needed) or null when signed out. */
-export async function getTokens(): Promise<GitHubTokenSet | null> {
-  let t: GitHubTokenSet | null = null;
+async function load(): Promise<GitHubTokenSet | null> {
   try {
-    t = await (await store()).getDocument(COLLECTION, DOC_ID, OPTS);
+    return await (await store()).getDocument(COLLECTION, DOC_ID, OPTS);
   } catch {
     return null; // 404: nothing stored yet
   }
+}
+
+// GitHub refresh tokens are single-use. Several requests found the token expired at once, each refreshed with the same
+// refresh token, the losers failed and their signOut() deleted the winner's new tokens (seen live in 0.20.0). So: one
+// refresh at a time in this frame, and on failure only sign out if storage still holds the token that failed (another
+// tab may have refreshed meanwhile).
+let refreshing: Promise<GitHubTokenSet | null> | null = null;
+
+async function refresh(t: GitHubTokenSet): Promise<GitHubTokenSet | null> {
+  try {
+    const body: RefreshRequest = { refreshToken: t.refreshToken };
+    const res = await fetch(`${AUTH_BASE}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const fresh: GitHubTokenSet = await res.json();
+      await save(fresh);
+      return fresh;
+    }
+  } catch {
+    /* fall through */
+  }
+  const now = await load();
+  if (now && now.refreshToken !== t.refreshToken && tokenAction(now) === "use") return now; // someone else refreshed
+  if (!now || now.refreshToken === t.refreshToken) await signOut();
+  return null;
+}
+
+/** Returns a usable token set (refreshing if needed) or null when signed out. */
+export async function getTokens(): Promise<GitHubTokenSet | null> {
+  if (refreshing) return refreshing;
+  const t = await load();
+  if (!t) return null;
   const action = tokenAction(t);
   if (action === "use") return t;
-  if (action === "refresh" && t) {
-    try {
-      const body: RefreshRequest = { refreshToken: t.refreshToken };
-      const res = await fetch(`${AUTH_BASE}/api/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const fresh: GitHubTokenSet = await res.json();
-        await save(fresh);
-        return fresh;
-      }
-    } catch {
-      /* fall through: treat as signed out */
-    }
+  if (action === "refresh") {
+    if (!refreshing) refreshing = refresh(t).finally(() => { refreshing = null; });
+    return refreshing;
   }
   await signOut();
   return null;
