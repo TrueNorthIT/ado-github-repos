@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "start": "func start",
     "test": "vitest run --dir test",
-    "deploy": "npm run build && npm prune --omit=dev && func pack --no-build -o dist && az functionapp deployment source config-zip -g $AZ_RESOURCE_GROUP -n func-tnit-ghrepoview --subscription $AZ_SUBSCRIPTION --src dist/auth.zip --build-remote false && npm install"
+    "deploy": "node deploy.mjs"
   },
   "dependencies": {
     "@azure/functions": "^4.17.0"

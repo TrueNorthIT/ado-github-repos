@@ -1,6 +1,6 @@
 # GitHub Repos for Azure DevOps
 
-- `extension/`: the Azure DevOps hub extension (React, esbuild) that lists and browses a project's GitHub repositories under Repos.
+- `extension/`: the Azure DevOps hub extension (React, esbuild) that lists and browses a project's GitHub repositories (Boards GitHub connections) in its own **GitHub Repos** section of the project nav.
 - `auth/`: the Azure Function that runs the GitHub sign-in popup flow and token refresh.
 - `shared/contract.ts`: the contract between the two.
 
@@ -25,3 +25,17 @@ To try the real auth function locally, run it with `func start` in `auth/` and b
 
 - `npm test` and `npm run build` in `extension/`.
 - `npm run package` builds the production vsix (`TrueNorthIT.github-repos-<version>.vsix`) against the production auth function. Bump the version in both `package.json` and `vss-extension.json`.
+
+## Deploy the auth function
+
+Sign `az` in to an identity with access to the function app, then from `auth/`:
+
+```
+AZ_SUBSCRIPTION=<subscription id> AZ_RESOURCE_GROUP=<resource group> AZ_FUNCTION_APP=<function app> npm run deploy
+```
+
+It builds locally, zip-deploys to an existing Flex Consumption app (Node 22) and restores dev dependencies afterwards. The app needs these settings: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `STATE_SECRET`, `AUTH_BASE_URL` and `ALLOWED_ORIGINS` (`https://<publisher>.gallerycdn.vsassets.io`). See `shared/contract.ts`.
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). Third-party assets are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
