@@ -24,10 +24,13 @@ function show(hash: string) {
 // The host asks the frame for an object by exact name: registeredObjectId, the full contribution id or serviceName,
 // depending on the code path. Register under all of them. It then calls getBreadcrumbItems(breadcrumbId) if present,
 // otherwise treats the object itself as the observable list (host ContributedBreadcrumb.getBreadcrumbItems).
-const provider = { getBreadcrumbItems: () => items };
+// The host snapshots the list, then subscribes. Answer only once the initial hash has been applied, otherwise a direct
+// load onto a repo fills the list between snapshot and subscribe and the item never reaches the header (seen live in 0.8.0).
+let ready: Promise<void> = Promise.resolve();
+const provider = { getBreadcrumbItems: () => ready.then(() => items) };
 for (const id of [SERVICE, `TrueNorthIT.github-repos.${SERVICE}`]) SDK.register(id, provider);
 
-SDK.init().then(async () => {
+ready = SDK.init().then(async () => {
   const nav = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
   show(await nav.getHash());
   nav.onHashChanged(show);

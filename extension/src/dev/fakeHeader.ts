@@ -3,7 +3,7 @@
 import { registeredService } from "./mockSdk";
 import "../breadcrumb";
 
-export function fakeHeader() {
+export async function fakeHeader() {
   const bar = document.createElement("div");
   bar.setAttribute("role", "navigation");
   bar.setAttribute("aria-label", "Mock ADO header breadcrumb");
@@ -11,7 +11,7 @@ export function fakeHeader() {
   document.body.append(bar);
   const root = document.getElementById("root")!;
   root.style.top = "36px";
-  const items = registeredService("github-repos-breadcrumb") as { value: { key: string; text: string; href?: string; hidden?: boolean; iconProps?: { iconName: string } }[]; subscribe: (f: () => void) => void };
+  const items = (await registeredService("github-repos-breadcrumb")) as { value: { key: string; text: string; href?: string; hidden?: boolean; iconProps?: { iconName: string } }[]; subscribe: (f: () => void) => void };
   const render = () => {
     bar.replaceChildren(document.createTextNode("demo-org / Demo Project / GitHub Repos"));
     for (const i of items.value.filter((x) => !x.hidden)) {
