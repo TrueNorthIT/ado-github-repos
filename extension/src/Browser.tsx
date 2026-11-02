@@ -3,10 +3,14 @@ import { Card } from "azure-devops-ui/Card";
 import { Button } from "azure-devops-ui/Button";
 import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { Dropdown, DropdownExpandableButton } from "azure-devops-ui/Dropdown";
+import { Header, TitleSize } from "azure-devops-ui/Header";
+import { Page } from "azure-devops-ui/Page";
+import { Surface, SurfaceBackground } from "azure-devops-ui/Surface";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { MoreButton } from "azure-devops-ui/Menu";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
+import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
 import { Table, ITableColumn, SimpleTableCell, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
@@ -168,7 +172,7 @@ function CodeView({ text, name, dark }: { text: string; name: string; dark: bool
 // ---------- the pieces of the file view ----------
 
 const CardFill = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <Card className={`gh-card gh-card-fill ${className ?? ""}`} contentProps={{ contentPadding: false }}>{children}</Card>
+  <Card className={`no-padding gh-card-fill ${className ?? ""}`} contentProps={{ contentPadding: false }}>{children}</Card>
 );
 
 function CantPreview({ why, repo, refName, path, name, onDownload }: { why: string; repo: string; refName: string; path: string; name: string; onDownload: () => void }) {
@@ -242,7 +246,7 @@ function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: stri
   if (f.kind === "image") return <CardFill className="gh-card-image"><ImageView repo={repo} refName={refName} path={f.entry.path} /></CardFill>;
   if (f.kind === "binary") return cant("This is a binary file.");
   if (f.kind === "tooLarge") return cant("This file is too large to preview.");
-  if (f.kind === "markdown" && !source) return <Card className="gh-card gh-readme"><Markdown prepared={f.md!} repo={repo} refName={refName} go={go} /></Card>;
+  if (f.kind === "markdown" && !source) return <Card className="no-padding gh-readme" contentProps={{ contentPadding: false }}><Markdown prepared={f.md!} repo={repo} refName={refName} go={go} /></Card>;
   if (f.kind === "markdown")
     return <CardFill>{rawText === undefined ? <Spinner size={SpinnerSize.large} ariaLabel="Loading" /> : <CodeView text={rawText} name={f.entry.name} dark={dark} />}</CardFill>;
   return <CardFill><CodeView text={f.text ?? ""} name={f.entry.name} dark={dark} /></CardFill>;
@@ -265,9 +269,9 @@ function Listing({ entries, go, repo, refName }: { entries: TreeEntry[]; go: (pa
           <SimpleTableCell key="name" columnIndex={columnIndex} tableColumn={tableColumn}>
             <span className="gh-entry-icon"><FileIcon name={e.name} kind={e.kind} /></span>
             {e.kind === "submodule" ? (
-              <span>{e.name} <span className="secondary-text">(submodule)</span></span>
+              <span className="gh-submodule">{e.name} <span className="secondary-text">(submodule)</span></span>
             ) : (
-              <Link className="gh-name-link" href={hashFor({ repo, ref: refName, path: e.path })} onClick={hubClick(() => go(e.path))}>{e.name}</Link>
+              <Link className="bolt-table-link" subtle removeUnderline href={hashFor({ repo, ref: refName, path: e.path })} onClick={hubClick(() => go(e.path))}>{e.name}</Link>
             )}
           </SimpleTableCell>
         ),
@@ -283,9 +287,9 @@ function Listing({ entries, go, repo, refName }: { entries: TreeEntry[]; go: (pa
     ],
     [go, repo, refName, dir]
   );
-  if (!entries.length) return <p className="secondary-text">This folder is empty.</p>;
+  if (!entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
   return (
-    <Card className="gh-card bolt-table-card" contentProps={{ contentPadding: false }}>
+    <Card className="bolt-table-card" contentProps={{ contentPadding: false }}>
       <Table<TreeEntry> ariaLabel="Folder contents" columns={columns} itemProvider={sorted} behaviors={[sorting]} role="table" />
     </Card>
   );
@@ -307,7 +311,7 @@ function Readme({ entries, repo, refName, go }: { entries: TreeEntry[]; repo: st
   }, [readme?.path, repo, refName]);
   if (!readme || !prepared) return null;
   return (
-    <Card className="gh-card gh-readme">
+    <Card className="no-padding gh-readme" contentProps={{ contentPadding: false }}>
       <Markdown prepared={prepared} repo={repo} refName={refName} go={go} />
     </Card>
   );
@@ -388,7 +392,7 @@ function FolderTree({ repo, tree, folder, current, go, onEntries }: { repo: stri
           return (
             <ExpandableTreeCell key="name" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem}>
               <span className="gh-entry-icon"><FileIcon name={n.name} kind={n.kind} /></span>
-              <span className="gh-tree-name">{n.name}</span>
+              <Link className="bolt-table-link text-ellipsis" subtle removeUnderline role="presentation" excludeTabStop>{n.name}</Link>
             </ExpandableTreeCell>
           );
         },
@@ -439,6 +443,7 @@ function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: {
     <Dropdown
       ariaLabel={`Branch: ${refName}`}
       className="gh-branch"
+      minCalloutWidth={280}
       placeholder={refName || "Branch"}
       items={items}
       showFilterBox
@@ -479,9 +484,9 @@ const WIDTH_KEY = "gh.leftPaneWidth";
 const readWidth = () => {
   try {
     const n = Number(localStorage.getItem(WIDTH_KEY));
-    return n >= 200 && n <= 700 ? n : 320;
+    return n >= 200 && n <= 700 ? n : 300;
   } catch {
-    return 320;
+    return 300;
   }
 };
 
@@ -615,60 +620,63 @@ export function RepoBrowser({ state, go, signedIn, signIn, busy, commandBarItems
   ];
 
   return (
-    <div className="gh-shell">
-      <Splitter
-        className="gh-splitter"
-        fixedElement={SplitterElementPosition.Near}
-        initialFixedSize={leftWidth}
-        minFixedSize={200}
-        maxFixedSize={700}
-        onFixedSizeChanged={(w) => {
-          try {
-            localStorage.setItem(WIDTH_KEY, String(Math.round(w)));
-          } catch {
-            /* not remembered; still works */
-          }
-        }}
-        nearElementClassName="gh-left"
-        farElementClassName="gh-right"
-        onRenderNearElement={() => (
-          <nav className="gh-left-inner" aria-label="Repository files">
-            <div className="gh-left-head">
-              <RepoIcon />
-              <span className="gh-repo-name" title={repo}>{repo}</span>
-              <MoreButton ariaLabel="Repository actions" contextualMenuProps={{ menuProps: { id: "gh-repo-menu", items: menuItems } }} />
-            </div>
-            <div className="gh-tree-wrap">
-              {ctx && <FolderTree repo={repo} tree={ctx.tree} folder={isFile ? dirOf(path) : path} current={path} go={nav} onEntries={noteEntries} />}
-            </div>
-          </nav>
-        )}
-        onRenderFarElement={() => (
-          <main className="gh-right-inner">
-            <div className="gh-topbar">
-              <BranchPicker refName={refName} items={items} loading={!branches} onOpen={openBranches} setQuery={setQuery} onSelect={(b) => void switchBranch(b)} />
-              {ctx && <FindBox crumbs={crumbs} paths={allPaths} partial={truncated} onPick={nav} />}
-              {!ctx && !err && <Spinner size={SpinnerSize.medium} ariaLabel="Loading repository" />}
-            </div>
-            <div className="gh-scroll">
-              {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
+    <Surface background={SurfaceBackground.neutral}>
+      <div className="gh-shell">
+        <Splitter
+          className="bolt-page-grey"
+          fixedElement={SplitterElementPosition.Near}
+          initialFixedSize={leftWidth}
+          minFixedSize={200}
+          maxFixedSize={700}
+          onFixedSizeChanged={(w) => {
+            try {
+              localStorage.setItem(WIDTH_KEY, String(Math.round(w)));
+            } catch {
+              /* not remembered; still works */
+            }
+          }}
+          nearElementClassName="gh-left"
+          farElementClassName="gh-right"
+          onRenderNearElement={() => (
+            <nav className="gh-left-inner flex-column" aria-label="Repository files">
+              <div className="repos-file-explorer-header flex-row flex-center body-xl">
+                <RepoIcon />
+                <Link className="gh-repo-link text-ellipsis flex-grow" removeUnderline href={hashFor({ repo, ref: state.ref })} onClick={hubClick(() => nav(""))} title={repo}>{repo}</Link>
+                <MoreButton ariaLabel="Repository actions" contextualMenuProps={{ menuProps: { id: "gh-repo-menu", items: menuItems } }} />
+              </div>
+              <div className="gh-tree-wrap">
+                {ctx && <FolderTree repo={repo} tree={ctx.tree} folder={isFile ? dirOf(path) : path} current={path} go={nav} onEntries={noteEntries} />}
+              </div>
+            </nav>
+          )}
+          onRenderFarElement={() => (
+            <Page className="gh-page flex-grow">
+              <div className="gh-topbar flex-row flex-center flex-noshrink">
+                <BranchPicker refName={refName} items={items} loading={!branches} onOpen={openBranches} setQuery={setQuery} onSelect={(b) => void switchBranch(b)} />
+                {ctx && <FindBox crumbs={crumbs} paths={allPaths} partial={truncated} onPick={nav} />}
+                {!ctx && !err && <Spinner size={SpinnerSize.medium} ariaLabel="Loading repository" />}
+              </div>
               {err ? (
-                <ErrorView err={err} signIn={doSignIn} busy={busy} retry={() => setReload((n) => n + 1)} back={toList} />
+                <div className="page-content page-content-top">
+                  <ErrorView err={err} signIn={doSignIn} busy={busy} retry={() => setReload((n) => n + 1)} back={toList} />
+                </div>
               ) : (
                 ctx && (
                   <>
-                    <h1 className="gh-title">{path === "" ? "Files" : baseOf(path)}</h1>
+                    {/* In azure-devops-ui 2.281 the 21px/600 title (class title-m) is TitleSize.Large; TitleSize.Medium renders 17px/400. */}
+                    <Header className="repos-files-header" title={path === "" ? "Files" : baseOf(path)} titleSize={TitleSize.Large} titleAriaLevel={1} />
                     <TabBar
-                      className="gh-tabs"
                       ariaLabel="View"
                       selectedTabId={tab}
                       onSelectedTabChanged={(id) => go({ repo, ref: state.ref, path, tab: id })}
-                      tabSize={TabSize.Compact}
+                      tabSize={TabSize.Tall}
+                      disableSticky
                     >
                       <Tab id="contents" name="Contents" />
                       {isMd && <Tab id="preview" name="Preview" />}
                     </TabBar>
-                    <div className="gh-body">
+                    <div className="page-content page-content-top gh-body flex-column">
+                      {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
                       {view.t === "loading" && <Spinner size={SpinnerSize.large} ariaLabel="Loading" />}
                       {view.t === "missing" && (
                         <MessageCard severity={MessageCardSeverity.Warning} buttonProps={[{ text: "Go to the repository root", onClick: () => nav("") }]}>
@@ -687,10 +695,10 @@ export function RepoBrowser({ state, go, signedIn, signIn, busy, commandBarItems
                   </>
                 )
               )}
-            </div>
-          </main>
-        )}
-      />
-    </div>
+            </Page>
+          )}
+        />
+      </div>
+    </Surface>
   );
 }

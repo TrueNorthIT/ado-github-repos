@@ -3,7 +3,7 @@ import { Page } from "azure-devops-ui/Page";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Card } from "azure-devops-ui/Card";
 import { Button } from "azure-devops-ui/Button";
-import { TextField } from "azure-devops-ui/TextField";
+import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Link } from "azure-devops-ui/Link";
@@ -37,11 +37,11 @@ const columns = (open: (repo: string) => void): ITableColumn<Row>[] => [
         {(() => {
           const ref = parseRepoUrl(row.url);
           // github.com repos open in the hub; the icon still opens GitHub itself (B-1).
-          if (!ref || !isGitHubDotCom(ref)) return <Link href={row.url} target="_blank" rel="noopener noreferrer">{row.label}</Link>;
+          if (!ref || !isGitHubDotCom(ref)) return <Link className="bolt-table-link" subtle removeUnderline href={row.url} target="_blank" rel="noopener noreferrer">{row.label}</Link>;
           const repo = `${ref.owner}/${ref.repo}`;
           return (
             <>
-              <Link href={serialize({ repo })} onClick={hubClick(() => open(repo))}>{row.label}</Link>
+              <Link className="bolt-table-link" subtle removeUnderline href={serialize({ repo })} onClick={hubClick(() => open(repo))}>{row.label}</Link>
               <a className="gh-open-ext" href={row.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.label} on GitHub`} title="Open on GitHub"><Icon iconName="OpenInNewWindow" /></a>
             </>
           );
@@ -145,7 +145,7 @@ export function App() {
 
   return (
     <Page className="flex-grow">
-      <Header title="GitHub Repos" titleSize={TitleSize.Large} description="Repositories connected to this project" commandBarItems={commandBarItems} />
+      <Header title="GitHub Repos" titleSize={TitleSize.Large} /* 21px/600; Medium is 17px/400 in this version */ description="Repositories connected to this project" commandBarItems={commandBarItems} />
       <div className="page-content page-content-top">
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {load.state === "denied" && (
@@ -181,7 +181,7 @@ export function App() {
               placeholder="Filter repositories"
               ariaLabel="Filter repositories by name"
               prefixIconProps={{ iconName: "Search" }}
-              width={{ value: 300 } as any}
+              width={TextFieldWidth.standard}
             />
             <Card className="flex-grow bolt-table-card" contentProps={{ contentPadding: false }}>
               <Table<Row> columns={listColumns} itemProvider={new ArrayItemProvider(rows)} role="table" />

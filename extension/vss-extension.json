@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "name": "GitHub Repos",
-  "description": "Lists and browses the GitHub repositories connected to a project, under Repos.",
+  "description": "Lists and browses the GitHub repositories connected to a project, in its own GitHub Repos section.",
   "publisher": "TrueNorthIT",
   "public": false,
   "categories": ["Azure Repos"],
@@ -12,16 +12,31 @@
   "scopes": ["vso.githubconnections"],
   "files": [
     { "path": "dist", "addressable": true },
-    { "path": "images/icon.png", "addressable": true }
+    { "path": "images/icon.png", "addressable": true },
+    { "path": "images/github-mark-on-light.svg", "addressable": true },
+    { "path": "images/github-mark-on-dark.svg", "addressable": true }
   ],
   "contributions": [
     {
-      "id": "github-repos-hub",
-      "type": "ms.vss-web.hub",
-      "targets": ["ms.vss-code-web.code-hub-group"],
+      "id": "github-repos-hub-group",
+      "type": "ms.vss-web.hub-group",
+      "targets": ["ms.vss-web.project-hub-groups-collection"],
       "properties": {
         "name": "GitHub Repos",
-        "order": 99,
+        "order": 45,
+        "icon": {
+          "light": "images/github-mark-on-light.svg",
+          "dark": "images/github-mark-on-dark.svg"
+        }
+      }
+    },
+    {
+      "id": "github-repos-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Repositories",
+        "order": 1,
         "uri": "dist/hub.html",
         "iconName": "OpenSource"
       }

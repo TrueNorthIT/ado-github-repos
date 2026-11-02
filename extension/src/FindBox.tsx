@@ -1,6 +1,9 @@
 // The path bar of the right pane: folder icon + breadcrumb, which turns into a find-file box on click or "t".
 import * as React from "react";
 import { Link } from "azure-devops-ui/Link";
+import { SuggestionsList } from "azure-devops-ui/SuggestionsList";
+import { TextField, TextFieldStyle, TextFieldWidth } from "azure-devops-ui/TextField";
+import { getSafeId } from "azure-devops-ui/Util";
 import { FolderOutlineIcon } from "./fileIcons";
 import { fuzzyFind } from "./lib/fuzzy";
 
@@ -27,7 +30,7 @@ export function FindBox({ crumbs, paths, partial, onPick }: { crumbs: Crumb[]; p
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
   const [sel, setSel] = React.useState(0);
-  const input = React.useRef<HTMLInputElement>(null);
+  const input = React.useRef<HTMLInputElement & HTMLTextAreaElement>(null);
 
   const start = React.useCallback(() => {
     setQ("");
@@ -53,10 +56,11 @@ export function FindBox({ crumbs, paths, partial, onPick }: { crumbs: Crumb[]; p
   const hits = React.useMemo(() => (open ? fuzzyFind(paths, q) : []), [open, paths, q]);
   const pick = (path: string) => {
     setOpen(false);
+    input.current?.blur();
     onPick(path);
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") return setOpen(false);
+    if (e.key === "Escape") return void (setOpen(false), input.current?.blur());
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : hits.length - 1; // read the event now: React 16 recycles it before an updater runs
@@ -67,60 +71,61 @@ export function FindBox({ crumbs, paths, partial, onPick }: { crumbs: Crumb[]; p
     }
   };
 
+  // At the root there is nothing to show as a path, so the (empty) field itself is the hint; focusing it starts a search.
+  const field = open || crumbs.length === 0;
   return (
-    <div className="gh-find">
+    <div className="gh-find flex-row flex-center flex-grow">
       <FolderOutlineIcon />
-      {open ? (
-        <div className="gh-find-input">
-          <span className="gh-sep" aria-hidden="true">/</span>
-          <input
-            ref={input}
+      <span className="gh-sep" aria-hidden="true">/</span>
+      {field ? (
+        <div className="gh-find-input flex-grow">
+          <TextField
+            inputElement={input}
+            style={TextFieldStyle.inline}
+            width={TextFieldWidth.auto}
+            containerClassName="flex-grow"
             role="combobox"
-            aria-label="Find a file or folder"
-            aria-expanded={hits.length > 0}
-            aria-controls="gh-find-list"
-            aria-activedescendant={hits[sel] ? `gh-find-${sel}` : undefined}
-            aria-autocomplete="list"
-            placeholder="Type to find a file or folder…"
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
+            ariaLabel="Find a file or folder"
+            ariaExpanded={hits.length > 0}
+            ariaControls={getSafeId("suggestion-list")}
+            ariaActiveDescendant={hits[sel] ? getSafeId(`sug-row-${sel}`) : undefined}
+            ariaAutoComplete="list"
+            placeholder="Type to find a file or folder..."
+            value={open ? q : ""}
+            onFocus={() => !open && start()}
+            onChange={(_e, v) => {
+              setQ(v);
               setSel(0);
             }}
             onKeyDown={onKeyDown}
             onBlur={() => setOpen(false)}
           />
-          {q.trim() && (
-            <div className="gh-find-pop">
+          {open && q.trim() && (
+            <div className="gh-find-pop depth-16">
               {partial && <div className="gh-find-note">Searching only the folders loaded so far. Expand folders in the tree to include them.</div>}
-              {hits.length ? (
-                <ul id="gh-find-list" role="listbox" aria-label="Matching files and folders">
-                  {hits.map((h, i) => (
-                    // mousedown (not click) so the input's blur doesn't close the list first
-                    <li key={h.path} id={`gh-find-${i}`} role="option" aria-selected={i === sel} className={i === sel ? "selected" : undefined} onMouseDown={(e) => { e.preventDefault(); pick(h.path); }} onMouseMove={() => setSel(i)}>
-                      <Highlighted path={h.path} indices={h.indices} />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="gh-find-note" role="status">No matching files or folders</div>
-              )}
+              <SuggestionsList
+                suggestions={hits}
+                selectedIndex={sel}
+                suggestionsContainerAriaLabel="Matching files and folders"
+                noResultsFoundText="No matching files or folders"
+                onSuggestionClicked={(s) => pick(s.item.path)}
+                renderSuggestion={({ item }) => (
+                  <span className="text-ellipsis"><Highlighted path={item.path} indices={item.indices} /></span>
+                )}
+              />
             </div>
           )}
         </div>
       ) : (
         // The empty space after the crumbs is the click target that starts a search; the crumbs themselves are real links.
-        <div className="gh-crumbs" onClick={(e) => e.target === e.currentTarget && start()}>
-          {crumbs.length === 0 && (
-            <button type="button" className="gh-find-hint" onClick={start}><span className="gh-sep">/</span> Type to find a file or folder…</button>
-          )}
-          {crumbs.map((c) => (
+        <div className="gh-crumbs flex-row flex-center flex-grow" onClick={(e) => e.target === e.currentTarget && start()}>
+          {crumbs.map((c, i) => (
             <React.Fragment key={c.text + (c.href ?? "")}>
-              <span className="gh-sep" aria-hidden="true">/</span>
-              {c.href ? <Link href={c.href} onClick={c.onClick}>{c.text}</Link> : <span className="gh-crumb-last">{c.text}</span>}
+              {i > 0 && <span className="gh-sep" aria-hidden="true">/</span>}
+              {c.href ? <Link href={c.href} onClick={c.onClick} subtle removeUnderline>{c.text}</Link> : <span className="gh-crumb-last">{c.text}</span>}
             </React.Fragment>
           ))}
-          {crumbs.length > 0 && <button type="button" className="gh-find-hint gh-find-fill" onClick={start} aria-label="Find a file or folder" />}
+          <button type="button" className="gh-find-hint flex-grow" onClick={start} aria-label="Find a file or folder" />
         </div>
       )}
     </div>

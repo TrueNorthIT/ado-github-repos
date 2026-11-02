@@ -41,8 +41,12 @@ monaco.languages.setMonarchTokensProvider("json", {
   },
 });
 
+// ADO's light editor has dark-blue line numbers; "vs" has teal ones.
+monaco.editor.defineTheme("ado-light", { base: "vs", inherit: true, rules: [], colors: { "editorLineNumber.foreground": "#0b216f", "editorLineNumber.activeForeground": "#0b216f" } });
+const themeName = (dark: boolean) => (dark ? "vs-dark" : "ado-light");
+
 export function createViewer(el: HTMLElement, value: string, language: string, dark: boolean, label: string) {
-  monaco.editor.setTheme(dark ? "vs-dark" : "vs");
+  monaco.editor.setTheme(themeName(dark));
   return monaco.editor.create(el, {
     value,
     language,
@@ -59,7 +63,11 @@ export function createViewer(el: HTMLElement, value: string, language: string, d
     renderLineHighlight: "none",
     wordBasedSuggestions: "off",
     ariaLabel: label,
+    // Repos' own editor metrics: 12px Consolas on a 16px line.
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: 'Consolas, "Courier New", monospace',
   });
 }
 
-export const setTheme = (dark: boolean) => monaco.editor.setTheme(dark ? "vs-dark" : "vs");
+export const setTheme = (dark: boolean) => monaco.editor.setTheme(themeName(dark));
