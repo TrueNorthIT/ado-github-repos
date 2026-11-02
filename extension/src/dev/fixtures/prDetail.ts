@@ -1,6 +1,7 @@
 // __TN_MOCK__ Detail for the fixture pull requests: bodies, reviews, checks, commits, changed files and their contents at the base and head shas.
 import { PRS, ME } from "./prs";
 import type { FixturePr } from "./prs";
+import { threadTotals } from "./feed";
 
 const avatarOf = (login: string) => (PRS.map((p) => p.node.author).find((a) => a?.login === login)?.avatarUrl as string | undefined) ?? "";
 const who = (login: string) => ({ login, avatarUrl: avatarOf(login) });
@@ -131,6 +132,8 @@ export function detailNode(p: FixturePr) {
     statusCheckRollup: rollup ? { state: rollup } : null,
     reviewRequests: { nodes: n === 200 ? [{ requestedReviewer: who("bob-dev") }] : [] },
     reviews: { nodes: reviews },
+    // Review threads follow the feed fixtures, so resolving one in the feed moves the header's "x/y comments resolved".
+    ...(threadTotals(n) && { reviewThreads: { totalCount: threadTotals(n)![1], nodes: [...Array(threadTotals(n)![0]).fill(true), ...Array(threadTotals(n)![1] - threadTotals(n)![0]).fill(false)].map((isResolved) => ({ isResolved })) } }),
     commits: {
       nodes:
         n === 200

@@ -28,6 +28,8 @@ import { openInRepos, useRepoHref } from "./repoHref";
 import { watchTheme } from "./theme";
 import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
+import { ActivityFeed } from "./Feed";
+import { feedStore } from "./feedStore";
 import "./browser.css";
 
 const PAGES: { id: PrPageId; name: string }[] = [
@@ -226,12 +228,13 @@ function WorkItems({ ids }: { ids: number[] }) {
   return <Section title="Work items">{body}</Section>;
 }
 
-function Overview({ pr, repo }: { pr: PrPageData; repo: string }) {
+function Overview({ pr, repo, prTab, openFile, signIn, busy }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean }) {
   return (
     <div className="gh-pr-overview">
       <div className="gh-pr-main">
         <MergeCard pr={pr} />
         <Description pr={pr} repo={repo} />
+        <ActivityFeed repo={repo} number={pr.number} baseRef={pr.baseRef} prTab={prTab} openFile={openFile} signIn={signIn} busy={busy} />
       </div>
       <div className="gh-pr-aside">
         <Reviewers list={pr.reviewers} />
@@ -311,6 +314,17 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
     return () => { dead = true; };
   }, [repo, n, signedIn, reload]);
 
+  // A reply, resolve or comment invalidated the cached page: refetch it quietly so "x/y comments resolved" follows.
+  React.useEffect(() => {
+    const store = feedStore(repo, n);
+    let seen = store.version;
+    return store.subscribe(() => {
+      if (store.version === seen) return;
+      seen = store.version;
+      getPr(repo, n).then((fresh) => setLoad((l) => (l.t === "ready" ? { t: "ready", pr: fresh } : l)), () => {});
+    });
+  }, [repo, n]);
+
   const page: PrPageId = state.prPage ?? "overview";
   const list: BrowseState = { repo, view: "prs", prTab: listTab };
   const pr = load.t === "ready" ? load.pr : undefined;
@@ -338,7 +352,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
           <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request" permission="Pull requests" />
         </div>
       )}
-      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} /></div>}
+      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </>

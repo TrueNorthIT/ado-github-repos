@@ -179,3 +179,56 @@
 /* Long PR titles truncate like native rather than being clipped by the fixed-height header (seen live in 0.17.0) */
 .gh-pr-header .bolt-header-title-area, .gh-pr-header .bolt-header-title-row { min-width: 0; }
 .gh-pr-header .bolt-header-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- activity feed (Feed.tsx). Offsets are native's: cards 32px right of the list's left edge, rail icons centred 12px in that gutter ---------- */
+.gh-feed-filter { margin: 16px 8px 16px 0; }
+.gh-feed-list { list-style: none; margin: 0; padding: 0 0 0 32px; position: relative; }
+.gh-feed-list::before { content: ""; position: absolute; left: 11px; top: 28px; bottom: 28px; border-left: 2px dotted var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-feed-row { position: relative; min-width: 0; }
+.gh-feed-row-thread, .gh-feed-row-comment, .gh-feed-row:first-child { margin-bottom: 16px; }
+.gh-feed-rail { position: absolute; left: -32px; top: 19px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: var(--background-color, #fff); z-index: 1; }
+.gh-feed-row-event .gh-feed-rail { top: 14px; }
+.gh-feed-rail .fabric-icon { margin: 4px 0; font-size: 14px; }
+.gh-feed-rail-success { color: var(--status-success-foreground, #107c10); }
+.gh-feed-rail-warning { color: var(--status-warning-icon-foreground, #c47400); }
+.gh-feed-card.bolt-card { width: 100%; box-sizing: border-box; min-width: 0; }
+.gh-feed-compose-row { display: flex; align-items: center; gap: 12px; padding: 0 20px; }
+.gh-feed-compose-row > .bolt-button:last-child { flex: none; }
+.gh-feed-compose-row > .bolt-button + .bolt-button { margin-left: -4px; }
+.gh-feed-composer .gh-feed-compose-row { padding-top: 16px; padding-bottom: 16px; }
+.gh-feed-composer .gh-feed-error, .gh-feed-footer .gh-feed-error { padding: 0 20px 16px; }
+.gh-feed-field { min-width: 0; }
+.gh-feed-head { display: flex; align-items: center; gap: 12px; padding: 24px 36px 0 36px; }
+.gh-feed-who { min-width: 0; line-height: 20px; }
+.gh-feed-author { font-size: 14px; padding-right: 8px; }
+.gh-feed-time { font-size: 12px; line-height: 16px; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-feed-head-actions { margin-left: auto; gap: 4px; }
+.gh-feed-status .bolt-expandable-button { font-weight: 600; }
+.gh-feed-indent { padding: 12px 48px 0 84px; min-width: 0; }
+.gh-feed-section:last-of-type .gh-feed-indent, .gh-feed-section:only-of-type .gh-feed-indent { padding-bottom: 0; }
+.gh-feed-reply { position: relative; }
+.gh-feed-reply::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-feed-reply .gh-feed-head { padding-top: 16px; }
+.gh-feed-where { gap: 8px; margin-bottom: 8px; }
+.gh-feed-file { word-break: break-all; }
+.gh-feed-body .gh-markdown { margin: 0; padding: 0; line-height: 1.5; }
+.gh-feed-body .gh-markdown > :first-child { margin-top: 0; }
+.gh-feed-body .gh-markdown > :last-child { margin-bottom: 0; }
+.gh-feed-body { padding-bottom: 16px; }
+.gh-feed-footer { margin: 0 16px; padding: 4px 4px 16px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-feed-footer { padding-top: 20px; }
+.gh-feed-footer .gh-feed-compose-row { padding: 0; }
+.gh-feed-event { box-sizing: border-box; min-height: 52px; padding: 16px 0; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.gh-feed-event-line { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 20px; }
+.gh-feed-event-text { min-width: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; line-height: 20px; }
+.gh-feed-event .gh-feed-time { flex: none; white-space: nowrap; }
+.gh-feed-expand.bolt-button { margin: -6px 0; }
+.gh-feed-commits { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gh-feed-commits li { display: flex; gap: 8px; min-width: 0; }
+.gh-feed-review { margin-top: 8px; }
+.gh-feed-loading { padding: 24px 0; }
+/* Inline threads under a line of the Files diff: a Monaco view zone hosting a ThreadCard. flow-root so the card's margins count in the measured height. */
+.gh-zone { display: flow-root; box-sizing: border-box; padding: 8px 16px 8px 8px; cursor: default; user-select: text; }
+.gh-tree-count { margin-left: 8px; flex: none; }
+.gh-feed-compose-row .bolt-textfield { flex: 1 1 auto; min-width: 0; width: auto; }
+.gh-feed-card > .bolt-card-content { flex-direction: column; min-width: 0; }

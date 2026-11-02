@@ -6,6 +6,7 @@ import "monaco-editor/editor/contrib/find/browser/findController.js";
 import "monaco-editor/basic-languages/monaco.contribution.js";
 import "../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import * as monaco from "monaco-editor/editor/editor.api.js";
+import { afterModifiedLine } from "./lib/diffMap";
 
 // Only Monaco's base editor worker is bundled (editor.worker.js, built beside monaco.js): it computes the PR diffs.
 // No language workers, so JSON/TS/CSS language services stay off. The URL is next to this file, so on the gallery CDN it is same-origin.
@@ -112,4 +113,54 @@ export function createWholeFile(el: HTMLElement, text: string, language: string,
     options: { isWholeLine: true, className: `gh-pr-line-${kind}`, linesDecorationsClassName: `gh-pr-gutter-${kind}` },
   }]);
   return { editor, dispose: () => { editor.dispose(); model.dispose(); } };
+}
+
+// ---------- inline comment threads (AF-6): view zones that host React content ----------
+
+/** A view zone after `afterLine` of `ed` hosting `node`. Monaco fixes a zone's own height, so `node` sits inside a wrapper and its content height is observed; the zone follows it. */
+function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLElement): () => void {
+  const wrap = document.createElement("div");
+  wrap.appendChild(node);
+  let id = "";
+  const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: true };
+  ed.changeViewZones((a) => { id = a.addZone(zone); });
+  const ro = new ResizeObserver(() => {
+    const h = Math.ceil(node.getBoundingClientRect().height);
+    if (h > 0 && h !== zone.heightInPx) {
+      zone.heightInPx = h;
+      ed.changeViewZones((a) => a.layoutZone(id));
+    }
+  });
+  ro.observe(node);
+  return () => {
+    ro.disconnect();
+    try { ed.changeViewZones((a) => a.removeZone(id)); } catch { /* the editor is already gone */ }
+  };
+}
+
+export interface ZonePlan { side: "LEFT" | "RIGHT"; line: number; node: HTMLElement }
+export type ZoneTarget = { kind: "diff"; editor: monaco.editor.IStandaloneDiffEditor } | { kind: "whole"; editor: monaco.editor.IStandaloneCodeEditor };
+
+/**
+ * Puts each plan's node under its line. In the inline diff the modified editor hosts every zone: RIGHT lines are its own,
+ * LEFT (base) lines are mapped through the diff once it is computed. A whole-file editor shows one side, so every line is its own.
+ * Returns a function that removes them all.
+ */
+export function placeZones(target: ZoneTarget, plans: ZonePlan[]): () => void {
+  const removers: (() => void)[] = [];
+  let off: monaco.IDisposable | undefined;
+  if (target.kind === "whole") {
+    for (const p of plans) removers.push(addZone(target.editor, p.line, p.node));
+  } else {
+    const ed = target.editor;
+    const modified = ed.getModifiedEditor();
+    for (const p of plans) if (p.side === "RIGHT") removers.push(addZone(modified, p.line, p.node));
+    const left = plans.filter((p) => p.side === "LEFT");
+    const placeLeft = () => { for (const p of left) removers.push(addZone(modified, afterModifiedLine(p.line, ed.getLineChanges() ?? []), p.node)); };
+    if (left.length) {
+      if (ed.getLineChanges()) placeLeft();
+      else off = ed.onDidUpdateDiff(() => { off?.dispose(); off = undefined; placeLeft(); });
+    }
+  }
+  return () => { off?.dispose(); removers.forEach((r) => r()); };
 }

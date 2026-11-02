@@ -6,6 +6,9 @@ import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitT
 import { detailQuery, listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
 import { toListRow, toPrPage, type PrListNode, type PrListRow, type PrPageData } from "./lib/prModel";
 import { fromRestFile, type PrFile } from "./lib/prFiles";
+import { feedQuery, addCommentMutation, replyMutation, resolveMutation, unresolveMutation } from "./lib/feedQuery";
+import { toFeed, type FeedComment, type FeedItem, type ReviewThreadNode, type TimelineNode } from "./lib/feedModel";
+import type { GhActor } from "./lib/prModel";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -92,6 +95,7 @@ export const clearCache = () => {
   prLists.clear();
   prPages.clear();
   prFiles.clear();
+  feeds.clear();
   cached = null;
 };
 
@@ -269,3 +273,69 @@ export const getPrFiles = (repo: string, number: number) =>
 
 /** Drops the cached PR page and files (Try again). */
 export const invalidatePr = () => (prPages.clear(), prFiles.clear());
+
+// ---------- activity feed (AF-7) ----------
+
+export interface FeedData {
+  /** The pull request's node id: addComment's subjectId. */
+  prId: string;
+  /** The signed-in user, for the composer and reply avatars. */
+  viewer: GhActor;
+  items: FeedItem[];
+}
+
+const feeds = new Map<string, { at: number; p: Promise<FeedData> }>();
+const MAX_FEED_ITEMS = 500;
+
+/** The activity feed: timeline pages (100 each, up to 500 items) plus the review threads, through toFeed. Cached 30 s per repo and number; failures are not cached. */
+export const getFeed = (repo: string, number: number) =>
+  ttl(feeds, `${repo}#${number}`, async (): Promise<FeedData> => {
+    const [owner, name] = repo.split("/");
+    const nodes: (TimelineNode | null)[] = [];
+    let threads: (ReviewThreadNode | null)[] = [];
+    let pr: any;
+    let viewer: GhActor = { login: "" };
+    for (let after: string | undefined; ; ) {
+      const d = (await graphql(feedQuery({ owner, name, number, after }))).data;
+      const node = d?.repository?.pullRequest;
+      if (!node) throw new GhError("access", 404);
+      if (!pr) (pr = node), (threads = node.reviewThreads?.nodes ?? []), (viewer = d.viewer ?? viewer);
+      nodes.push(...(node.timelineItems?.nodes ?? []));
+      const next = node.timelineItems?.pageInfo;
+      if (!next?.hasNextPage || !next.endCursor || nodes.length >= MAX_FEED_ITEMS) break;
+      after = next.endCursor;
+    }
+    return { prId: pr.id, viewer, items: toFeed(nodes.slice(0, MAX_FEED_ITEMS), threads, { author: pr.author, createdAt: pr.createdAt }, Date.now()) };
+  });
+
+/** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
+export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`));
+
+/** A mutation through request(), so it shares the 401 refresh-retry. GitHub reports a missing scope or permission as a 200 with a FORBIDDEN error, which becomes the same "access" 403 as an HTTP 403. */
+async function mutate(q: { query: string; variables: Record<string, unknown> }): Promise<any> {
+  const body = await (await request("/graphql", "application/json", true, JSON.stringify(q))).json();
+  const errors: { type?: string; message?: string }[] = body?.errors ?? [];
+  if (errors.some((e) => e.type === "FORBIDDEN" || /resource not accessible/i.test(e.message ?? ""))) throw new GhError("access", 403);
+  if (!body?.data || errors.length) throw new GhError("other");
+  return body.data;
+}
+
+const toFeedComment = (n: { id: string; url: string; bodyHTML: string; createdAt: string; author?: GhActor | null }): FeedComment => ({
+  id: n.id, author: n.author?.login ?? "ghost", avatarUrl: n.author?.avatarUrl ?? "https://github.com/ghost.png", html: n.bodyHTML, date: new Date(n.createdAt), url: n.url,
+});
+
+/** Posts a top-level PR comment; returns the new comment as GitHub rendered it. */
+export async function postComment(prId: string, body: string): Promise<FeedComment> {
+  return toFeedComment((await mutate(addCommentMutation(prId, body))).addComment.commentEdge.node);
+}
+
+/** Replies to a review thread; returns the new comment. */
+export async function postReply(threadId: string, body: string): Promise<FeedComment> {
+  return toFeedComment((await mutate(replyMutation(threadId, body))).addPullRequestReviewThreadReply.comment);
+}
+
+/** Resolves or reactivates a thread; returns the thread's isResolved as GitHub now has it. */
+export async function setThreadResolved(threadId: string, resolved: boolean): Promise<boolean> {
+  const d = await mutate(resolved ? resolveMutation(threadId) : unresolveMutation(threadId));
+  return (resolved ? d.resolveReviewThread : d.unresolveReviewThread).thread.isResolved;
+}

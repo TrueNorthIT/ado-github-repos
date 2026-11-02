@@ -3,6 +3,7 @@ import { PNG_BASE64 } from "./fixtures/content";
 import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
 import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
+import { feedData, feedMutation } from "./fixtures/feed";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,6 +34,12 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  if (/^\s*mutation\b/.test(query)) {
+    if (sc === "feedPostFails") return status(403); // the sign-in can't post: shows the optimistic rollback
+    const data = feedMutation(query, variables);
+    return data ? json({ data }) : json({ data: null, errors: [{ message: "Unknown mutation" }] });
+  }
+  if (query.includes("timelineItems(")) return repoOf(`${variables.owner}/${variables.name}`) && `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === variables.number) ? json({ data: feedData(variables.number) }) : json({ data: { repository: { pullRequest: null } } });
   if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables, query.includes("bodyHTML")); // the page's detail query asks for bodyHTML; the list's single-PR lookup does not
   if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
   const object: Record<string, unknown> = {};
