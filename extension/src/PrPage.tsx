@@ -82,7 +82,11 @@ const MERGE: Record<Mergeable, { status: typeof Statuses.Success; text: string }
 };
 
 function MergeCard({ pr }: { pr: PrPageData }) {
-  const m = MERGE[pr.mergeable];
+  // Mergeability only means something while the PR is open; GitHub reports UNKNOWN once it is merged or closed.
+  const m =
+    pr.status === "completed" ? { status: Statuses.Success, text: `Merged into ${pr.baseRef}` }
+    : pr.status === "abandoned" ? { status: Statuses.Canceled, text: "Closed without merging" }
+    : MERGE[pr.mergeable];
   const c = CHECKS[pr.checks];
   return (
     <Card className="gh-pr-card gh-pr-merge">

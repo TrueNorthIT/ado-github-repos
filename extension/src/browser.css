@@ -128,7 +128,7 @@
 .gh-pr-section .bolt-header { padding: 4px 0; }
 .gh-pr-sublabel { margin-bottom: 8px; }
 .gh-pr-well { box-sizing: border-box; min-height: 43px; padding: 12px; border-radius: 4px; background: var(--palette-black-alpha-2, rgba(0, 0, 0, .02)); color: var(--text-secondary-color, rgba(0, 0, 0, .55)); text-align: center; margin-top: 8px; }
-@media (min-width: 1100px) { .gh-pr-overview { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; } } /* native shows the column already at a 1198px viewport */
+@media (min-width: 880px) { .gh-pr-overview { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; } } /* the hub frame's width, not the window's: native shows the column at a 1198px window, about a 938px frame */
 
 /* Commits: native's 14px/600 title over a 11px monospace SHA line. */
 .gh-pr-commit-title { font-size: 14px; font-weight: 600; }

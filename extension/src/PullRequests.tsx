@@ -75,7 +75,7 @@ function columns(repo: string, open: (n: number) => void): ITableColumn<PrListRo
           tableColumn={tableColumn}
           line1={
             <div className="flex-row flex-center gh-pr-line1">
-              <Link className="gh-pr-title body-l" subtle removeUnderline href={serialize({ repo, view: "prs", pr: row.number })} onClick={(e) => e.preventDefault() /* the row's activation navigates */}>
+              <Link className="gh-pr-title body-l" subtle removeUnderline href={serialize({ repo, view: "prs", pr: row.number })} onClick={(e) => { e.preventDefault(); open(row.number); } /* the Table does not activate rows for clicks on links (seen live in 0.15.0) */}>
                 {row.title}
               </Link>
               <Labels row={row} />
