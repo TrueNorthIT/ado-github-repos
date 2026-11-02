@@ -1,0 +1,104 @@
+# Builds, checks and publishes the Azure DevOps extension to the Visual Studio Marketplace
+# using Marketplace Trusted Publishing (GitHub OIDC). No stored PAT.
+#
+# Release: bump "version" in extension/package.json and extension/vss-extension.json,
+# commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+# Manual run (Actions tab) defaults to a dry run: build and package only.
+#
+# tfx-cli has no OIDC support, so the job exchanges the GitHub OIDC token itself, the same
+# way @vscode/vsce does (out/oidc.js, MIT): POST {marketplace}/_apis/gallery/token with
+# "Authorization: FederatedToken <oidc>", then publishes with the returned credential.
+name: publish
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and package only, don't publish"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release on tags
+      id-token: write # Marketplace trusted publishing
+    defaults:
+      run:
+        working-directory: extension
+    env:
+      PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Check versions agree
+        id: version
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          man=$(node -p "require('./vss-extension.json').version")
+          [ "$pkg" = "$man" ] || { echo "::error::package.json ($pkg) and vss-extension.json ($man) disagree"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$man" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $man"; exit 1
+          fi
+          echo "version=$man" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run package
+
+      - name: Check package
+        id: vsix
+        run: |
+          vsix="out/TrueNorthIT.github-repos-${{ steps.version.outputs.version }}.vsix"
+          [ -f "$vsix" ] || { echo "::error::$vsix not found"; exit 1; }
+          if unzip -l "$vsix" | grep -qi '\.svg$'; then echo "::error::SVG files in package (Marketplace rejects them)"; exit 1; fi
+          if grep -rqE '__TN_MOCK__|mockSdk' dist; then echo "::error::Mock code in dist"; exit 1; fi
+          echo "path=extension/$vsix" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vsix
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
+
+      - name: Publish to Marketplace (trusted publishing)
+        if: env.PUBLISH == 'true'
+        env:
+          VSIX: ${{ steps.vsix.outputs.path }}
+        run: |
+          publisher=$(node -p "require('./vss-extension.json').publisher")
+          oidc=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=marketplace.visualstudio.com" | jq -r .value)
+          echo "::add-mask::$oidc"
+          credential=$(curl -sSf -X POST "https://marketplace.visualstudio.com/_apis/gallery/token?api-version=7.2-preview.1" \
+            -H "Authorization: FederatedToken $oidc" -H "Content-Type: application/json" -H "Accept: application/json" \
+            -d "{\"publisherName\":\"$publisher\"}" | jq -r .credential)
+          [ -n "$credential" ] && [ "$credential" != "null" ] || { echo "::error::Marketplace token exchange returned no credential"; exit 1; }
+          echo "::add-mask::$credential"
+          npx --no-install tfx extension publish --vsix "$GITHUB_WORKSPACE/$VSIX" --auth-type pat --token "$credential" --no-prompt
+
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VSIX: ${{ steps.vsix.outputs.path }}
+        run: gh release create "$GITHUB_REF_NAME" "$VSIX" --repo "$GITHUB_REPOSITORY" --generate-notes

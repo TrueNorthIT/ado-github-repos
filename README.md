@@ -39,3 +39,14 @@ It builds locally, zip-deploys to an existing Flex Consumption app (Node 22) and
 ## Licence
 
 MIT, see [LICENSE](LICENSE). Third-party assets are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## Publishing
+
+`.github/workflows/publish.yml` publishes to the Visual Studio Marketplace with Trusted Publishing (GitHub OIDC), so no PAT is stored. To release, bump `version` in `extension/package.json` and `extension/vss-extension.json`, commit, then:
+
+```
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The tag must match both versions. The workflow tests, builds, packages, publishes, and attaches the `.vsix` to a GitHub release. A manual run from the Actions tab defaults to a dry run (build and package only).
