@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "GITHUB_CLIENT_ID": "<github app client id>",
+    "GITHUB_CLIENT_SECRET": "<github app client secret>",
+    "ALLOWED_ORIGINS": "https://PUBLISHER_ID.gallerycdn.vsassets.io",
+    "STATE_SECRET": "<long random string>",
+    "AUTH_BASE_URL": "http://localhost:7071"
+  },
+  "Host": { "CORS": "" }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.vsix
+local.settings.json
+.env
+coverage/

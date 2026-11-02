@@ -1,0 +1,30 @@
+{
+  "manifestVersion": 1,
+  "id": "github-repos",
+  "version": "0.1.0",
+  "name": "GitHub Repos",
+  "description": "Lists the GitHub repositories connected to a project, under Repos.",
+  "publisher": "TrueNorthIT",
+  "public": false,
+  "categories": ["Azure Repos"],
+  "targets": [{ "id": "Microsoft.VisualStudio.Services" }],
+  "icons": { "default": "images/icon.png" },
+  "scopes": ["vso.githubconnections"],
+  "files": [
+    { "path": "dist", "addressable": true },
+    { "path": "images/icon.png", "addressable": true }
+  ],
+  "contributions": [
+    {
+      "id": "github-repos-hub",
+      "type": "ms.vss-web.hub",
+      "targets": ["ms.vss-code-web.code-hub-group"],
+      "properties": {
+        "name": "GitHub Repos",
+        "order": 99,
+        "uri": "dist/hub.html",
+        "iconName": "OpenSource"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+src/
+test/
+dist/auth/test/
+local.settings*.json
+**/*.ts
+**/*.js.map
+node_modules/.vite/
+node_modules/.vitest-cache/
+tsconfig.json
+.vscode/
+.git*
+*.zip
