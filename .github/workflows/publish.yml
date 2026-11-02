@@ -93,7 +93,18 @@ jobs:
             -d "{\"publisherName\":\"$publisher\"}" | jq -r .credential)
           [ -n "$credential" ] && [ "$credential" != "null" ] || { echo "::error::Marketplace token exchange returned no credential"; exit 1; }
           echo "::add-mask::$credential"
-          npx --no-install tfx extension publish --vsix "$GITHUB_WORKSPACE/$VSIX" --auth-type pat --token "$credential" --no-prompt
+          npx --no-install tfx extension publish --vsix "$GITHUB_WORKSPACE/$VSIX" --auth-type pat --token "$credential" --no-prompt --no-wait-validation
+          # Marketplace validation can outlast tfx's own ~4 min wait (it took ~4.5 min for 0.7.0), so poll for up to 20 min.
+          version=$(node -p "require('./vss-extension.json').version")
+          for i in $(seq 1 40); do
+            status=$(npx --no-install tfx extension isvalid --publisher "$publisher" --extension-id github-repos --version "$version" \
+              --service-url https://marketplace.visualstudio.com/ --auth-type pat --token "$credential" --no-prompt --json | jq -r .status)
+            echo "Validation: $status"
+            [ "$status" = "success" ] && exit 0
+            [ "$status" = "pending" ] || { echo "::error::Marketplace validation failed ($status)"; exit 1; }
+            sleep 30
+          done
+          echo "::error::Validation still pending after 20 min; check the Marketplace"; exit 1
 
       - name: GitHub release
         if: github.ref_type == 'tag'
