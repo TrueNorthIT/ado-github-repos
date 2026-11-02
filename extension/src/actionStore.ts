@@ -1,0 +1,258 @@
+// Shared state of one PR's actions (approve, complete, abandon...): the header buttons, the panels and the policies card are views of it.
+// Same shape as feedStore.ts: calls are serialised one at a time per PR, buttons are disabled while one is queued or in flight,
+// optimistic changes are rolled back on failure, and a success drops the cached page and list so they refetch.
+import * as React from "react";
+import { PermissionError } from "./connections";
+import { GhError, getActions, invalidatePrPage, invalidatePrs, mutate } from "./githubBrowse";
+import {
+  closePullRequestMutation, convertToDraftMutation, deleteRefMutation, disableAutoMergeMutation, enableAutoMergeMutation, markReadyForReviewMutation,
+  mergePullRequestMutation, reopenPullRequestMutation, subscriptionMutation, updateBaseMutation, type MergeMethod,
+} from "./lib/actionsQuery";
+import { deriveActions, type ActionsPr, type ActionsRepo, type ActionsView } from "./lib/prActions";
+import type { PrStatus } from "./lib/prModel";
+import type { StateActionId } from "./lib/stateActions";
+import { voteMutation, type VoteId } from "./lib/votes";
+import type { WorkItemRef } from "./lib/workItems";
+import { completeWorkItems } from "./workItemsApi";
+
+const STALE_MS = 30_000;
+
+/** The head moved after the page was loaded: expectedHeadOid no longer matches. GitHub: "Head branch was modified. Review and try the merge again." */
+const headMoved = (e: unknown) => e instanceof GhError && /head branch was modified|expected.*head|head.*(changed|moved)/i.test(e.detail ?? "");
+
+/** What to tell the user when an action fails. */
+export function actionErrorText(e: unknown): string {
+  if (headMoved(e)) return "The branch changed since you loaded this page. Refresh and try again.";
+  if (e instanceof PermissionError) return "The extension doesn't have permission to update work items. An organisation admin needs to approve the new work item permission.";
+  if (e instanceof GhError) {
+    if (e.kind === "access") return "Your GitHub sign-in isn't allowed to do this on this repository.";
+    if (e.kind === "auth") return "Your GitHub sign-in has expired. Sign in again to continue.";
+    if (e.kind === "rateLimit") return "GitHub's rate limit has been reached. Try again later.";
+    if (e.detail) return `GitHub said: ${e.detail}`;
+  }
+  return "Could not reach GitHub. Try again.";
+}
+
+export interface CompleteRequest {
+  /** "autoComplete" enables auto-merge instead of merging now. */
+  mode: "complete" | "autoComplete";
+  mergeMethod: MergeMethod;
+  commitHeadline?: string;
+  commitBody?: string;
+  deleteSourceBranch: boolean;
+  /** The linked work items to move to a Completed state; empty or omitted to leave them. */
+  workItems?: WorkItemRef[];
+}
+
+const REVIEW_OF: Partial<Record<VoteId, string | null>> = { approve: "APPROVED", approveWithSuggestions: "APPROVED", waitForAuthor: "CHANGES_REQUESTED", reject: "CHANGES_REQUESTED", reset: null };
+
+export class ActionStore {
+  status: "loading" | "ready" | "error" = "loading";
+  err: unknown;
+  raw?: ActionsRepo;
+  view?: ActionsView;
+  /** A call is queued or in flight: every action button is disabled. */
+  busy = false;
+  /** Set when the last action failed. */
+  error?: string;
+  /** The action worked but a later step did not (e.g. merged, branch not deleted), or a note worth showing. */
+  notice?: string;
+  /** Bumped after every successful action; the PR page refetches its header on it. */
+  version = 0;
+  /** While a state change is in flight, the status the pill should already show. */
+  optimisticStatus?: PrStatus;
+  private listeners = new Set<() => void>();
+  private queue: Promise<unknown> = Promise.resolve();
+  private loadedAt = 0;
+  private loading?: Promise<void>;
+  private pending = 0;
+
+  constructor(readonly repo: string, readonly number: number) {}
+
+  subscribe(fn: () => void) {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  }
+  private emit() {
+    this.listeners.forEach((l) => l());
+  }
+  private setRaw(raw: ActionsRepo) {
+    this.raw = raw;
+    this.view = deriveActions(raw);
+  }
+  private patchPr(p: Partial<ActionsPr>) {
+    this.setRaw({ ...this.raw!, pullRequest: { ...this.raw!.pullRequest!, ...p } });
+  }
+
+  /** Loads on first use, and again (keeping what is shown) once the data is 30 s old and nothing is in flight. */
+  ensureLoaded(force = false): Promise<void> {
+    if (this.loading) return this.loading;
+    if (this.pending) return Promise.resolve();
+    if (!force && this.status === "ready" && Date.now() - this.loadedAt < STALE_MS) return Promise.resolve();
+    if (this.status === "error") this.status = "loading";
+    this.loading = getActions(this.repo, this.number)
+      .then(
+        (node) => {
+          if (this.pending) return; // an action started meanwhile: its state wins
+          this.setRaw(node);
+          this.status = "ready";
+          this.loadedAt = Date.now();
+        },
+        (err) => {
+          if (this.status !== "ready") (this.status = "error"), (this.err = err);
+        }
+      )
+      .then(() => {
+        this.loading = undefined;
+        this.emit();
+      });
+    this.emit();
+    return this.loading;
+  }
+
+  dismiss() {
+    this.error = this.notice = undefined;
+    this.emit();
+  }
+
+  /**
+   * Queues `task` behind the previous call for this PR. `task` throws to fail; it may return a notice for a partial failure.
+   * `optimistic` runs at once and `rollback` undoes it if the task throws. Resolves true on success.
+   */
+  private run(task: () => Promise<string | void>, optimistic?: () => void, rollback?: () => void): Promise<boolean> {
+    this.pending++;
+    this.busy = true;
+    this.error = this.notice = undefined;
+    optimistic?.();
+    this.emit();
+    const step = async (): Promise<boolean> => {
+      try {
+        this.notice = (await task()) || undefined;
+        return true;
+      } catch (e) {
+        rollback?.();
+        this.error = actionErrorText(e);
+        return false;
+      }
+    };
+    const done = this.queue.then(step, step);
+    this.queue = done;
+    return done.then(async (ok) => {
+      if (ok) {
+        invalidatePrPage(this.repo, this.number);
+        invalidatePrs();
+      }
+      this.pending--;
+      this.busy = this.pending > 0;
+      if (ok && !this.pending) await this.ensureLoaded(true); // refetch quietly
+      if (!this.pending) this.optimisticStatus = undefined;
+      if (ok) this.version++;
+      this.emit();
+      return ok;
+    });
+  }
+
+  private v() {
+    if (!this.view) throw new Error("Pull request actions have not loaded.");
+    return this.view;
+  }
+
+  vote(id: VoteId, body?: string) {
+    const v = this.v();
+    const prev = this.raw!;
+    const state = REVIEW_OF[id];
+    return this.run(
+      async () => void (await mutate(voteMutation(id, { ...v.pr, state: v.pr.state, viewerPermission: v.repo.viewerPermission, pullRequestId: v.pr.id, headOid: v.pr.headRefOid }, body))),
+      () => this.patchPr({ viewerLatestReview: state ? { id: "pending", state } : null }),
+      () => this.setRaw(prev)
+    );
+  }
+
+  setState(id: StateActionId) {
+    const pr = this.v().pr;
+    const prev = this.raw!;
+    const build = { abandon: closePullRequestMutation, reactivate: reopenPullRequestMutation, markAsDraft: convertToDraftMutation, publish: markReadyForReviewMutation }[id];
+    const next: Partial<ActionsPr> = { abandon: { state: "CLOSED" as const }, reactivate: { state: "OPEN" as const }, markAsDraft: { isDraft: true }, publish: { isDraft: false } }[id];
+    return this.run(
+      async () => void (await mutate(build(pr.id))),
+      () => {
+        this.patchPr(next);
+        this.optimisticStatus = id === "abandon" ? "abandoned" : id === "markAsDraft" ? "draft" : "active";
+      },
+      () => {
+        this.setRaw(prev);
+        this.optimisticStatus = undefined;
+      }
+    );
+  }
+
+  cancelAutoComplete() {
+    const pr = this.v().pr;
+    const prev = this.raw!;
+    return this.run(async () => void (await mutate(disableAutoMergeMutation(pr.id))), () => this.patchPr({ autoMergeRequest: null }), () => this.setRaw(prev));
+  }
+
+  /** Merge (or enable auto-merge), then delete the branch, then complete the work items. Only the first step can fail the whole action; the rest become a notice. */
+  complete(r: CompleteRequest) {
+    const { pr, repo } = this.v();
+    return this.run(async () => {
+      const params = { pullRequestId: pr.id, mergeMethod: r.mergeMethod, expectedHeadOid: pr.headRefOid, commitHeadline: r.commitHeadline, commitBody: r.commitBody };
+      await mutate(r.mode === "complete" ? mergePullRequestMutation(params) : enableAutoMergeMutation(params));
+      if (r.mode === "autoComplete") return;
+      const warnings: string[] = [];
+      // GitHub deletes the branch itself when the repository setting is on; a second deleteRef would only fail.
+      if (r.deleteSourceBranch && !repo.deleteBranchOnMerge && pr.headRef) {
+        try {
+          await mutate(deleteRefMutation(pr.headRef.id));
+        } catch (e) {
+          warnings.push(`Merged, but couldn't delete the branch: ${actionErrorText(e)}`);
+        }
+      }
+      if (r.workItems?.length) {
+        try {
+          const res = await completeWorkItems(r.workItems);
+          if (res.failed) warnings.push(`${warnings.length ? "Also, " : "Merged, but "}${res.failed} work item${res.failed === 1 ? "" : "s"} couldn't be completed.`);
+        } catch (e) {
+          warnings.push(`${warnings.length ? "Also, " : "Merged, but "}couldn't complete the work items: ${actionErrorText(e)}`);
+        }
+      }
+      return warnings.join(" ") || undefined;
+    });
+  }
+
+  follow(subscribe: boolean) {
+    const pr = this.v().pr;
+    const prev = this.raw!;
+    return this.run(
+      async () => void (await mutate(subscriptionMutation(pr.id, subscribe ? "SUBSCRIBED" : "UNSUBSCRIBED"))),
+      () => this.patchPr({ viewerSubscription: subscribe ? "SUBSCRIBED" : "UNSUBSCRIBED" }),
+      () => this.setRaw(prev)
+    );
+  }
+
+  changeTarget(branch: string) {
+    const pr = this.v().pr;
+    return this.run(async () => void (await mutate(updateBaseMutation(pr.id, branch))));
+  }
+}
+
+// ponytail: unbounded; one entry per PR opened in a session, like feedStore. Add eviction if memory shows up.
+const stores = new Map<string, ActionStore>();
+export function actionStore(repo: string, number: number): ActionStore {
+  const key = `${repo}#${number}`;
+  let s = stores.get(key);
+  if (!s) stores.set(key, (s = new ActionStore(repo, number)));
+  return s;
+}
+
+/** The store for a PR, re-rendering the caller on every change. Starts (or refreshes) the load. */
+export function useActions(repo: string, number: number, enabled = true): ActionStore {
+  const store = actionStore(repo, number);
+  const [, bump] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => {
+    const off = store.subscribe(bump);
+    if (enabled) store.ensureLoaded();
+    return off;
+  }, [store, enabled]);
+  return store;
+}

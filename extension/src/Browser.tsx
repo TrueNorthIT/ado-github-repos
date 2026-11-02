@@ -193,7 +193,7 @@ function CantPreview({ why, repo, refName, path, name, onDownload }: { why: stri
       </div>
       <ButtonGroup>
         <Button text="Download" iconProps={{ iconName: "Download" }} primary onClick={onDownload} />
-        <Button text="Open on GitHub" iconProps={{ iconName: "OpenInNewWindow" }} onClick={() => window.open(githubUrl(repo, refName, path, true), "_blank", "noopener")} />
+        <Button text="Open on GitHub" iconProps={{ iconName: "OpenInNewTab" }} onClick={() => window.open(githubUrl(repo, refName, path, true), "_blank", "noopener")} />
       </ButtonGroup>
     </div>
   );
@@ -693,7 +693,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const isMd = classifyFile(baseOf(path), 0) === "markdown";
   const tab = isMd && state.tab !== "contents" ? "preview" : "contents";
   const menuItems = [
-    { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewWindow" }, onActivate: () => { window.open(githubUrl(repo, refName || "HEAD", path, isFile), "_blank", "noopener"); } },
+    { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => { window.open(githubUrl(repo, refName || "HEAD", path, isFile), "_blank", "noopener"); } },
     { id: "list", text: "All repositories", iconProps: { iconName: "Back" }, onActivate: toList },
     ...commandBarItems.map((c) => ({ id: c.id, text: c.text, iconProps: c.iconProps, disabled: c.disabled, onActivate: c.onActivate })),
   ];

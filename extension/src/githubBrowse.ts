@@ -6,6 +6,7 @@ import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitT
 import { detailQuery, listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
 import { toListRow, toPrPage, type PrListNode, type PrListRow, type PrPageData } from "./lib/prModel";
 import { fromRestFile, type PrFile } from "./lib/prFiles";
+import { actionsDetailQuery, branchesQuery, mergeMessageQuery, type PrActionsNode } from "./lib/actionsQuery";
 import { feedQuery, addCommentMutation, replyMutation, resolveMutation, unresolveMutation } from "./lib/feedQuery";
 import { toFeed, type FeedComment, type FeedItem, type ReviewThreadNode, type TimelineNode } from "./lib/feedModel";
 import type { GhActor } from "./lib/prModel";
@@ -17,7 +18,7 @@ const MAX_BRANCHES = 1000;
 export type GhErrorKind = "auth" | "access" | "rateLimit" | "other";
 
 export class GhError extends Error {
-  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date) {
+  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date, /** GitHub's own message, when a mutation was refused. */ public detail?: string) {
     super(`${kind} (${status})`);
   }
 }
@@ -309,14 +310,14 @@ export const getFeed = (repo: string, number: number) =>
   });
 
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
-export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`));
+export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`));
 
 /** A mutation through request(), so it shares the 401 refresh-retry. GitHub reports a missing scope or permission as a 200 with a FORBIDDEN error, which becomes the same "access" 403 as an HTTP 403. */
-async function mutate(q: { query: string; variables: Record<string, unknown> }): Promise<any> {
+export async function mutate(q: { query: string; variables: Record<string, unknown> }): Promise<any> {
   const body = await (await request("/graphql", "application/json", true, JSON.stringify(q))).json();
   const errors: { type?: string; message?: string }[] = body?.errors ?? [];
   if (errors.some((e) => e.type === "FORBIDDEN" || /resource not accessible/i.test(e.message ?? ""))) throw new GhError("access", 403);
-  if (!body?.data || errors.length) throw new GhError("other");
+  if (!body?.data || errors.length) throw new GhError("other", 0, undefined, errors[0]?.message);
   return body.data;
 }
 
@@ -338,4 +339,36 @@ export async function postReply(threadId: string, body: string): Promise<FeedCom
 export async function setThreadResolved(threadId: string, resolved: boolean): Promise<boolean> {
   const d = await mutate(resolved ? resolveMutation(threadId) : unresolveMutation(threadId));
   return (resolved ? d.resolveReviewThread : d.unresolveReviewThread).thread.isResolved;
+}
+
+// ---------- acting on a pull request (batch 1) ----------
+
+const actionNodes = new Map<string, { at: number; p: Promise<NonNullable<PrActionsNode["repository"]>> }>();
+
+/** What the header and policies card need: repo merge settings, viewer flags, checks. Cached 30 s per PR; invalidatePrPage drops it. */
+export const getActions = (repo: string, number: number) =>
+  ttl(actionNodes, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const node = (await graphql(actionsDetailQuery({ owner, name, number }))).data?.repository;
+    if (!node?.pullRequest) throw new GhError("access", 404);
+    return node as NonNullable<PrActionsNode["repository"]>;
+  });
+
+/** The repository's branch names (first 100), for Change target branch. */
+export async function getBranchNames(repo: string): Promise<string[]> {
+  const [owner, name] = repo.split("/");
+  const nodes: { name: string }[] = (await graphql(branchesQuery({ owner, name }))).data?.repository?.refs?.nodes ?? [];
+  return nodes.map((n) => n.name);
+}
+
+/** GitHub's suggested merge commit headline and body per method. Best effort: null when GitHub will not say. */
+export async function getMergeMessages(repo: string, number: number): Promise<{ MERGE: { headline: string; body: string }; SQUASH: { headline: string; body: string } } | null> {
+  try {
+    const [owner, name] = repo.split("/");
+    const n = (await graphql(mergeMessageQuery({ owner, name, number }))).data?.repository?.pullRequest;
+    if (!n) return null;
+    return { MERGE: { headline: n.mergeH ?? "", body: n.mergeB ?? "" }, SQUASH: { headline: n.squashH ?? "", body: n.squashB ?? "" } };
+  } catch {
+    return null;
+  }
 }

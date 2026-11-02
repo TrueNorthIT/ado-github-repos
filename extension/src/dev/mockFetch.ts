@@ -4,6 +4,7 @@ import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
 import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
+import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages } from "./fixtures/actions";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,10 +36,19 @@ function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
   if (/^\s*mutation\b/.test(query)) {
+    const act = actionsMutation(query, variables, sc);
+    if (act) return "code" in act ? status(act.code) : json(act);
     if (sc === "feedPostFails") return status(403); // the sign-in can't post: shows the optimistic rollback
     const data = feedMutation(query, variables);
     return data ? json({ data }) : json({ data: null, errors: [{ message: "Unknown mutation" }] });
   }
+  // Acting on a PR: the actions detail query, the merge message suggestions and the branch list (all ask about pullRequest( or refs(, so they go before the generic routes).
+  if (query.includes("mergeStateStatus")) {
+    const node = `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO ? actionsNode(variables.number) : null;
+    return json(node ? { data: { repository: node } } : { data: { repository: { pullRequest: null } }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a PullRequest" }] });
+  }
+  if (query.includes("viewerMergeHeadlineText")) return json({ data: { repository: { pullRequest: mergeMessages(variables.number) } } });
+  if (query.includes('refPrefix: "refs/heads/"')) return json({ data: { repository: { refs: { nodes: branchNames().map((name) => ({ name })) } } } });
   if (query.includes("timelineItems(")) return repoOf(`${variables.owner}/${variables.name}`) && `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === variables.number) ? json({ data: feedData(variables.number) }) : json({ data: { repository: { pullRequest: null } } });
   if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables, query.includes("bodyHTML")); // the page's detail query asks for bodyHTML; the list's single-PR lookup does not
   if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
@@ -119,10 +129,18 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
   if (u.hostname === "api.github.com") return github(u, accept, sc);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
+  const wiStates = /\/_apis\/wit\/workitemtypes\/([^/]+)\/states$/.exec(u.pathname);
+  if (u.hostname === "dev.azure.com" && wiStates) return json({ count: 0, value: WI_STATES[decodeURIComponent(wiStates[1])] ?? [] });
+  const wiPatch = /\/_apis\/wit\/workitems\/(\d+)$/.exec(u.pathname);
+  if (u.hostname === "dev.azure.com" && wiPatch && init?.method === "PATCH") {
+    if (sc === "workItemsReadOnly") return status(403); // the extension lacks vso.work_write: shows the partial-failure message
+    WI_OVERRIDE.set(Number(wiPatch[1]), JSON.parse(String(init.body))[0].value);
+    return json({ id: Number(wiPatch[1]) });
+  }
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitems$/.test(u.pathname)) {
     if (sc === "workItemsDenied") return status(403);
     const ids = (u.searchParams.get("ids") ?? "").split(",").map(Number);
-    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": id === 1000 ? "Retry failed sync jobs" : `Work item ${id}`, "System.State": id % 2 ? "Active" : "Resolved", "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
+    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": id === 1000 ? "Retry failed sync jobs" : `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
   }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);

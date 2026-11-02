@@ -4,6 +4,7 @@ import { Card } from "azure-devops-ui/Card";
 import { ClipboardButton } from "azure-devops-ui/Components/ClipboardButton/ClipboardButton";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
+import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Icon } from "azure-devops-ui/Icon";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
@@ -30,6 +31,8 @@ import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
 import { ActivityFeed } from "./Feed";
 import { feedStore } from "./feedStore";
+import { actionStore, useActions, type ActionStore } from "./actionStore";
+import { PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
 import "./browser.css";
 
 const PAGES: { id: PrPageId; name: string }[] = [
@@ -48,9 +51,9 @@ const STATUS: Record<PrStatus, { text: string; color?: { red: number; green: num
   abandoned: { text: "Abandoned", color: { red: 96, green: 94, blue: 92 } },
 };
 
-function Meta({ pr, repo }: { pr: PrPageData; repo: string }) {
+function Meta({ pr, repo, status }: { pr: PrPageData; repo: string; status?: PrStatus }) {
   const href = useRepoHref();
-  const s = STATUS[pr.status];
+  const s = STATUS[status ?? pr.status];
   const branch = (ref: string) => <Link className="gh-pr-branch-link" href={href({ repo, ref })} onClick={openInRepos({ repo, ref })}>{ref}</Link>;
   return (
     <div className="gh-pr-meta flex-row flex-center">
@@ -178,7 +181,7 @@ function Labels({ pr }: { pr: PrPageData }) {
 
 type Wi = { t: "loading" } | { t: "denied" } | { t: "error" } | { t: "ready"; r: WorkItemsResult };
 
-function useWorkItems(ids: number[]): Wi {
+function useWorkItems(ids: number[], version = 0): Wi {
   const [wi, setWi] = React.useState<Wi>({ t: "loading" });
   const key = ids.join(",");
   React.useEffect(() => {
@@ -190,7 +193,7 @@ function useWorkItems(ids: number[]): Wi {
       (e) => !dead && setWi({ t: e instanceof PermissionError ? "denied" : "error" })
     );
     return () => { dead = true; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, version]); // eslint-disable-line react-hooks/exhaustive-deps
   return wi;
 }
 
@@ -217,8 +220,9 @@ function WorkItemRow({ w, r }: { w: WorkItemRef; r: WorkItemsResult }) {
   );
 }
 
-function WorkItems({ ids }: { ids: number[] }) {
-  const wi = useWorkItems(ids);
+/** `version` is the action store's: completing the work items refetches them. */
+function WorkItems({ ids, version }: { ids: number[]; version: number }) {
+  const wi = useWorkItems(ids, version);
   let body: React.ReactNode;
   if (!ids.length) body = <Well>No work items</Well>;
   else if (wi.t === "loading") body = <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />;
@@ -228,18 +232,18 @@ function WorkItems({ ids }: { ids: number[] }) {
   return <Section title="Work items">{body}</Section>;
 }
 
-function Overview({ pr, repo, prTab, openFile, signIn, busy }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean }) {
+function Overview({ pr, repo, prTab, openFile, signIn, busy, actions }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean; actions: ActionStore }) {
   return (
     <div className="gh-pr-overview">
       <div className="gh-pr-main">
-        <MergeCard pr={pr} />
+        {PoliciesCard({ store: actions }) ?? <MergeCard pr={pr} />}
         <Description pr={pr} repo={repo} />
         <ActivityFeed repo={repo} number={pr.number} baseRef={pr.baseRef} prTab={prTab} openFile={openFile} signIn={signIn} busy={busy} />
       </div>
       <div className="gh-pr-aside">
         <Reviewers list={pr.reviewers} />
         <Labels pr={pr} />
-        <WorkItems ids={pr.workItemIds} />
+        <WorkItems ids={pr.workItemIds} version={actions.version} />
       </div>
     </div>
   );
@@ -297,7 +301,7 @@ export interface PrPageProps {
   signedIn: boolean;
   signIn: () => void;
   busy: boolean;
-  /** The Open on GitHub item and the ⋯ menu's items. */
+  /** The first item is Open on GitHub, then the ⋯ menu's other items. PrActions turns them all into ⋯ entries. */
   commandBarItems: (url: string) => any[];
 }
 
@@ -316,18 +320,24 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
 
   // A reply, resolve or comment invalidated the cached page: refetch it quietly so "x/y comments resolved" follows.
   React.useEffect(() => {
-    const store = feedStore(repo, n);
-    let seen = store.version;
-    return store.subscribe(() => {
-      if (store.version === seen) return;
-      seen = store.version;
-      getPr(repo, n).then((fresh) => setLoad((l) => (l.t === "ready" ? { t: "ready", pr: fresh } : l)), () => {});
+    const offs = [feedStore(repo, n), actionStore(repo, n)].map((store) => {
+      let seen = store.version;
+      return store.subscribe(() => {
+        if (store.version === seen) return;
+        seen = store.version;
+        getPr(repo, n).then((fresh) => setLoad((l) => (l.t === "ready" ? { t: "ready", pr: fresh } : l)), () => {});
+      });
     });
+    return () => offs.forEach((off) => off());
   }, [repo, n]);
 
+  const actions = useActions(repo, n);
+  const [ui, setUi] = React.useState<Ui>({});
   const page: PrPageId = state.prPage ?? "overview";
   const list: BrowseState = { repo, view: "prs", prTab: listTab };
   const pr = load.t === "ready" ? load.pr : undefined;
+  const url = pr?.url ?? `https://github.com/${repo}/pull/${n}`;
+  const [openItem, ...restItems] = commandBarItems(url);
   const nav = (p: Partial<BrowseState>, replace?: boolean) => go({ repo, view: "prs", prTab: state.prTab ?? listTab, pr: n, prPage: page, ...p }, replace);
 
   return (
@@ -337,12 +347,19 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
         title={pr?.title ?? `Pull request #${n}`}
         titleSize={TitleSize.Large /* 21px; see Browser.tsx. Weight is set to native's 400 in browser.css */}
         titleAriaLevel={1}
-        commandBarItems={commandBarItems(pr?.url ?? `https://github.com/${repo}/pull/${n}`)}
+        commandBarItems={prCommandItems(actions, url, openItem, restItems, setUi)}
         backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: () => go(list) }}
       />
       <div className="gh-pr-sub">
-        {pr ? <Meta pr={pr} repo={repo} /> : <div className="gh-pr-meta" />}
+        {pr ? <Meta pr={pr} repo={repo} status={actions.optimisticStatus} /> : <div className="gh-pr-meta" />}
       </div>
+      {(actions.error || actions.notice) && (
+        <div className="gh-pr-actionmsg">
+          {actions.error && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => actions.dismiss()}>{actions.error}</MessageCard>}
+          {actions.notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => actions.dismiss()}>{actions.notice}</MessageCard>}
+        </div>
+      )}
+      <PrActionDialogs store={actions} repo={repo} number={n} workItemIds={pr?.workItemIds ?? []} ui={ui} setUi={setUi} />
       <TabBar ariaLabel="Pull request" selectedTabId={page} onSelectedTabChanged={(id) => nav({ prPage: id as PrPageId, file: undefined })} tabSize={TabSize.Tall} disableSticky>
         {PAGES.map((p) => <Tab key={p.id} id={p.id} name={p.name} />)}
       </TabBar>
@@ -352,7 +369,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
           <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request" permission="Pull requests" />
         </div>
       )}
-      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} /></div>}
+      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </>

@@ -232,3 +232,25 @@
 .gh-tree-count { margin-left: 8px; flex: none; }
 .gh-feed-compose-row .bolt-textfield { flex: 1 1 auto; min-width: 0; width: auto; }
 .gh-feed-card > .bolt-card-content { flex-direction: column; min-width: 0; }
+
+/* ---------- acting on a pull request (batch 1) ---------- */
+.gh-pr-actionmsg { padding: 0 32px 8px; display: flex; flex-direction: column; gap: 8px; }
+.gh-split { margin-left: 8px; } /* header command items sit 8px apart, like native */
+.gh-pr-copylink { margin-left: 0; }
+.gh-complete { gap: 16px; }
+.gh-complete-option { display: flex; flex-direction: column; gap: 2px; }
+.gh-complete-why { margin-left: 28px; } /* under the label, past the checkbox */
+.gh-diagram { width: 100%; max-width: 280px; height: auto; color: var(--text-secondary-color, rgba(0,0,0,.55)); }
+.gh-diagram-line { fill: none; stroke: currentColor; stroke-width: 2; }
+.gh-diagram-dashed { stroke-dasharray: 3 3; }
+.gh-diagram-base { fill: currentColor; }
+.gh-diagram-old { fill: var(--background-color, #fff); stroke: currentColor; stroke-width: 2; }
+.gh-diagram-new { fill: var(--communication-background, #0078d4); }
+.gh-policies { width: 100%; }
+.gh-policy-list { list-style: none; margin: 0; padding: 0; }
+.gh-policy { gap: 12px; padding: 8px 20px; min-height: 40px; box-sizing: border-box; border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0,0,0,.08)); }
+.gh-policy-title { flex: 0 1 auto; min-width: 0; }
+.gh-policy-detail { flex: 1 1 0; min-width: 0; }
+.gh-policy-link { margin-left: auto; flex: none; }
+.gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
+.gh-complete { width: 100%; }

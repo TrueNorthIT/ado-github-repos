@@ -44,7 +44,7 @@ const columns = (open: (repo: string) => void): ITableColumn<Row>[] => [
           return (
             <>
               <Link className="bolt-table-link" subtle removeUnderline href={serialize({ repo })} onClick={hubClick(() => open(repo))}>{row.label}</Link>
-              <a className="gh-open-ext" href={row.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.label} on GitHub`} title="Open on GitHub"><Icon iconName="OpenInNewWindow" /></a>
+              <a className="gh-open-ext" href={row.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.label} on GitHub`} title="Open on GitHub"><Icon iconName="OpenInNewTab" /></a>
             </>
           );
         })()}
@@ -137,7 +137,7 @@ export function App() {
   };
 
   const commandBarItems = signedIn
-    ? [{ id: "out", text: "Sign out of GitHub", iconProps: { iconName: "SignOut" }, onActivate: () => { void doSignOut(); } }]
+    ? [{ id: "out", text: "Sign out of GitHub", onActivate: () => { void doSignOut(); } }]
     : [{ id: "in", text: "Sign in with GitHub", iconProps: { iconName: "Contact" }, isPrimary: true, disabled: busy, onActivate: () => { void doSignIn(); } }];
 
   const signInOut = commandBarItems;

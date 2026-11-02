@@ -315,7 +315,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     id: "repo", text: repo ?? "", important: true,
     renderButton: () => <RepoSwitcher compact repo={repo!} openTick={openSwitch} onPick={(r) => goPr(to(r))} />,
   });
-  const openOnGitHub = (href: string) => ({ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewWindow" }, href, target: "_blank", important: true });
+  const openOnGitHub = (href: string) => ({ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href, target: "_blank", important: true });
   const extra = commandBarItems.map((c) => ({ ...c, important: false }));
 
   let body: React.ReactNode;
