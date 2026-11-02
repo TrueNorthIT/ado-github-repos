@@ -254,3 +254,6 @@
 .gh-policy-link { margin-left: auto; flex: none; }
 .gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
 .gh-complete { width: 100%; }
+/* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */
+.gh-vote-callout .bolt-contextual-menu { max-width: 480px; }
+.gh-vote-callout .bolt-menuitem-cell-secondary { white-space: normal; max-width: 240px; }

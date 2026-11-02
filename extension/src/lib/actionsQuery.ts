@@ -50,8 +50,8 @@ export interface PrActionsNode {
 }
 
 const CHECK_FIELDS = `__typename
-        ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) }
-        ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }`;
+        ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) startedAt completedAt checkSuite { workflowRun { workflow { name } } } }
+        ... on StatusContext { context state targetUrl createdAt isRequired(pullRequestNumber: $number) }`;
 
 /** The extra fields the actions need: repo merge settings, mergeStateStatus, reviewDecision, viewer flags, head ref + protection, default branch, auto-merge request and the head commit's check contexts. Variables { owner, name, number }. */
 export function actionsDetailQuery({ owner, name, number }: { owner: string; name: string; number: number }): GraphQlRequest {

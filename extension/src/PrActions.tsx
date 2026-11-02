@@ -72,7 +72,7 @@ const Approve = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void 
     <SplitButton
       className="gh-split gh-split-approve"
       buttonProps={{ text: v?.voteLabel ?? "Approve", onClick: () => void store.vote("approve"), disabled: !main || !main.enabled || approved || store.busy, tooltipProps: why ? { text: why } : undefined }}
-      menuButtonProps={{ ariaLabel: "More approve options", disabled: !v, contextualMenuProps: { menuProps: { id: "gh-vote-menu", items } } }}
+      menuButtonProps={{ ariaLabel: "More approve options", disabled: !v, contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: "gh-vote-menu", items } } }}
     />
   );
 };
@@ -106,24 +106,24 @@ const Complete = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void
         disabled: !main || main.disabled || store.busy,
         tooltipProps: main?.reason ? { text: main.reason } : undefined,
       }}
-      menuButtonProps={{ ariaLabel: "More complete options", disabled: !v, contextualMenuProps: { menuProps: { id: "gh-complete-menu", items } } }}
+      menuButtonProps={{ ariaLabel: "More complete options", disabled: !v, contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: "gh-complete-menu", items } } }}
     />
   );
 };
 
 /**
- * The header command bar: copy link, Approve, Complete, then the ⋯ items (Open on GitHub, Follow, Change target branch, then `rest`).
+ * The header command bar: copy link, Approve, Complete, then the ⋯ items (Open on GitHub, Follow on GitHub, Change target branch, then `rest`).
  * `open` and `rest` come from the hub (App's sign-out item lives in `rest`).
  */
 export function prCommandItems(store: ActionStore, url: string, open: any, rest: any[], setUi: (u: Ui) => void): any[] {
   const v = store.view;
-  const following = v?.pr.viewerSubscription === "SUBSCRIBED";
   return [
     { id: "copy", important: true, text: "Copy pull request link", renderButton: () => <ClipboardButton key="copy" className="gh-pr-copylink" getContent={() => url} ariaLabel="Copy pull request link" showCopiedTooltip subtle /> },
     { id: "approve", important: true, text: "Approve", renderButton: () => <Approve key="approve" store={store} setUi={setUi} /> },
     { id: "complete", important: true, text: "Complete", renderButton: () => <Complete key="complete" store={store} setUi={setUi} /> },
     { ...open, important: false },
-    { id: "follow", important: false, text: following ? "Unfollow" : "Follow", iconProps: { iconName: following ? "RingerOff" : "Ringer" }, disabled: !v || store.busy, onActivate: () => void store.follow(!following) },
+    // GitHub refuses updateSubscription for GitHub App user tokens (notifications are not an app permission), so send the user to GitHub.
+    { id: "follow", important: false, text: "Follow on GitHub", iconProps: { iconName: "Ringer" }, onActivate: () => void window.open(url, "_blank", "noopener") },
     { id: "target", important: false, text: "Change target branch", iconProps: { iconName: "BranchCompare" }, disabled: !v || store.busy || !v.pr.viewerCanUpdate || v.pr.state !== "OPEN", onActivate: () => setUi({ target: true }) },
     ...rest.map((c) => ({ ...c, important: false })),
   ];

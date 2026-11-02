@@ -312,6 +312,9 @@ export const getFeed = (repo: string, number: number) =>
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
 export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`));
 
+/** Drops just the cached actions node, so the next getActions asks GitHub again. */
+export const invalidateActions = (repo: string, number: number) => void actionNodes.delete(`${repo}#${number}`);
+
 /** A mutation through request(), so it shares the 401 refresh-retry. GitHub reports a missing scope or permission as a 200 with a FORBIDDEN error, which becomes the same "access" 403 as an HTTP 403. */
 export async function mutate(q: { query: string; variables: Record<string, unknown> }): Promise<any> {
   const body = await (await request("/graphql", "application/json", true, JSON.stringify(q))).json();

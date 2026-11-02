@@ -331,3 +331,36 @@ describe("A-3: auto-complete already enabled", () => {
     expect(d, "Expected CLEAN to remain completable").toMatchObject({ canComplete: true, primaryAction: "complete", autoCompleteEnabled: true });
   });
 });
+
+describe("duplicate checks collapse to one row", () => {
+  const wf = (name: string, workflow: string, at: string, over: Record<string, unknown> = {}) =>
+    checkRun(name, "COMPLETED", "SUCCESS", { completedAt: at, checkSuite: { workflowRun: { workflow: { name: workflow } } }, ...over } as never);
+  const titles = (checks: CheckContext[]) => policyRows(input({ checks })).filter((r) => r.kind === "check").map((r) => `${r.title}:${r.state}`).sort();
+
+  it("keeps the most recent run of the same job in the same workflow, whatever the order", () => {
+    const old = wf("deploy", "CI", "2026-01-01T10:00:00Z", { conclusion: "FAILURE" });
+    const fresh = wf("deploy", "CI", "2026-01-01T11:00:00Z");
+    expect(titles([old, fresh])).toEqual(["deploy:success"]);
+    expect(titles([fresh, old])).toEqual(["deploy:success"]);
+  });
+  it("uses startedAt when a re-run has not completed, and treats a run with no times as the newest", () => {
+    const done = wf("build", "CI", "2026-01-01T10:00:00Z");
+    expect(titles([done, checkRun("build", "IN_PROGRESS", null, { startedAt: "2026-01-01T11:00:00Z", checkSuite: done.__typename === "CheckRun" ? done.checkSuite : null })])).toEqual(["build:pending"]);
+    expect(titles([done, checkRun("build", "QUEUED", null, { checkSuite: done.__typename === "CheckRun" ? done.checkSuite : null })])).toEqual(["build:pending"]);
+  });
+  it("de-duplicates by name alone when there is no workflow", () => {
+    expect(titles([checkRun("ext", "COMPLETED", "FAILURE", { completedAt: "2026-01-01T10:00:00Z" }), checkRun("ext", "COMPLETED", "SUCCESS", { completedAt: "2026-01-01T11:00:00Z" })])).toEqual(["ext:success"]);
+  });
+  it("shows same-named jobs from different workflows as '{workflow} / {job}'", () => {
+    expect(titles([wf("deploy", "CI", "2026-01-01T10:00:00Z"), wf("deploy", "Release", "2026-01-01T10:00:00Z"), wf("lint", "CI", "2026-01-01T10:00:00Z"), wf("lint", "CI", "2026-01-01T09:00:00Z")])).toEqual([
+      "CI / deploy:success", "Release / deploy:success", "lint:success",
+    ]);
+  });
+  it("de-duplicates status contexts by context, keeping the latest createdAt", () => {
+    expect(titles([statusCtx("ci/x", "FAILURE", { createdAt: "2026-01-01T10:00:00Z" }), statusCtx("ci/x", "SUCCESS", { createdAt: "2026-01-01T11:00:00Z" }), statusCtx("ci/y", "PENDING")])).toEqual(["ci/x:success", "ci/y:pending"]);
+  });
+  it("decides on the kept run only: an old failure no longer blocks", () => {
+    const checks = [wf("build", "CI", "2026-01-01T10:00:00Z", { conclusion: "FAILURE", isRequired: true }), wf("build", "CI", "2026-01-01T11:00:00Z", { isRequired: true })];
+    expect(mergeDecision(input({ mergeStateStatus: "BLOCKED", checks })).blockers).toEqual(["Blocked by the branch protection rules"]);
+  });
+});

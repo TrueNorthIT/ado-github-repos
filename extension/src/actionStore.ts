@@ -3,11 +3,12 @@
 // optimistic changes are rolled back on failure, and a success drops the cached page and list so they refetch.
 import * as React from "react";
 import { PermissionError } from "./connections";
-import { GhError, getActions, invalidatePrPage, invalidatePrs, mutate } from "./githubBrowse";
+import { GhError, getActions, invalidateActions, invalidatePrPage, invalidatePrs, mutate } from "./githubBrowse";
 import {
   closePullRequestMutation, convertToDraftMutation, deleteRefMutation, disableAutoMergeMutation, enableAutoMergeMutation, markReadyForReviewMutation,
-  mergePullRequestMutation, reopenPullRequestMutation, subscriptionMutation, updateBaseMutation, type MergeMethod,
+  mergePullRequestMutation, reopenPullRequestMutation, updateBaseMutation, type MergeMethod,
 } from "./lib/actionsQuery";
+import { nextPollDelay } from "./lib/pollPlan";
 import { deriveActions, type ActionsPr, type ActionsRepo, type ActionsView } from "./lib/prActions";
 import type { PrStatus } from "./lib/prModel";
 import type { StateActionId } from "./lib/stateActions";
@@ -110,6 +111,15 @@ export class ActionStore {
     return this.loading;
   }
 
+  /** Quietly re-asks GitHub, skipping the cache. Bumps `version` when mergeStateStatus stopped being UNKNOWN, so the page header refetches too. */
+  async refresh() {
+    if (this.pending) return;
+    const was = this.raw?.pullRequest?.mergeStateStatus;
+    invalidateActions(this.repo, this.number);
+    await this.ensureLoaded(true);
+    if (was === "UNKNOWN" && this.raw?.pullRequest?.mergeStateStatus !== "UNKNOWN") (this.version++, this.emit());
+  }
+
   dismiss() {
     this.error = this.notice = undefined;
     this.emit();
@@ -148,6 +158,7 @@ export class ActionStore {
       if (!this.pending) this.optimisticStatus = undefined;
       if (ok) this.version++;
       this.emit();
+      if (ok) setTimeout(() => void this.refresh(), 3000); // GitHub settles a moment after a change (e.g. mergeability after a reopen)
       return ok;
     });
   }
@@ -220,16 +231,6 @@ export class ActionStore {
     });
   }
 
-  follow(subscribe: boolean) {
-    const pr = this.v().pr;
-    const prev = this.raw!;
-    return this.run(
-      async () => void (await mutate(subscriptionMutation(pr.id, subscribe ? "SUBSCRIBED" : "UNSUBSCRIBED"))),
-      () => this.patchPr({ viewerSubscription: subscribe ? "SUBSCRIBED" : "UNSUBSCRIBED" }),
-      () => this.setRaw(prev)
-    );
-  }
-
   changeTarget(branch: string) {
     const pr = this.v().pr;
     return this.run(async () => void (await mutate(updateBaseMutation(pr.id, branch))));
@@ -254,5 +255,24 @@ export function useActions(repo: string, number: number, enabled = true): Action
     if (enabled) store.ensureLoaded();
     return off;
   }, [store, enabled]);
+  // While GitHub is still working out mergeability, ask again until it knows (see lib/pollPlan.ts). Stops on unmount.
+  const unknown = store.view?.pr.mergeStateStatus === "UNKNOWN" && store.view.pr.state === "OPEN";
+  React.useEffect(() => {
+    if (!enabled || !unknown) return;
+    const t0 = Date.now();
+    let timer: ReturnType<typeof setTimeout>;
+    let dead = false;
+    const tick = () => {
+      const pr = store.view?.pr;
+      const delay = pr && nextPollDelay({ state: pr.state, mergeStateStatus: pr.mergeStateStatus, elapsedMs: Date.now() - t0 });
+      if (dead || delay == null) return;
+      timer = setTimeout(async () => {
+        await store.refresh();
+        tick();
+      }, delay);
+    };
+    tick();
+    return () => ((dead = true), clearTimeout(timer));
+  }, [store, enabled, unknown]);
   return store;
 }

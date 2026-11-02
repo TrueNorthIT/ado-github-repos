@@ -7,10 +7,14 @@ const MIN = 60e3;
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 
 type Check =
-  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean }
-  | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null; isRequired: boolean };
+  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean; startedAt?: string; completedAt?: string; checkSuite?: { workflowRun: { workflow: { name: string } } } }
+  | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null; isRequired: boolean; createdAt?: string };
 const run = (name: string, conclusion: string | null, isRequired: boolean, status = conclusion ? "COMPLETED" : "IN_PROGRESS"): Check => ({
   __typename: "CheckRun", name, status, conclusion, detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${1000 + name.length}`, isRequired,
+});
+/** A run of `name` in `workflow`, `minAgo` minutes ago: several of these make the duplicates a re-run or another event leaves behind. */
+const wfRun = (name: string, workflow: string, minAgo: number, conclusion: string, isRequired = false): Check => ({
+  ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>), startedAt: iso((minAgo + 1) * MIN), completedAt: iso(minAgo * MIN), checkSuite: { workflowRun: { workflow: { name: workflow } } },
 });
 const GREEN = [run("build", "SUCCESS", true), run("unit tests", "SUCCESS", true), run("lint", "SUCCESS", false)];
 
@@ -23,6 +27,8 @@ interface Spec {
   reviewDecision: string | null;
   checks: Check[];
   body?: string;
+  /** The first N fetches report mergeStateStatus UNKNOWN, as GitHub does right after a reopen. */
+  unknownFetches?: number;
   settings?: { merge?: boolean; squash?: boolean; rebase?: boolean; autoMerge?: boolean; deleteOnMerge?: boolean };
 }
 const WI = "Relates to AB#1000 and AB#1001.";
@@ -36,6 +42,15 @@ const SPECS: Record<number, Spec> = {
   307: { title: "Yours: you are the author, so votes are off", author: ME, mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI },
   308: { title: "Squash only: the repository allows nothing else", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { merge: false, rebase: false } },
   309: { title: "Branch cleanup: the repository deletes merged branches", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { deleteOnMerge: true } },
+  310: { title: "Settling: GitHub is still working out mergeability", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, unknownFetches: 2 },
+  311: {
+    title: "Duplicates: re-runs and other workflow events", mergeStateStatus: "CLEAN", reviewDecision: null, body: WI,
+    checks: [
+      wfRun("auto-merge", "Auto merge", 50, "SKIPPED"), wfRun("auto-merge", "Auto merge", 20, "SUCCESS"),
+      wfRun("deploy", "CI", 60, "FAILURE", true), wfRun("deploy", "CI", 40, "CANCELLED", true), wfRun("deploy", "CI", 10, "SUCCESS", true), wfRun("deploy", "Release", 30, "SUCCESS"),
+      wfRun("remove", "Cleanup", 45, "SUCCESS"), wfRun("remove", "Cleanup", 25, "SUCCESS"), wfRun("remove", "Cleanup", 5, "SUCCESS"),
+    ],
+  },
 };
 
 interface Live {
@@ -45,6 +60,7 @@ interface Live {
   autoMergeRequest: { enabledAt: string; mergeMethod: string; enabledBy: { login: string } } | null;
   headRefDeleted: boolean;
   subscription: string;
+  unknownLeft: number;
 }
 const live = new Map<number, Live>();
 const specOf = (n: number) => SPECS[n];
@@ -65,7 +81,7 @@ Object.keys(SPECS).map(Number).sort((a, b) => b - a).forEach((n, i) => {
     },
   };
   PRS.unshift(pr);
-  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED" });
+  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0 });
 });
 PRS.sort((a, b) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt));
 
@@ -77,12 +93,13 @@ export function actionsNode(n: number) {
   if (!p || !l || !s) return null;
   const st = s.settings ?? {};
   const open = p.node.state === "OPEN";
+  const mergeStateStatus = l.unknownLeft > 0 ? (l.unknownLeft--, "UNKNOWN") : l.mergeStateStatus;
   return {
     mergeCommitAllowed: st.merge ?? true, squashMergeAllowed: st.squash ?? true, rebaseMergeAllowed: st.rebase ?? true,
     autoMergeAllowed: !!st.autoMerge, deleteBranchOnMerge: !!st.deleteOnMerge, viewerPermission: "ADMIN",
     defaultBranchRef: { name: "main" },
     pullRequest: {
-      id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED", mergeStateStatus: l.mergeStateStatus, reviewDecision: l.reviewDecision,
+      id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED", mergeStateStatus, reviewDecision: l.reviewDecision,
       baseRefName: p.node.baseRefName, headRefName: p.node.headRefName, headRefOid: headSha(n), isCrossRepository: false, headRepository: { nameWithOwner: PR_REPO },
       // GitHub reports false here for every open PR; the app asks about push permission instead (lib/prActions.ts).
       headRef: l.headRefDeleted ? null : { id: `REF_${n}`, name: p.node.headRefName, branchProtectionRule: null },
