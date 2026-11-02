@@ -1,4 +1,4 @@
-// Changed-files tree for a pull request (PR-8). STUB.
+// Changed-files tree for a pull request (PR-8).
 
 export type ChangeType = "ADDED" | "MODIFIED" | "DELETED" | "RENAMED" | "COPIED" | "CHANGED";
 
@@ -65,3 +65,29 @@ export function buildFileTree(files: PrFileInput[]): PrTreeNode[] {
   sort(root);
   return root;
 }
+
+/** One entry of GitHub REST GET /pulls/{n}/files. */
+export interface RestPrFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  previous_filename?: string;
+  /** Absent for binary and very large diffs. */
+  patch?: string;
+}
+
+export interface PrFile extends PrFileInput {
+  patch?: string;
+}
+
+const CHANGE: Record<string, ChangeType> = { added: "ADDED", removed: "DELETED", modified: "MODIFIED", renamed: "RENAMED", copied: "COPIED", changed: "CHANGED" };
+
+export const fromRestFile = (f: RestPrFile): PrFile => ({
+  path: f.filename,
+  additions: f.additions,
+  deletions: f.deletions,
+  changeType: CHANGE[f.status] ?? "CHANGED",
+  previousPath: f.previous_filename,
+  patch: f.patch,
+});

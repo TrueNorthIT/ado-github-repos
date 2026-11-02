@@ -1,4 +1,4 @@
-// The "Pull requests" hub: the PR list (PR-1 to PR-4) and, for now, a stub for the PR page (part 2).
+// The "Pull requests" hub: the PR list (PR-1 to PR-4); the PR page itself is PrPage.tsx.
 import * as React from "react";
 import { Card } from "azure-devops-ui/Card";
 import { Button } from "azure-devops-ui/Button";
@@ -28,7 +28,8 @@ import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { invalidatePrs, listPrs, type PrListResult } from "./githubBrowse";
-import { ErrorView, RepoSwitcher, hubClick } from "./Browser";
+import { ErrorView, RepoSwitcher } from "./Browser";
+import { PrPage } from "./PrPage";
 import "./browser.css";
 
 const TABS: { id: PrTab; name: string }[] = [
@@ -38,7 +39,6 @@ const TABS: { id: PrTab; name: string }[] = [
   { id: "abandoned", name: "Abandoned" },
 ];
 const DEBOUNCE_MS = 300;
-const prUrl = (repo: string, n: number) => `https://github.com/${repo}/pull/${n}`;
 
 // ---------- one row ----------
 
@@ -327,14 +327,17 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
       <Loading />
     );
   } else if (state.pr) {
-    // Part 2 replaces this stub with the PR page.
     body = (
-      <>
-        <Header title={`PR #${state.pr}`} titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[openOnGitHub(prUrl(repo, state.pr))]} />
-        <div className="page-content page-content-top">
-          <Link href={serialize({ repo, view: "prs", prTab: tab })} onClick={hubClick(() => goPr({ repo, prTab: tab }))}>Back to pull requests</Link>
-        </div>
-      </>
+      <PrPage
+        repo={repo}
+        state={{ ...state, pr: state.pr }}
+        listTab={tab}
+        go={go}
+        signedIn={signedIn}
+        signIn={doSignIn}
+        busy={busy}
+        commandBarItems={(url) => [openOnGitHub(url), ...extra]}
+      />
     );
   } else {
     const p: TabProps = { repo, open, signedIn, signIn: doSignIn, busy, filterOpen, closeFilter: () => setFilterOpen(false) };

@@ -1,4 +1,4 @@
-// GitHub pull request GraphQL query builders (PR-1, PR-3, PR-4, PR-6). STUB: tests are written first, implementation to follow.
+// GitHub pull request GraphQL query builders (PR-1, PR-3, PR-4, PR-6).
 // Rule shared with commits.ts: every caller-supplied value travels in `variables`, never in the query text.
 
 export type PrTab = "mine" | "active" | "completed" | "abandoned";
@@ -72,18 +72,17 @@ export function listQuery(tab: PrTab, { owner, name, filter, after }: ListParams
   return [{ query: Q_PULLS, variables: { owner, name, states: STATES[tab].states, after: cursor }, source: "pullRequests" }];
 }
 
-/** One query for header, overview, reviewers, labels, checks, review threads, commits (first 100) and files. */
+/** One query for header, overview (rendered body), reviewers, labels, checks, review threads and commits (first 100). Every field was checked against GitHub's published GraphQL schema. Files come from REST (getPrFiles). */
 export function detailQuery({ owner, name, number }: { owner: string; name: string; number: number }): GraphQlRequest {
   return {
     query: `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      ${NODE} body headRefName mergeable
+      ${NODE} body bodyHTML headRefName headRefOid baseRefOid mergeable
       statusCheckRollup { state }
       reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login avatarUrl } } } }
       reviews(first: 100) { nodes { author { login avatarUrl } state submittedAt } }
-      commits(first: 100) { nodes { commit { oid message authoredDate author { name user { login } } } } }
-      files(first: 100) { nodes { path additions deletions changeType } }
+      commits(first: 100) { nodes { commit { oid message authoredDate author { name avatarUrl user { login } } } } }
     }
   }
 }`,

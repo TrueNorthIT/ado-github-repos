@@ -92,3 +92,72 @@
 .gh-pr-section .bolt-card-expand-button { align-self: center !important; margin-top: 8px; } /* flex-self-start would leave the chevron above the title */
 .gh-pr-section-header { min-height: 48px; }
 .gh-pr-pill[style*="255, 255, 255"] { border-color: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); } /* a white GitHub label vanishes on the white card */
+
+/* Pull request page. Native look from the measured spec; the components supply the rest. */
+.gh-pr-header .bolt-header-title { font-weight: 400; } /* TitleSize.Large is 21px/600; native's editable PR title is 400 */
+.gh-pr-sub { padding: 0 32px; display: flex; flex-direction: column; gap: 4px; }
+.gh-pr-meta { gap: 8px; min-height: 24px; flex-wrap: wrap; }
+.gh-pr-meta-text { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; }
+.gh-pr-meta-text > .gh-pr-copy { margin: 0; }
+.gh-pr-branch-link { padding: 0; }
+.gh-pr-copy { vertical-align: middle; margin: 0 4px; }
+.gh-pr-back { align-self: flex-start; }
+.gh-pr-grow { flex: 1 1 auto; min-width: 0; }
+.gh-pr-card + .gh-pr-card { margin-top: 16px; }
+.gh-pr-merge-row { gap: 16px; padding: 4px 0; }
+.gh-pr-checks { gap: 6px; }
+.gh-pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gh-pr-list li { gap: 8px; min-width: 0; }
+.gh-pr-labels { gap: 6px; }
+.gh-pr-wi { gap: 2px; }
+.gh-pr-wi .flex-row { gap: 6px; }
+.gh-pr-wi-icon { flex: none; width: 16px; height: 16px; }
+.gh-pr-wi-dot { border-radius: 2px; }
+.gh-pr-wi-title { align-self: flex-start; padding: 0; text-align: left; }
+.gh-pr-desc .gh-markdown { margin: 0; padding: 0; }
+.gh-markdown ul { list-style: disc; padding-left: 2em; }
+.gh-markdown ol { list-style: decimal; padding-left: 2em; }
+.gh-pr-desc .gh-markdown > :first-child { margin-top: 0; }
+.gh-pr-desc .gh-markdown > :last-child { margin-bottom: 0; }
+
+/* Overview: main column plus a right column of cards at 1200px; stacked below that. */
+.gh-pr-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.gh-pr-main, .gh-pr-aside { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.gh-pr-main > .bolt-card { margin: 0; }
+.gh-pr-aside { gap: 24px; }
+.gh-pr-section .bolt-header { padding: 4px 0; }
+.gh-pr-sublabel { margin-bottom: 8px; }
+.gh-pr-well { box-sizing: border-box; min-height: 43px; padding: 12px; border-radius: 4px; background: var(--palette-black-alpha-2, rgba(0, 0, 0, .02)); color: var(--text-secondary-color, rgba(0, 0, 0, .55)); text-align: center; margin-top: 8px; }
+@media (min-width: 1100px) { .gh-pr-overview { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; } } /* native shows the column already at a 1198px viewport */
+
+/* Commits: native's 14px/600 title over a 11px monospace SHA line. */
+.gh-pr-commit-title { font-size: 14px; font-weight: 600; }
+.gh-pr-commit-meta { gap: 6px; }
+
+/* Files. The tab fills the rest of the frame; the tree and the cards scroll on their own. */
+.gh-pr-files { flex: 1 1 auto; min-height: 0; height: calc(100vh - 230px); min-height: 360px; }
+.gh-pr-files-bar { padding: 12px 20px; min-height: 56px; flex: 0 0 auto; border-bottom: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-pr-files-shell { flex: 1 1 auto; min-height: 0; }
+.gh-pr-files .gh-left .gh-tree-wrap { height: 100%; }
+.gh-pr-files .gh-right { overflow: auto; }
+.gh-pr-cards { padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gh-pr-file-wrap { scroll-margin-top: 16px; min-width: 0; }
+.gh-pr-file-header { flex: 1 1 auto; min-width: 0; gap: 8px; padding: 8px 12px 8px 0; }
+.gh-pr-file-text { min-width: 0; }
+.gh-pr-file-name { font-weight: 600; }
+.gh-pr-stat { margin-left: 8px; display: inline-flex; gap: 2px; }
+.gh-pr-del { color: var(--status-error-text, #a80000); }
+.gh-pr-add { color: var(--status-success-foreground, #107c10); }
+.gh-pr-diff { min-width: 0; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-pr-diff-note { padding: 16px; }
+.gh-pr-diff-editor { width: 100%; }
+.gh-pr-file > .bolt-card-content { min-width: 0; flex-direction: column; }
+
+/* Added / deleted files: whole-line tint (same colours as the diff theme) and a +/- in the gutter. */
+.gh-pr-line-added { background: #eaf4eb; }
+.gh-pr-line-removed { background: #fae8e8; }
+.vs-dark .gh-pr-line-added { background: #1b3a1f; }
+.vs-dark .gh-pr-line-removed { background: #4b1818; }
+.gh-pr-gutter-added::before, .gh-pr-gutter-removed::before { display: block; text-align: center; }
+.gh-pr-gutter-added::before { content: "+"; color: var(--status-success-foreground, #107c10); }
+.gh-pr-gutter-removed::before { content: "−"; color: var(--status-error-text, #a80000); }

@@ -31,6 +31,10 @@ export interface PrListNode {
 
 export interface PrDetailNode extends PrListNode {
   body?: string | null;
+  /** GitHub-rendered HTML of `body`; untrusted, goes through prepareMarkdownHtml. */
+  bodyHTML?: string | null;
+  headRefOid?: string;
+  baseRefOid?: string;
   headRefName: string;
   /** MERGEABLE | CONFLICTING | UNKNOWN. */
   mergeable?: string | null;
@@ -47,7 +51,7 @@ export interface PrDetailNode extends PrListNode {
         /** Full message; the title is its first line. */
         message: string;
         authoredDate: string;
-        author?: { name?: string | null; user?: { login?: string | null } | null } | null;
+        author?: { name?: string | null; avatarUrl?: string | null; user?: { login?: string | null } | null } | null;
       };
     }[];
   } | null;
@@ -229,5 +233,24 @@ export function toDetail(node: PrDetailNode): PrDetail {
     reviewers: reviewersOf(node),
     commits,
     workItemIds: findWorkItemIds(node.title, node.body, ...(node.commits?.nodes ?? []).map((c) => c.commit.message)),
+  };
+}
+
+/** What the PR page needs beyond PrDetail. */
+export interface PrPageData extends PrDetail {
+  bodyHtml: string;
+  baseSha: string;
+  headSha: string;
+  /** Parallel to `commits`: the git author's avatar, "" when GitHub has none. */
+  commitAvatars: string[];
+}
+
+export function toPrPage(node: PrDetailNode): PrPageData {
+  return {
+    ...toDetail(node),
+    bodyHtml: node.bodyHTML ?? "",
+    baseSha: node.baseRefOid ?? "",
+    headSha: node.headRefOid ?? "",
+    commitAvatars: (node.commits?.nodes ?? []).map((c) => c.commit.author?.avatarUrl ?? ""),
   };
 }

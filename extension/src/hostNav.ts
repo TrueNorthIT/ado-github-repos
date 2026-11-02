@@ -2,6 +2,7 @@
 import * as SDK from "azure-devops-extension-sdk";
 import type { IHostNavigationService } from "azure-devops-extension-api/Common/CommonServices";
 import { BrowseState, parse, serialize } from "./lib/browseState";
+import { getProjectCtx } from "./connections";
 import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
@@ -37,4 +38,12 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     announce(next);
     onChange(next); // do not rely on the host echoing programmatic changes back
   };
+}
+
+/** The Repositories hub's URL for a state (the PR page's branch and file links: the PR hub itself has no file browser). */
+export const repoHubHref = (ctx: { org: string; project: string }, s: BrowseState) =>
+  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(/-prs-hub$/, "-hub")}${serialize({ ...s, view: undefined })}`;
+
+export async function openRepoHub(s: BrowseState): Promise<void> {
+  (await SDK.getService<IHostNavigationService>(NAV_SERVICE)).navigate(repoHubHref(await getProjectCtx(), s));
 }

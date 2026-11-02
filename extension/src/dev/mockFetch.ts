@@ -2,6 +2,7 @@
 import { PNG_BASE64 } from "./fixtures/content";
 import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
 import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
+import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -26,10 +27,13 @@ function mockHistory(path: string) {
   return { nodes: [{ oid, messageHeadline: MESSAGES[h % MESSAGES.length], committedDate: new Date(Date.now() - AGES_MIN[h % AGES_MIN.length] * 60e3).toISOString(), author: AUTHORS[h % AUTHORS.length] }] };
 }
 
+const icon = (c: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="2" fill="#${c}"/></svg>`)}`;
+const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item", "009CCC"]].map(([name, color]) => ({ name, color, icon: { url: icon(color) } }));
+
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
-  if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables);
+  if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables, query.includes("bodyHTML")); // the page's detail query asks for bodyHTML; the list's single-PR lookup does not
   if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
   const object: Record<string, unknown> = {};
   for (const k of Object.keys(variables)) if (/^p\d+$/.test(k)) object["e" + k.slice(1)] = mockHistory(variables[k]);
@@ -46,7 +50,7 @@ const page = (list: FixturePr[], after: string | null) => {
 };
 const byUpdated = (a: FixturePr, b: FixturePr) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt);
 
-function prGraphql(v: Record<string, any>): Response {
+function prGraphql(v: Record<string, any>, full: boolean): Response {
   if (v.q !== undefined) {
     const t = String(v.q).split(/\s+/).filter(Boolean);
     const inRepo = t.includes(`repo:${PR_REPO}`);
@@ -64,7 +68,10 @@ function prGraphql(v: Record<string, any>): Response {
   }
   if (!repoOf(`${v.owner}/${v.name}`)) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
   const mine = `${v.owner}/${v.name}`.toLowerCase() === PR_REPO;
-  if (v.number !== undefined) return json({ data: { repository: { pullRequest: (mine && PRS.find((p) => p.node.number === v.number)?.node) || null } } });
+  if (v.number !== undefined) {
+    const hit = mine ? PRS.find((p) => p.node.number === v.number) : undefined;
+    return json({ data: { repository: { pullRequest: hit ? (full ? detailNode(hit) : hit.node) : null } } });
+  }
   const list = mine ? PRS.filter((p) => (v.states ?? []).includes(p.node.state)).sort(byUpdated) : [];
   return json({ data: { repository: { pullRequests: page(list, v.after ?? null) } } });
 }
@@ -84,8 +91,12 @@ function github(u: URL, accept: string, sc: string): Response {
   }
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
+  const files = /^\/pulls\/(\d+)\/files$/.exec(rest);
+  if (files) return repo.fullName.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === Number(files[1])) ? json(restFiles(Number(files[1]))) : status(404);
   const c = /^\/contents\/(.+)$/.exec(rest);
   if (c) {
+    const text = contentAt(u.searchParams.get("ref") ?? "", c[1].split("/").map(decodeURIComponent).join("/"));
+    if (text !== undefined) return new Response(text, { headers: { "Content-Type": "application/octet-stream" } });
     if (sc === "noAccess") return status(403);
     const path = c[1].split("/").map(decodeURIComponent).join("/");
     if (!(path in repo.files)) return status(404);
@@ -100,6 +111,12 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   const accept = new Headers(init?.headers).get("Accept") ?? "";
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
   if (u.hostname === "api.github.com") return github(u, accept, sc);
+  if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
+  if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitems$/.test(u.pathname)) {
+    if (sc === "workItemsDenied") return status(403);
+    const ids = (u.searchParams.get("ids") ?? "").split(",").map(Number);
+    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": id === 1000 ? "Retry failed sync jobs" : `Work item ${id}`, "System.State": id % 2 ? "Active" : "Resolved", "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
+  }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
   if (u.hostname === "dev.azure.com" && conn) {

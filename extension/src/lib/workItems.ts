@@ -22,3 +22,30 @@ export function findWorkItemIds(...texts: (string | null | undefined)[]): number
   }
   return [...seen].slice(0, MAX_WORK_ITEMS);
 }
+
+export interface WorkItemRef {
+  id: number;
+  /** false when ADO returned null for the id (missing, or no access). */
+  found: boolean;
+  title?: string;
+  state?: string;
+  type?: string;
+}
+
+export const workItemsUrl = (org: string, ids: number[]) =>
+  `https://dev.azure.com/${encodeURIComponent(org)}/_apis/wit/workitems?ids=${ids.join(",")}&fields=System.Title,System.State,System.WorkItemType&errorPolicy=omit&api-version=7.1`;
+
+export const workItemUrl = (org: string, project: string, id: number) =>
+  `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
+
+/** Maps the workitems response back onto the requested ids, in order. Ids ADO omitted or returned as null are `found: false`. */
+export function parseWorkItems(ids: number[], body: { value?: ({ id: number; fields?: Record<string, unknown> } | null)[] } | null | undefined): WorkItemRef[] {
+  const byId = new Map<number, { fields?: Record<string, unknown> }>();
+  for (const w of body?.value ?? []) if (w) byId.set(w.id, w);
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  return ids.map((id) => {
+    const w = byId.get(id);
+    if (!w) return { id, found: false };
+    return { id, found: true, title: str(w.fields?.["System.Title"]), state: str(w.fields?.["System.State"]), type: str(w.fields?.["System.WorkItemType"]) };
+  });
+}

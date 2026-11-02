@@ -3,8 +3,9 @@ import { getTokens } from "./auth";
 import { tokenAction } from "./lib/tokens";
 import { buildQueries, mapResponse, type CommitInfo } from "./lib/commits";
 import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitTree, type TreeEntry } from "./lib/tree";
-import { listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
-import { toListRow, type PrListNode, type PrListRow } from "./lib/prModel";
+import { detailQuery, listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
+import { toListRow, toPrPage, type PrListNode, type PrListRow, type PrPageData } from "./lib/prModel";
+import { fromRestFile, type PrFile } from "./lib/prFiles";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -89,6 +90,8 @@ export const clearCache = () => {
   folderTrees.clear();
   commits.clear();
   prLists.clear();
+  prPages.clear();
+  prFiles.clear();
   cached = null;
 };
 
@@ -227,3 +230,42 @@ export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | 
 
 /** Drops cached PR pages (Try again). */
 export const invalidatePrs = () => prLists.clear();
+
+// ---------- pull request page (PR-5 to PR-9) ----------
+
+const ttl = <T>(m: Map<string, { at: number; p: Promise<T> }>, key: string, make: () => Promise<T>): Promise<T> => {
+  const hit = m.get(key);
+  if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
+  const p = make();
+  m.set(key, { at: Date.now(), p });
+  p.catch(() => m.get(key)?.p === p && m.delete(key));
+  return p;
+};
+const prPages = new Map<string, { at: number; p: Promise<PrPageData> }>();
+const prFiles = new Map<string, { at: number; p: Promise<PrFile[]> }>();
+const MAX_PR_FILES = 3000; // GitHub's own cap for this endpoint
+
+/** One PR for the page: GraphQL detail through toPrPage. Cached 30 s per repo and number; failures are not cached. */
+export const getPr = (repo: string, number: number) =>
+  ttl(prPages, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const node = (await graphql(detailQuery({ owner, name, number }))).data?.repository?.pullRequest;
+    if (!node) throw new GhError("access", 404);
+    return toPrPage(node);
+  });
+
+/** The changed files (REST, paginated up to 3000), with each file's patch. Cached 30 s. */
+export const getPrFiles = (repo: string, number: number) =>
+  ttl(prFiles, `${repo}#${number}`, async () => {
+    const out: PrFile[] = [];
+    let url: string | undefined = `${repoPath(repo)}/pulls/${number}/files?per_page=100`;
+    while (url && out.length < MAX_PR_FILES) {
+      const res = await request(url, "application/vnd.github+json");
+      out.push(...(await res.json()).map(fromRestFile));
+      url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
+    }
+    return out.slice(0, MAX_PR_FILES);
+  });
+
+/** Drops the cached PR page and files (Try again). */
+export const invalidatePr = () => (prPages.clear(), prFiles.clear());

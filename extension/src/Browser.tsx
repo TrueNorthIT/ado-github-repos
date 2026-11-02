@@ -84,7 +84,7 @@ export function ErrorView({ err, signIn, busy, retry, back, subject = "browse th
 
 // ---------- rendered markdown with authenticated images ----------
 
-function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMarkdown; repo: string; refName: string; go: (s: BrowseState) => void }) {
+export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMarkdown; repo: string; refName: string; go: (s: BrowseState) => void }) {
   const box = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => {
     const urls: string[] = [];
@@ -138,7 +138,7 @@ function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMarkdown;
 
 // Monaco's JS is a lazy chunk, and esbuild doesn't link a lazy chunk's CSS into the page, so add monaco.css (next to hub.html) once.
 let monacoReady: Promise<typeof import("./monacoChunk")> | undefined;
-function loadMonaco() {
+export function loadMonaco() {
   return (monacoReady ??= (async () => {
     const css = new Promise<void>((done) => {
       const link = document.createElement("link");

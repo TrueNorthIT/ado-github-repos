@@ -13,15 +13,15 @@ if (!URL.canParse(AUTH_BASE) || (!isLocalHttp && new URL(AUTH_BASE).protocol !==
   throw new Error(`AUTH_BASE must be an https:// origin (or http://localhost:<port>), with no path or trailing slash, got: ${AUTH_BASE}`);
 }
 
-const OUT = DEV ? "dist-dev" : "dist"; // separate folders so a production build never clobbers the dev server
+const OUT = DEV ? process.env.DEV_OUT || "dist-dev" : "dist"; // DEV_OUT and PORT let a second dev server run beside the first (e.g. DEV_OUT=dist-dev/b PORT=3001); separate folders so a production build never clobbers the dev server
 rmSync(OUT, { recursive: true, force: true }); // chunk names are hashed, so don't let old ones pile up in the package
 mkdirSync(OUT, { recursive: true });
 copyFileSync("hub.html", `${OUT}/hub.html`);
 copyFileSync("breadcrumb.html", `${OUT}/breadcrumb.html`);
 if (DEV) copyFileSync("hub.html", `${OUT}/index.html`); // so plain http://localhost:3000 works
 const options = {
-  // monaco is also an entry point so its JS and CSS get stable names (monaco.js, monaco.css): esbuild does not link a lazy chunk's CSS into the page, so Browser.tsx adds the monaco.css <link> itself.
-  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts", breadcrumb: "src/breadcrumb.ts" },
+  // editor.worker is Monaco's base worker (diff computation), loaded as a module worker from monacoChunk.ts; it sits beside monaco.js. monaco is also an entry point so its JS and CSS get stable names (monaco.js, monaco.css): esbuild does not link a lazy chunk's CSS into the page, so Browser.tsx adds the monaco.css <link> itself.
+  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts", "editor.worker": "monaco-editor/editor/editor.worker.js", breadcrumb: "src/breadcrumb.ts" },
   entryNames: "[name]",
   chunkNames: "chunks/[name]-[hash]",
   bundle: true,
@@ -40,13 +40,13 @@ const options = {
 };
 // Each lazy language chunk gets a copy of the editor CSS that nothing references; keep only the two linked stylesheets.
 const pruneCss = (metafile) => {
-  for (const f of Object.keys(metafile.outputs)) if (f.endsWith(".css") && !/^dist(-dev)?\/(index|monaco)\.css$/.test(f)) { rmSync(f); delete metafile.outputs[f]; }
+  for (const f of Object.keys(metafile.outputs)) if (f.endsWith(".css") && !/^dist.*\/(index|monaco)\.css$/.test(f)) { rmSync(f); delete metafile.outputs[f]; }
 };
 
 if (DEV) {
   const ctx = await context({ ...options, plugins: [{ name: "prune-css", setup: (b) => b.onEnd((r) => r.metafile && pruneCss(r.metafile)) }] });
   await ctx.watch();
-  const { port } = await ctx.serve({ servedir: OUT, port: 3000, host: "localhost" });
+  const { port } = await ctx.serve({ servedir: OUT, port: Number(process.env.PORT) || 3000, host: "localhost" });
   console.log(`AUTH_BASE = ${AUTH_BASE}
 Mock mode: http://localhost:${port}/hub.html (edit, then refresh)`);
 } else {

@@ -24,7 +24,7 @@ export async function getProjectCtx(): Promise<ProjectCtx> {
   return { org: host.name, project: proj.name, settingsUrl: `${base}/_settings/boards-external-integration` };
 }
 
-async function get<T>(url: string): Promise<T> {
+export async function get<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${await SDK.getAccessToken()}`, Accept: "application/json" } });
   if (res.status === 401 || res.status === 403) throw new PermissionError(String(res.status));
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
