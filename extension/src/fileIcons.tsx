@@ -20,7 +20,6 @@ export const RepoIcon = () => (
 // IconSize.medium is a real enum member at runtime (not a const enum), so it is safe to import from esbuild.
 const ico = (iconName: string, className?: string) => <Icon iconName={iconName} size={IconSize.medium} className={className} />;
 
-export const BranchIcon = () => ico("OpenSource");
 export const FolderOutlineIcon = () => ico("FabricFolder");
 
 const ext = (n: string) => (n.includes(".") ? n.slice(n.lastIndexOf(".") + 1).toLowerCase() : "");

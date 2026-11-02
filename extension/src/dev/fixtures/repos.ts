@@ -59,13 +59,14 @@ export const REPOS: FixtureRepo[] = [
     fullName: "truenorthit/monorepo", description: "Huge repo: its recursive tree is truncated.", language: "TypeScript", private: false, truncated: true, branches: ["main", "develop"],
     files: textFiles("README.md", "apps/web/src/index.ts", "apps/web/package.json", "packages/core/src/greet.ts", "tools/build.yml"),
   },
+  { fullName: "truenorthit/a-very-long-repository-name-for-layout-tests", description: "Long name, for header layout checks.", language: "TypeScript", private: false, branches: ["main", "develop"], files: textFiles("README.md") },
   { fullName: "truenorthit/archive-tools", description: "Old scripts.", language: "PowerShell", private: false, branches: ["main"], files: textFiles("README.md") },
 ];
 
 export const repoOf = (fullName: string) => REPOS.find((r) => r.fullName.toLowerCase() === fullName.toLowerCase());
 
 export const CONNECTIONS = [
-  { id: "conn-1", isConnectionValid: true, repos: ["truenorthit/github-repos", "truenorthit/customer-portal", "truenorthit/no-description", "truenorthit/gone"] },
+  { id: "conn-1", isConnectionValid: true, repos: ["truenorthit/github-repos", "truenorthit/customer-portal", "truenorthit/no-description", "truenorthit/gone", "truenorthit/a-very-long-repository-name-for-layout-tests"] },
   { id: "conn-2", isConnectionValid: false, repos: ["truenorthit/monorepo", "truenorthit/archive-tools"] },
 ];
 

@@ -30,7 +30,8 @@ import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getRepo, getTree, listBranches, listDir, pathExistsOn } from "./githubBrowse";
-import { BranchIcon, FileIcon, RepoIcon } from "./fileIcons";
+import { IconSize } from "azure-devops-ui/Icon";
+import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
 import "./browser.css";
 
@@ -458,7 +459,7 @@ function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: {
       onExpand={onOpen}
       onCollapse={() => setQuery("")}
       onSelect={(_e, item) => onSelect(item.id)}
-      renderExpandable={(p) => <DropdownExpandableButton {...p} subtle iconProps={{ render: () => <BranchIcon /> }} />}
+      renderExpandable={(p) => <DropdownExpandableButton {...p} subtle iconProps={{ iconName: "BranchFork2", size: IconSize.medium }} />}
     />
   );
 }
