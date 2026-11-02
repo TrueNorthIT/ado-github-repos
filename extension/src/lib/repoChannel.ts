@@ -3,8 +3,7 @@
 // BroadcastChannel, which also reached other tabs: another tab's hub could put its repo in this page's header.)
 export type RepoMessage =
   | { type: "tn-gh-hello" }
-  | { type: "tn-gh-repo"; repo?: string }
-  | { type: "tn-gh-unsubscribed" };
+  | { type: "tn-gh-repo"; repo?: string };
 
 /** The same-origin sibling frame whose path ends with `file`. In mock mode (no parent) both sides share this window. */
 export function sibling(file: string): Window | undefined {

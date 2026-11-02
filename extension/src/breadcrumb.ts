@@ -1,5 +1,8 @@
 // Header breadcrumb provider (loaded in its own small frame by breadcrumb.html): shows "owner/name" for the repo the hub is on.
 // Keep this free of React and the app: it ships as its own bundle.
+// ponytail: known ADO limit (seen live 0.8.0-0.12.0): the host only subscribes to breadcrumb providers after an in-app
+// navigation, so the item is missing after a full page load or an opened link. navigate() from the hub is a full load, so it
+// can't re-enter in-app. Revisit if ADO changes; the repo name is always shown in the hub's own left pane.
 import * as SDK from "azure-devops-extension-sdk";
 import type { IHostNavigationService } from "azure-devops-extension-api/Common/CommonServices";
 import { ObservableArray } from "azure-devops-ui/Core/Observable";
@@ -13,7 +16,6 @@ const NAV_SERVICE = "ms.vss-features.host-navigation-service";
 
 const items = new ObservableArray<IBreadcrumbItem>([]);
 let shown: string | undefined;
-let isReady = false;
 
 function setRepo(candidate?: string) {
   const repo = candidate ? parse(serialize({ repo: candidate })).repo : undefined; // validate owner/name
@@ -21,19 +23,6 @@ function setRepo(candidate?: string) {
   shown = repo;
   // Clicking sets the one-shot switch flag; the hub opens its repo switcher (see hostNav.ts).
   items.splice(0, items.length, ...(repo ? [{ key: "gh-repo", text: repo, ariaLabel: `Repository ${repo}. Switch repository`, href: serialize({ repo, switch: true }), iconProps: { iconName: "GitHubLogo" }, rank: 1000 }] : []));
-  if (isReady) checkSubscribed();
-}
-
-// On a full page load ADO never subscribes to this list, so the item would never reach the header. Tell the hub, which
-// re-enters itself with an in-app navigation (see selfNavigate in hostNav.ts). Short delay: ADO subscribes right after
-// it receives the list.
-let checkTimer: ReturnType<typeof setTimeout> | undefined;
-function checkSubscribed() {
-  clearTimeout(checkTimer);
-  checkTimer = setTimeout(() => {
-    // subscriberCount is protected in the typings but a plain field at runtime (it is in the list ADO receives).
-    if (shown && (items as unknown as { subscriberCount: number }).subscriberCount === 0) post(sibling("hub.html"), { type: "tn-gh-unsubscribed" });
-  }, 2500);
 }
 
 // Source 1: the hub frame on this page tells us the open repo (see hostNav.ts).
@@ -60,4 +49,3 @@ ready = SDK.init().then(async () => {
   nav.onHashChanged(fromHash);
   if (!shown) await Promise.race([heardFromHub, new Promise((r) => setTimeout(r, 1500))]);
 });
-ready.then(() => { isReady = true; checkSubscribed(); });
