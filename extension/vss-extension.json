@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "name": "GitHub Repos",
   "description": "Lists and browses the GitHub repositories connected to a project, in its own GitHub Repos section.",
   "publisher": "TrueNorthIT",

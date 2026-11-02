@@ -513,7 +513,8 @@ export function useConnectedRepos(current: string): string[] | undefined {
   return repos && (repos.some((r) => r.toLowerCase() === current.toLowerCase()) ? repos : [current, ...repos]);
 }
 
-export function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTick: number; onPick: (r: string) => void }) {
+/** `compact` is the page-header form: a normal subtle button with a repo icon instead of the left pane's 17px title. */
+export function RepoSwitcher({ repo, openTick, onPick, compact }: { repo: string; openTick: number; onPick: (r: string) => void; compact?: boolean }) {
   const repos = useConnectedRepos(repo);
   const dd = React.useRef<Dropdown>(null);
   // The header breadcrumb asks for the switcher through the hash (see hostNav); each request bumps openTick.
@@ -522,7 +523,7 @@ export function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTic
     <Dropdown
       ref={dd}
       ariaLabel={`Repository: ${repo}. Switch repository`}
-      className="gh-repo-switch flex-grow"
+      className={compact ? "gh-repo-switch gh-repo-switch-compact" : "gh-repo-switch flex-grow"}
       minCalloutWidth={280}
       placeholder={repo}
       items={(repos ?? []).map((r) => ({ id: r, text: r }))}
@@ -531,7 +532,7 @@ export function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTic
       noItemsText={repos ? "No repositories" : "Loading repositories"}
       filteredNoResultsText="No matching repositories"
       onSelect={(_e, item) => item.id !== repo && onPick(item.id)}
-      renderExpandable={(p) => <DropdownExpandableButton {...p} subtle />}
+      renderExpandable={(p) => <DropdownExpandableButton {...p} subtle iconProps={compact ? { iconName: "Code" } : undefined} />}
     />
   );
 }

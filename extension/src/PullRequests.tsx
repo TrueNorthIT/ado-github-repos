@@ -311,11 +311,10 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
   const open = React.useCallback((n: number) => repo && goPr({ repo, prTab: tab, pr: n }), [goPr, repo, tab]);
   const doSignIn = () => { void signIn(); };
 
-  const topbar = repo && (
-    <div className="gh-topbar flex-row flex-center flex-noshrink">
-      <RepoSwitcher repo={repo} openTick={openSwitch} onPick={(r) => goPr({ repo: r, prTab: tab })} />
-    </div>
-  );
+  const switcher = (to: (r: string) => BrowseState) => ({
+    id: "repo", text: repo ?? "", important: true,
+    renderButton: () => <RepoSwitcher compact repo={repo!} openTick={openSwitch} onPick={(r) => goPr(to(r))} />,
+  });
   const openOnGitHub = (href: string) => ({ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewWindow" }, href, target: "_blank", important: true });
   const extra = commandBarItems.map((c) => ({ ...c, important: false }));
 
@@ -336,14 +335,14 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
         signedIn={signedIn}
         signIn={doSignIn}
         busy={busy}
-        commandBarItems={(url) => [openOnGitHub(url), ...extra]}
+        commandBarItems={(url) => [switcher((r) => ({ repo: r, prTab: "mine" })), openOnGitHub(url), ...extra]}
       />
     );
   } else {
     const p: TabProps = { repo, open, signedIn, signIn: doSignIn, busy, filterOpen, closeFilter: () => setFilterOpen(false) };
     body = (
       <>
-        <Header title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]} />
+        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[switcher((r) => ({ repo: r, prTab: tab })), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]} />
         <TabBar
           ariaLabel="Pull request lists"
           selectedTabId={tab}
@@ -367,7 +366,6 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
   return (
     <Surface background={SurfaceBackground.neutral}>
       <Page className="gh-page flex-grow">
-        {topbar}
         {body}
       </Page>
     </Surface>

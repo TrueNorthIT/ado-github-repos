@@ -14,7 +14,7 @@
 .gh-repo-switch .bolt-button { max-width: 100%; min-width: 0; }
 .gh-repo-switch .bolt-dropdown-expandable-button-label { min-width: 0; } /* so the label ellipsises and the chevron stays in view */
 .repos-file-explorer-header > .bolt-menu-button { flex: 0 0 auto; }
-.gh-repo-switch .bolt-button { font-weight: 400; } /* Button is 600; the header text is 17px/400 */
+.gh-repo-switch:not(.gh-repo-switch-compact) .bolt-button { font-weight: 400; } /* Button is 600; the header text is 17px/400 */
 .gh-tree-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .gh-tree { background: transparent; }
 .gh-entry-icon { display: inline-flex; margin-right: 4px; align-items: center; }
@@ -95,16 +95,18 @@
 
 /* Pull request page. Native look from the measured spec; the components supply the rest. */
 .gh-pr-header .bolt-header-title { font-weight: 400; } /* TitleSize.Large is 21px/600; native's editable PR title is 400 */
-.gh-pr-sub { padding: 0 32px; display: flex; flex-direction: column; gap: 4px; }
+.gh-pr-sub { box-sizing: border-box; min-height: 58px; padding: 5px 32px 0; display: flex; flex-direction: column; gap: 4px; }
 .gh-pr-meta { gap: 8px; min-height: 24px; flex-wrap: wrap; }
 .gh-pr-meta-text { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; }
-.gh-pr-meta-text > .gh-pr-copy { margin: 0; }
+.gh-pr-meta-text > .gh-pr-copy { margin: -4px 0; } /* the 32px copy button must not grow the 24px meta row */
 .gh-pr-branch-link { padding: 0; }
 .gh-pr-copy { vertical-align: middle; margin: 0 4px; }
-.gh-pr-back { align-self: flex-start; }
 .gh-pr-grow { flex: 1 1 auto; min-width: 0; }
 .gh-pr-card + .gh-pr-card { margin-top: 16px; }
-.gh-pr-merge-row { gap: 16px; padding: 4px 0; }
+.gh-pr-merge-row { gap: 16px; min-height: 67px; box-sizing: border-box; padding: 0 20px; width: 100%; } /* native card is 67px; the card itself has no vertical padding */
+.gh-pr-desc-header.bolt-header { padding: 16px 16px 12px 20px; }
+.gh-pr-desc-header .bolt-header-title { padding: 0; }
+.gh-pr-desc-content { padding: 0 16px; }
 .gh-pr-checks { gap: 6px; }
 .gh-pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .gh-pr-list li { gap: 8px; min-width: 0; }
@@ -161,3 +163,15 @@
 .gh-pr-gutter-added::before, .gh-pr-gutter-removed::before { display: block; text-align: center; }
 .gh-pr-gutter-added::before { content: "+"; color: var(--status-success-foreground, #107c10); }
 .gh-pr-gutter-removed::before { content: "−"; color: var(--status-error-text, #a80000); }
+
+/* Page header: native puts the title box 22px from the top of the content (no row above), with the repo picker and back button in the header. */
+.gh-hub-header.bolt-header, .gh-pr-header.bolt-header { box-sizing: border-box; padding-top: 22px; padding-bottom: 0; min-height: 56px; align-items: center; height: 56px; }
+.gh-hub-header.bolt-header { padding-bottom: 16px; height: 72px; } /* list: tabs sit 16px under the title box (not measured natively) */
+.gh-hub-header .bolt-header-title, .gh-pr-header .bolt-header-title { line-height: 34px; } /* native's title box is 34px tall */
+.gh-pr-header .bolt-header-back-button { margin-right: 2px; } /* keeps the title at native's x=32 with the arrow in the gutter */
+.gh-pr-header.bolt-header-with-back-button { padding-left: 0; }
+.gh-repo-switch-compact { max-width: 180px; }
+.gh-repo-switch-compact .bolt-button { font-weight: inherit; }
+
+/* Native PR description body sits 32px inside its card (16px content padding + 16px): measured on dev.azure.com */
+.gh-pr-desc .gh-markdown { margin-left: 16px; margin-right: 16px; }

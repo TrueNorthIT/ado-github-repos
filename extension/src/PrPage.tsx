@@ -15,7 +15,7 @@ import { Ago } from "azure-devops-ui/Ago";
 import { AgoFormat } from "azure-devops-ui/Utilities/Date";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
-import { BrowseState, serialize, type PrPage as PrPageId } from "./lib/browseState";
+import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
 import type { ChecksSummary, Mergeable, PrPageData, PrReviewer, PrStatus, ReviewState } from "./lib/prModel";
 import { commitUrl } from "./lib/commits";
 import { prepareMarkdownHtml } from "./lib/markdown";
@@ -26,7 +26,7 @@ import { fetchWorkItems, type WorkItemsResult } from "./workItemsApi";
 import { openRepoHub } from "./hostNav";
 import { openInRepos, useRepoHref } from "./repoHref";
 import { watchTheme } from "./theme";
-import { ErrorView, Markdown, hubClick } from "./Browser";
+import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
 import "./browser.css";
 
@@ -89,7 +89,7 @@ function MergeCard({ pr }: { pr: PrPageData }) {
     : MERGE[pr.mergeable];
   const c = CHECKS[pr.checks];
   return (
-    <Card className="gh-pr-card gh-pr-merge">
+    <Card className="gh-pr-card gh-pr-merge bolt-card-no-vertical-padding">
       <div className="flex-row flex-center gh-pr-merge-row">
         <Status {...m.status} size={StatusSize.l} ariaLabel={m.text} />
         <div className="flex-column">
@@ -107,7 +107,7 @@ function Description({ pr, repo }: { pr: PrPageData; repo: string }) {
   const prepared = React.useMemo(() => (pr.bodyHtml.trim() ? prepareMarkdownHtml(pr.bodyHtml, { owner, name, ref: pr.baseRef, dir: "" }) : null), [pr.bodyHtml, owner, name, pr.baseRef]);
   const go = React.useCallback((s: BrowseState) => void openRepoHub(s), []);
   return (
-    <Card className="gh-pr-card gh-pr-desc" titleProps={{ text: "Description", size: TitleSize.Medium, ariaLevel: 2 }}>
+    <Card className="gh-pr-card gh-pr-desc" headerClassName="gh-pr-desc-header" contentProps={{ className: "gh-pr-desc-content", contentPadding: false }} titleProps={{ text: "Description", size: TitleSize.Medium, ariaLevel: 2 }}>
       {prepared ? <Markdown prepared={prepared} repo={repo} refName={pr.baseRef} go={go} /> : <span className="secondary-text">No description</span>}
     </Card>
   );
@@ -324,10 +324,10 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
         titleSize={TitleSize.Large /* 21px; see Browser.tsx. Weight is set to native's 400 in browser.css */}
         titleAriaLevel={1}
         commandBarItems={commandBarItems(pr?.url ?? `https://github.com/${repo}/pull/${n}`)}
+        backButtonProps={{ iconProps: { iconName: "ArrowLeft" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: () => go(list) }}
       />
       <div className="gh-pr-sub">
         {pr ? <Meta pr={pr} repo={repo} /> : <div className="gh-pr-meta" />}
-        <Link className="gh-pr-back body-s" href={serialize(list)} onClick={hubClick(() => go(list))}>Back to pull requests</Link>
       </div>
       <TabBar ariaLabel="Pull request" selectedTabId={page} onSelectedTabChanged={(id) => nav({ prPage: id as PrPageId, file: undefined })} tabSize={TabSize.Tall} disableSticky>
         {PAGES.map((p) => <Tab key={p.id} id={p.id} name={p.name} />)}
