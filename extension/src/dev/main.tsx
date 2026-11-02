@@ -51,4 +51,5 @@ function toolbar() {
 }
 
 toolbar();
+import("./fakeHeader").then((m) => m.fakeHeader());
 import("../index");

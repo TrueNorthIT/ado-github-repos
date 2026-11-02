@@ -7,6 +7,8 @@ export interface BrowseState {
   path?: string;
   /** Selected tab on a file or folder ("contents" or "preview"); absent means that view's default. */
   tab?: string;
+  /** One-shot request (from the header breadcrumb) to open the repo switcher. Only meaningful with a repo. */
+  switch?: boolean;
 }
 
 /** Resolves "." and ".." and drops empty segments; ".." above the root is clamped to the root. Never returns a leading slash. */
@@ -36,6 +38,7 @@ export function parse(hash: string): BrowseState {
     if (path) out.path = path;
     const tab = p.get("tab");
     if (tab && /^[a-z]{1,20}$/.test(tab)) out.tab = tab;
+    if (p.get("switch") === "1") out.switch = true;
     return out;
   } catch {
     return {};
@@ -50,5 +53,6 @@ export function serialize(state: BrowseState): string {
   const path = normalizePath(state.path ?? "");
   if (path) h += `&path=${encodeURIComponent(path)}`;
   if (state.tab) h += `&tab=${encodeURIComponent(state.tab)}`;
+  if (state.switch) h += "&switch=1";
   return h;
 }

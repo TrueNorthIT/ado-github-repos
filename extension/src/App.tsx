@@ -10,7 +10,7 @@ import { Link } from "azure-devops-ui/Link";
 import { Icon } from "azure-devops-ui/Icon";
 import { Table, ITableColumn, SimpleTableCell } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
-import { fetchConnections, getProjectCtx, PermissionError, ProjectCtx } from "./connections";
+import { loadProject, PermissionError, ProjectCtx } from "./connections";
 import { fetchMetadata } from "./github";
 import { RepoBrowser, hubClick } from "./Browser";
 import { connectNav } from "./hostNav";
@@ -73,17 +73,21 @@ export function App() {
   const [nav, setNav] = React.useState<BrowseState | null>(null);
   const goRef = React.useRef<(s: BrowseState) => void>(() => {});
   const go = React.useCallback((s: BrowseState) => goRef.current(s), []);
+  const [switchTick, setSwitchTick] = React.useState(0);
   React.useEffect(() => {
-    connectNav(setNav).then((g) => (goRef.current = g), () => setNav((n) => n ?? {}));
+    connectNav((s) => {
+      setNav(s);
+      if (s.switch) setSwitchTick((t) => t + 1);
+    }).then((g) => (goRef.current = g), () => setNav((n) => n ?? {}));
   }, []);
 
   // Connections, once.
   React.useEffect(() => {
     (async () => {
       try {
-        const c = await getProjectCtx();
-        setCtx(c);
-        setLoad({ state: "ready", connections: await fetchConnections(c) });
+        const p = await loadProject();
+        setCtx(p.ctx);
+        setLoad({ state: "ready", connections: p.connections });
       } catch (e) {
         setLoad(e instanceof PermissionError ? { state: "denied" } : { state: "error", message: "Could not load GitHub connections." });
       }
@@ -139,7 +143,7 @@ export function App() {
   if (nav.repo)
     return (
       <Page className="flex-grow">
-        <RepoBrowser state={{ ...nav, repo: nav.repo }} go={go} signedIn={signedIn} signIn={doSignIn} busy={busy} commandBarItems={signInOut} />
+        <RepoBrowser state={{ ...nav, repo: nav.repo }} go={go} openSwitch={switchTick} signedIn={signedIn} signIn={doSignIn} busy={busy} commandBarItems={signInOut} />
       </Page>
     );
 

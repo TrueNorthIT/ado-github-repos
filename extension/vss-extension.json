@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "name": "GitHub Repos",
   "description": "Lists and browses the GitHub repositories connected to a project, in its own GitHub Repos section.",
   "publisher": "TrueNorthIT",
@@ -39,6 +39,16 @@
         "order": 1,
         "uri": "dist/hub.html",
         "iconName": "OpenSource"
+      }
+    },
+    {
+      "id": "github-repos-breadcrumb",
+      "type": "ms.vss-web.breadcrumb-provider",
+      "targets": [".github-repos-hub"],
+      "properties": {
+        "serviceName": "github-repos-breadcrumb",
+        "breadcrumbId": "ms.vss-tfs-web.vertical-header-breadcrumb",
+        "uri": "dist/breadcrumb.html"
       }
     }
   ]

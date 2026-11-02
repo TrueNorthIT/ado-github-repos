@@ -58,6 +58,7 @@ const dataManager = {
 const nav = {
   getHash: async () => location.hash,
   setHash: (h: string) => { location.hash = h; },
+  replaceHash: (h: string) => { history.replaceState(null, "", h); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host does notify
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
@@ -105,6 +106,11 @@ export function setMockTheme(dark: boolean) {
 // ---------- the SDK surface the app uses ----------
 export async function init(_opts?: unknown) { setMockTheme(isMockDark()); }
 export const ready = async () => {};
+// Breadcrumb providers register a service factory; the fake header (fakeHeader.ts) reads it back.
+const registered = new Map<string, () => unknown>();
+export const register = (id: string, factory: () => unknown) => { registered.set(id, factory); };
+export const unregister = (id: string) => { registered.delete(id); };
+export const registeredService = (id: string) => registered.get(id)?.();
 export const notifyLoadSucceeded = async () => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];

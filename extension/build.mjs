@@ -17,10 +17,11 @@ const OUT = DEV ? "dist-dev" : "dist"; // separate folders so a production build
 rmSync(OUT, { recursive: true, force: true }); // chunk names are hashed, so don't let old ones pile up in the package
 mkdirSync(OUT, { recursive: true });
 copyFileSync("hub.html", `${OUT}/hub.html`);
+copyFileSync("breadcrumb.html", `${OUT}/breadcrumb.html`);
 if (DEV) copyFileSync("hub.html", `${OUT}/index.html`); // so plain http://localhost:3000 works
 const options = {
   // monaco is also an entry point so its JS and CSS get stable names (monaco.js, monaco.css): esbuild does not link a lazy chunk's CSS into the page, so Browser.tsx adds the monaco.css <link> itself.
-  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts" },
+  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts", breadcrumb: "src/breadcrumb.ts" },
   entryNames: "[name]",
   chunkNames: "chunks/[name]-[hash]",
   bundle: true,

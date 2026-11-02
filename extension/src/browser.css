@@ -10,7 +10,8 @@
 
 /* Left pane: repo name row (50px, 17px/400) and the tree. */
 .repos-file-explorer-header { height: 50px; padding: 8px 8px 8px 20px; flex: 0 0 auto; gap: 6px; }
-.gh-repo-link { color: var(--text-primary-color, rgba(0, 0, 0, .9)); min-width: 0; }
+.gh-repo-switch { min-width: 0; }
+.gh-repo-switch .bolt-button { font-weight: 400; } /* Button is 600; the header text is 17px/400 */
 .gh-tree-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .gh-tree { background: transparent; }
 .gh-entry-icon { display: inline-flex; margin-right: 4px; align-items: center; }

@@ -8,8 +8,13 @@ const NAV_SERVICE = "ms.vss-features.host-navigation-service";
 
 export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState) => void> {
   const svc = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
-  onChange(parse(await svc.getHash()));
-  svc.onHashChanged((h) => onChange(parse(h)));
+  const emit = (h: string) => {
+    const s = parse(h);
+    if (s.switch) svc.replaceHash(serialize({ ...s, switch: false })); // one-shot: clear the flag so reload/back do not reopen it
+    onChange(s);
+  };
+  emit(await svc.getHash());
+  svc.onHashChanged(emit);
   return (s) => {
     svc.setHash(serialize(s));
     onChange(parse(serialize(s))); // do not rely on the host echoing programmatic changes back

@@ -46,3 +46,16 @@ export async function fetchConnections(ctx: ProjectCtx): Promise<Connection[]> {
     })
   );
 }
+
+let cached: Promise<{ ctx: ProjectCtx; connections: Connection[] }> | undefined;
+/** The project context and its connections, fetched once and shared by the list and the repo switcher. A failure is not cached. */
+export function loadProject() {
+  cached ??= (async () => {
+    const ctx = await getProjectCtx();
+    return { ctx, connections: await fetchConnections(ctx) };
+  })().catch((e) => {
+    cached = undefined;
+    throw e;
+  });
+  return cached;
+}

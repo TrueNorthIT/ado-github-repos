@@ -26,6 +26,9 @@ import { formatSize, sortListing } from "./lib/listing";
 import { githubUrl } from "./lib/githubUrl";
 import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import { watchTheme } from "./theme";
+import { loadProject } from "./connections";
+import { mergeRows } from "./lib/rows";
+import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getRepo, getTree, listBranches, listDir, pathExistsOn } from "./githubBrowse";
 import { BranchIcon, FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
@@ -460,6 +463,45 @@ function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: {
   );
 }
 
+// ---------- repo switcher (left pane header) ----------
+
+/** The project's connected github.com repos as "owner/name", from the same (cached) load as the list view. */
+function useConnectedRepos(current: string): string[] | undefined {
+  const [repos, setRepos] = React.useState<string[]>();
+  React.useEffect(() => {
+    let dead = false;
+    loadProject().then(
+      (p) => !dead && setRepos(mergeRows(p.connections).rows.filter((r) => { const ref = parseRepoUrl(r.url); return ref && isGitHubDotCom(ref); }).map((r) => r.label)),
+      () => !dead && setRepos([])
+    );
+    return () => { dead = true; };
+  }, []);
+  return repos && (repos.some((r) => r.toLowerCase() === current.toLowerCase()) ? repos : [current, ...repos]);
+}
+
+function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTick: number; onPick: (r: string) => void }) {
+  const repos = useConnectedRepos(repo);
+  const dd = React.useRef<Dropdown>(null);
+  // The header breadcrumb asks for the switcher through the hash (see hostNav); each request bumps openTick.
+  React.useEffect(() => { if (openTick) dd.current?.expand(); }, [openTick]);
+  return (
+    <Dropdown
+      ref={dd}
+      ariaLabel={`Repository: ${repo}. Switch repository`}
+      className="gh-repo-switch flex-grow"
+      minCalloutWidth={280}
+      placeholder={repo}
+      items={(repos ?? []).map((r) => ({ id: r, text: r }))}
+      showFilterBox
+      filterPlaceholderText="Find a repository"
+      noItemsText={repos ? "No repositories" : "Loading repositories"}
+      filteredNoResultsText="No matching repositories"
+      onSelect={(_e, item) => item.id !== repo && onPick(item.id)}
+      renderExpandable={(p) => <DropdownExpandableButton {...p} subtle />}
+    />
+  );
+}
+
 // ---------- the browser ----------
 
 type Ctx = { ref: string; defaultBranch: string; tree: GitTree };
@@ -474,6 +516,8 @@ type View =
 export interface BrowserProps {
   state: BrowseState & { repo: string };
   go: (s: BrowseState) => void;
+  /** Bumped each time the header breadcrumb asks for the repo switcher. */
+  openSwitch: number;
   signedIn: boolean;
   signIn: () => Promise<void>;
   busy: boolean;
@@ -490,7 +534,7 @@ const readWidth = () => {
   }
 };
 
-export function RepoBrowser({ state, go, signedIn, signIn, busy, commandBarItems }: BrowserProps) {
+export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, commandBarItems }: BrowserProps) {
   const { repo } = state;
   const path = state.path ?? "";
   const [reload, setReload] = React.useState(0);
@@ -641,7 +685,7 @@ export function RepoBrowser({ state, go, signedIn, signIn, busy, commandBarItems
             <nav className="gh-left-inner flex-column" aria-label="Repository files">
               <div className="repos-file-explorer-header flex-row flex-center body-xl">
                 <RepoIcon />
-                <Link className="gh-repo-link text-ellipsis flex-grow" removeUnderline href={hashFor({ repo, ref: state.ref })} onClick={hubClick(() => nav(""))} title={repo}>{repo}</Link>
+                <RepoSwitcher repo={repo} openTick={openSwitch} onPick={(r) => go({ repo: r })} />
                 <MoreButton ariaLabel="Repository actions" contextualMenuProps={{ menuProps: { id: "gh-repo-menu", items: menuItems } }} />
               </div>
               <div className="gh-tree-wrap">

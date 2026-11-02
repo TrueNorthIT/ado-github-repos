@@ -127,3 +127,23 @@ describe("tab in the hash", () => {
     expect(parse("#repo=acme%2Fweb&tab=" + encodeURIComponent("<x>"))).toEqual({ repo: "acme/web" });
   });
 });
+
+describe("repo switcher flag (switch=1)", () => {
+  it("round-trips with the rest of the state", () => {
+    const s = { repo: "acme/web", ref: "dev", path: "src", tab: "contents", switch: true };
+    expect(roundTrip(s)).toEqual(s);
+  });
+  it("round-trips on a bare repo", () => {
+    expect(roundTrip({ repo: "acme/web", switch: true })).toEqual({ repo: "acme/web", switch: true });
+    expect(serialize({ repo: "acme/web", switch: true })).toBe("#repo=acme%2Fweb&switch=1");
+  });
+  it("is absent unless set, and only switch=1 counts", () => {
+    expect(serialize({ repo: "acme/web", switch: false })).toBe("#repo=acme%2Fweb");
+    expect(parse("#repo=acme%2Fweb&switch=0")).toEqual({ repo: "acme/web" });
+    expect(parse("#repo=acme%2Fweb")).toEqual({ repo: "acme/web" });
+  });
+  it("is ignored without a repo", () => {
+    expect(parse("#switch=1")).toEqual({});
+    expect(serialize({ switch: true })).toBe("#");
+  });
+});
