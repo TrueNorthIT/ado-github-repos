@@ -146,4 +146,8 @@ describe("repo switcher flag (switch=1)", () => {
     expect(parse("#switch=1")).toEqual({});
     expect(serialize({ switch: true })).toBe("#");
   });
+  it("survives ADO's header breadcrumb doubling the # (seen live: ##repo=...)", () => {
+    expect(parse("##repo=acme%2Fweb&switch=1")).toEqual({ repo: "acme/web", switch: true });
+    expect(parse("###repo=acme%2Fweb")).toEqual({ repo: "acme/web" });
+  });
 });

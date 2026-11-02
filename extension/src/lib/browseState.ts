@@ -28,7 +28,8 @@ const validRepo = (r: string) => REPO.test(r) && r.split("/").every((s) => s !==
 /** Parses a location hash (with or without the leading "#"). Never throws; garbage gives {}. */
 export function parse(hash: string): BrowseState {
   try {
-    const p = new URLSearchParams(hash.replace(/^#/, ""));
+    // ADO's header breadcrumb prefixes its own "#" to an item's "#..." href, giving "##repo=...": accept any number.
+    const p = new URLSearchParams(hash.replace(/^#+/, ""));
     const repo = p.get("repo");
     if (!repo || !validRepo(repo)) return {};
     const out: BrowseState = { repo };
