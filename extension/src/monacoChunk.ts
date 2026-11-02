@@ -121,6 +121,15 @@ export function createWholeFile(el: HTMLElement, text: string, language: string,
 function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLElement): () => void {
   const wrap = document.createElement("div");
   wrap.appendChild(node);
+  // Monaco sizes a zone to the content's scroll width, so a long line made the card wider than the diff and hid its
+  // right-hand buttons (seen live in 0.19.0). Keep it to the visible text area and pinned while the code scrolls sideways.
+  const fit = () => {
+    const l = ed.getLayoutInfo();
+    wrap.style.width = `${Math.max(200, l.contentWidth - l.verticalScrollbarWidth)}px`;
+    wrap.style.transform = `translateX(${ed.getScrollLeft()}px)`;
+  };
+  fit();
+  const subs = [ed.onDidLayoutChange(fit), ed.onDidScrollChange((e) => { if (e.scrollLeftChanged) fit(); })];
   let id = "";
   const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: true };
   ed.changeViewZones((a) => { id = a.addZone(zone); });
@@ -134,6 +143,7 @@ function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLEle
   ro.observe(node);
   return () => {
     ro.disconnect();
+    subs.forEach((s) => s.dispose());
     try { ed.changeViewZones((a) => a.removeZone(id)); } catch { /* the editor is already gone */ }
   };
 }
