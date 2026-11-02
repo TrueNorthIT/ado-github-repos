@@ -12,7 +12,9 @@ import { Table, ITableColumn, SimpleTableCell } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { loadProject, PermissionError, ProjectCtx } from "./connections";
 import { fetchMetadata } from "./github";
+import * as SDK from "azure-devops-extension-sdk";
 import { RepoBrowser, hubClick } from "./Browser";
+import { PullRequestsHub } from "./PullRequests";
 import { connectNav } from "./hostNav";
 import { clearCache } from "./githubBrowse";
 import { BrowseState, serialize } from "./lib/browseState";
@@ -71,8 +73,8 @@ export function App() {
 
   // The address bar (host hash) decides between the list and the file browser.
   const [nav, setNav] = React.useState<BrowseState | null>(null);
-  const goRef = React.useRef<(s: BrowseState) => void>(() => {});
-  const go = React.useCallback((s: BrowseState) => goRef.current(s), []);
+  const goRef = React.useRef<(s: BrowseState, replace?: boolean) => void>(() => {});
+  const go = React.useCallback((s: BrowseState, replace?: boolean) => goRef.current(s, replace), []);
   const [switchTick, setSwitchTick] = React.useState(0);
   React.useEffect(() => {
     connectNav((s) => {
@@ -140,6 +142,9 @@ export function App() {
 
   const signInOut = commandBarItems;
   if (nav === null) return <Page className="flex-grow" />;
+  // Both hubs load this page; the contribution id says which one this is (the PR hub's id ends "-prs-hub").
+  if (SDK.getContributionId().endsWith("-prs-hub"))
+    return <PullRequestsHub state={nav} go={go} openSwitch={switchTick} signedIn={signedIn} signIn={doSignIn} busy={busy} commandBarItems={signInOut} />;
   if (nav.repo)
     return (
       <Page className="flex-grow">

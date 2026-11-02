@@ -7,7 +7,7 @@ import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
 const NAV_SERVICE = "ms.vss-features.host-navigation-service";
 
-export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState) => void> {
+export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState, replace?: boolean) => void> {
   const svc = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
   let current: BrowseState = {};
 
@@ -30,8 +30,9 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
 
   emit(await svc.getHash());
   svc.onHashChanged(emit);
-  return (s) => {
-    svc.setHash(serialize(s));
+  return (s, replace) => {
+    if (replace) svc.replaceHash(serialize(s).slice(1)); // e.g. the PR hub filling in its default repo: no extra history entry
+    else svc.setHash(serialize(s));
     const next = parse(serialize(s));
     announce(next);
     onChange(next); // do not rely on the host echoing programmatic changes back

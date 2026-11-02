@@ -9,7 +9,7 @@
   "categories": ["Azure Repos"],
   "targets": [{ "id": "Microsoft.VisualStudio.Services" }],
   "icons": { "default": "images/icon.png" },
-  "scopes": ["vso.githubconnections"],
+  "scopes": ["vso.githubconnections", "vso.work"],
   "files": [
     { "path": "dist", "addressable": true },
     { "path": "images/icon.png", "addressable": true },
@@ -42,9 +42,20 @@
       }
     },
     {
+      "id": "github-repos-prs-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Pull requests",
+        "order": 2,
+        "uri": "dist/hub.html",
+        "iconName": "BranchPullRequest"
+      }
+    },
+    {
       "id": "github-repos-breadcrumb",
       "type": "ms.vss-web.breadcrumb-provider",
-      "targets": [".github-repos-hub"],
+      "targets": [".github-repos-hub", ".github-repos-prs-hub"],
       "properties": {
         "serviceName": "github-repos-breadcrumb",
         "registeredObjectId": "github-repos-breadcrumb",

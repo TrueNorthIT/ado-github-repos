@@ -3,6 +3,8 @@ import { getTokens } from "./auth";
 import { tokenAction } from "./lib/tokens";
 import { buildQueries, mapResponse, type CommitInfo } from "./lib/commits";
 import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitTree, type TreeEntry } from "./lib/tree";
+import { listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
+import { toListRow, type PrListNode, type PrListRow } from "./lib/prModel";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -86,6 +88,7 @@ export const clearCache = () => {
   trees.clear();
   folderTrees.clear();
   commits.clear();
+  prLists.clear();
   cached = null;
 };
 
@@ -162,3 +165,65 @@ export const getCommits = (repo: string, ref: string, folder: string, entries: T
     if (!ok && failure) throw failure;
     return out;
   });
+
+// ---------- pull requests (PR-1 to PR-4) ----------
+
+export interface PrListResult {
+  /** Active / Completed / Abandoned rows (also a number filter's single row). Empty on Mine. */
+  rows: PrListRow[];
+  hasNextPage: boolean;
+  /** Pass as `cursor` to get the next page. */
+  endCursor: string | null;
+  /** Mine only. */
+  mine?: { created: PrListRow[]; reviewRequested: PrListRow[] };
+}
+
+interface GqlConnection { nodes?: (PrListNode | null)[]; pageInfo?: { hasNextPage: boolean; endCursor: string | null } }
+
+/** One GraphQL call through request(), so it shares the 401 refresh-retry and error mapping. A body with errors and no data is an error. */
+export async function graphql(q: GraphQlRequest): Promise<any> {
+  const body = await (await request("/graphql", "application/json", true, JSON.stringify({ query: q.query, variables: q.variables }))).json();
+  if (!body?.data) {
+    const notFound = (body?.errors ?? []).some((e: { type?: string }) => e.type === "NOT_FOUND");
+    throw new GhError(notFound ? "access" : "other");
+  }
+  return body;
+}
+
+const pageOf = (c: GqlConnection | null | undefined, now: number) => ({
+  rows: (c?.nodes ?? []).filter((n): n is PrListNode => !!n?.number).map((n) => toListRow(n, now)),
+  hasNextPage: !!c?.pageInfo?.hasNextPage,
+  endCursor: c?.pageInfo?.endCursor ?? null,
+});
+
+const PR_TTL_MS = 30_000;
+const prLists = new Map<string, { at: number; p: Promise<PrListResult> }>();
+
+/**
+ * One tab of the PR list for "owner/name". `filter` is the keyword (a number jumps to that PR), `cursor` the previous page's endCursor.
+ * Cached 30 s per repo, tab, filter and cursor, so changing tab or filter never shows another key's rows; failures are not cached.
+ */
+export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | null = null): Promise<PrListResult> {
+  const key = JSON.stringify([repo, tab, tab === "mine" ? "" : filter.trim(), tab === "mine" ? null : cursor]);
+  const hit = prLists.get(key);
+  if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
+  const [owner, name] = repo.split("/");
+  const p = (async (): Promise<PrListResult> => {
+    const reqs = listQuery(tab, { owner, name, filter, after: cursor ?? undefined });
+    const bodies = await Promise.all(reqs.map(graphql));
+    const now = Date.now();
+    if (tab === "mine") {
+      const rowsFor = (section: string) => pageOf(bodies[reqs.findIndex((r) => r.section === section)]?.data?.search, now).rows;
+      return { rows: [], hasNextPage: false, endCursor: null, mine: { created: rowsFor("created"), reviewRequested: rowsFor("review-requested") } };
+    }
+    const d = bodies[0].data;
+    if (reqs[0].source === "pullRequest") return { ...pageOf({ nodes: [d.repository?.pullRequest] }, now), hasNextPage: false, endCursor: null };
+    return pageOf(reqs[0].source === "search" ? d.search : d.repository?.pullRequests, now);
+  })();
+  prLists.set(key, { at: Date.now(), p });
+  p.catch(() => prLists.get(key)?.p === p && prLists.delete(key));
+  return p;
+}
+
+/** Drops cached PR pages (Try again). */
+export const invalidatePrs = () => prLists.clear();

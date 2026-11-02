@@ -1,6 +1,7 @@
 // __TN_MOCK__ Replaces window.fetch for the Azure DevOps and GitHub endpoints the app calls; anything else goes to the real fetch.
 import { PNG_BASE64 } from "./fixtures/content";
 import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
+import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -27,11 +28,45 @@ function mockHistory(path: string) {
 
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
-  const { variables } = JSON.parse(String(init?.body ?? "{}"));
+  const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables);
   if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
   const object: Record<string, unknown> = {};
   for (const k of Object.keys(variables)) if (/^p\d+$/.test(k)) object["e" + k.slice(1)] = mockHistory(variables[k]);
   return json({ data: { repository: { object } } });
+}
+
+// ---------- pull requests: pullRequests, search and pullRequest, with base64 offset cursors ----------
+const PAGE = 25;
+const STATE_OF: Record<string, string> = { open: "OPEN", merged: "MERGED", closed: "CLOSED" };
+const page = (list: FixturePr[], after: string | null) => {
+  const start = after ? Number(atob(after).split(":")[1]) || 0 : 0;
+  const end = Math.min(start + PAGE, list.length);
+  return { nodes: list.slice(start, end).map((p) => p.node), pageInfo: { hasNextPage: end < list.length, endCursor: btoa(`c:${end}`) } };
+};
+const byUpdated = (a: FixturePr, b: FixturePr) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt);
+
+function prGraphql(v: Record<string, any>): Response {
+  if (v.q !== undefined) {
+    const t = String(v.q).split(/\s+/).filter(Boolean);
+    const inRepo = t.includes(`repo:${PR_REPO}`);
+    const states = t.filter((x) => x.startsWith("is:") && STATE_OF[x.slice(3)]).map((x) => STATE_OF[x.slice(3)]);
+    const terms = t.filter((x) => !x.includes(":")).map((x) => x.toLowerCase());
+    const list = !inRepo ? [] : PRS.filter((p) => {
+      const n = p.node;
+      return (!states.length || states.includes(n.state))
+        && (!t.includes("is:unmerged") || n.state !== "MERGED")
+        && (!t.includes("author:@me") || n.author?.login === ME)
+        && (!t.includes("review-requested:@me") || p.reviewRequested.includes(ME))
+        && terms.every((w) => n.title.toLowerCase().includes(w));
+    }).sort(byUpdated);
+    return json({ data: { search: page(list, v.after ?? null) } });
+  }
+  if (!repoOf(`${v.owner}/${v.name}`)) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
+  const mine = `${v.owner}/${v.name}`.toLowerCase() === PR_REPO;
+  if (v.number !== undefined) return json({ data: { repository: { pullRequest: (mine && PRS.find((p) => p.node.number === v.number)?.node) || null } } });
+  const list = mine ? PRS.filter((p) => (v.states ?? []).includes(p.node.state)).sort(byUpdated) : [];
+  return json({ data: { repository: { pullRequests: page(list, v.after ?? null) } } });
 }
 
 function github(u: URL, accept: string, sc: string): Response {

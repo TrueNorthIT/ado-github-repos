@@ -71,3 +71,24 @@
 .gh-commit-sha { flex: none; font: 600 14px Consolas, "Courier New", monospace; text-decoration: underline; }
 .gh-commit-msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-commit-author { flex: none; white-space: nowrap; }
+
+/* Pull requests hub. Native look from the measured spec; the components supply the rest. */
+.gh-pr-body > .bolt-card + .bolt-card, .gh-pr-body > .vss-FilterBar + .bolt-card { margin-top: 16px; }
+.gh-pr-body > .vss-FilterBar { margin-top: 0; margin-bottom: 0; min-height: 53px; align-items: center; } /* native bar is 53px (its Created by picker is taller) */
+.gh-pr-loading { padding: 48px 0; }
+.gh-pr-line1 { min-width: 0; gap: 6px; height: 20px; } /* pills are 21px tall; native rows stay 60px */
+.gh-pr-line1 .gh-pr-title { padding: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.gh-pr-pill { flex: none; }
+.gh-pr-line2 { display: inline-flex; align-items: center; min-width: 0; white-space: nowrap; gap: 4px; }
+.gh-pr-branch-icon { font-size: 12px; }
+.gh-pr-branch { padding: 0 4px; }
+.gh-pr-comments { gap: 4px; }
+.gh-pr-comments.has-active-comments { color: var(--status-warning-text, rgb(184, 94, 6)); }
+.gh-pr-pager { margin-left: auto; }
+.gh-pr-section-header { flex: 1 1 auto; gap: 8px; padding-left: 0; }
+.gh-pr-section-title.bolt-header { padding: 0; flex: 0 0 auto; }
+.gh-pr-section-empty { padding: 12px 20px; }
+.gh-pr-filter-toggle { margin-left: auto; margin-right: 16px; }
+.gh-pr-section .bolt-card-expand-button { align-self: center !important; margin-top: 8px; } /* flex-self-start would leave the chevron above the title */
+.gh-pr-section-header { min-height: 48px; }
+.gh-pr-pill[style*="255, 255, 255"] { border-color: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); } /* a white GitHub label vanishes on the white card */

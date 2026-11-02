@@ -2,7 +2,7 @@
 import { AUTH_MESSAGE_TYPE } from "../../../shared/contract";
 import { AUTH_BASE } from "../config";
 import { installMockFetch } from "./mockFetch";
-import { fakeTokens, isMockDark, resetStorage, scenario, setMockTheme } from "./mockSdk";
+import { fakeTokens, isMockDark, mockHub, resetStorage, scenario, setMockTheme } from "./mockSdk";
 
 installMockFetch();
 
@@ -39,6 +39,12 @@ function toolbar() {
   const theme = btn("", () => { setMockTheme(!isMockDark()); theme.textContent = isMockDark() ? "Light" : "Dark"; });
   theme.textContent = isMockDark() ? "Light" : "Dark";
   theme.title = "Switch theme";
+  const hub = btn(mockHub() === "github-repos-prs-hub" ? "Hub: Pull requests" : "Hub: Repositories", () => {
+    const u = new URL(location.href);
+    u.searchParams.set("hub", mockHub() === "github-repos-prs-hub" ? "repos" : "prs");
+    location.href = u.href;
+  });
+  hub.title = "Switch between the Repositories and Pull requests hubs";
   const label = document.createElement("label");
   label.append("Scenario ");
   const sel = document.createElement("select");
@@ -46,7 +52,7 @@ function toolbar() {
   SCENARIOS.forEach((s) => sel.add(new Option(s, s, false, s === scenario())));
   sel.onchange = () => { const u = new URL(location.href); u.searchParams.set("scenario", sel.value); location.href = u.href; };
   label.append(sel);
-  bar.append("MOCK ", theme, label, btn("Reset storage", () => { resetStorage(); location.reload(); }));
+  bar.append("MOCK ", hub, theme, label, btn("Reset storage", () => { resetStorage(); location.reload(); }));
   document.body.append(bar);
 }
 

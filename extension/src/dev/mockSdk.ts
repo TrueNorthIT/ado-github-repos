@@ -2,6 +2,8 @@
 import type { GitHubTokenSet } from "../../../shared/contract";
 
 export const scenario = () => new URLSearchParams(location.search).get("scenario") || "ok";
+/** Which hub contribution the mock page pretends to be: `?hub=prs` is the Pull requests hub. Read only here. */
+export const mockHub = () => (new URLSearchParams(location.search).get("hub") === "prs" ? "github-repos-prs-hub" : "github-repos-hub");
 
 // ---------- storage: ADO extension data (User scope), mirrored to localStorage so a refresh keeps it ----------
 const PREFIX = "tn-mock:";
@@ -58,7 +60,7 @@ const dataManager = {
 const nav = {
   getHash: async () => location.hash,
   setHash: (h: string) => { location.hash = h; },
-  replaceHash: (h: string) => { history.replaceState(null, "", h); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host does notify
+  replaceHash: (h: string) => { history.replaceState(null, "", "#" + h.replace(/^#+/, "")); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host adds the "#" itself; the host does notify
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
@@ -116,6 +118,7 @@ export const registeredService = (id: string) => {
   const o = typeof r === "function" ? r() : r;
   return o && typeof (o as { getBreadcrumbItems?: unknown }).getBreadcrumbItems === "function" ? (o as { getBreadcrumbItems: () => unknown }).getBreadcrumbItems() : o;
 };
+export const getContributionId = () => `TrueNorthIT.github-repos.${mockHub()}`;
 export const notifyLoadSucceeded = async () => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];

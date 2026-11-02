@@ -52,18 +52,19 @@ export const hubClick = (go: () => void) => (e?: React.MouseEvent | React.Keyboa
 
 // ---------- errors (B-11) ----------
 
-function ErrorView({ err, signIn, busy, retry, back }: { err: unknown; signIn: () => void; busy: boolean; retry: () => void; back: () => void }) {
+/** `subject` / `permission` reword the sign-in and no-access messages for other pages (the PR list); `back` is left out to hide "Back to repositories". */
+export function ErrorView({ err, signIn, busy, retry, back, subject = "browse this repository", permission = "Contents" }: { err: unknown; signIn: () => void; busy: boolean; retry: () => void; back?: () => void; subject?: string; permission?: string }) {
   const kind = err instanceof GhError ? err.kind : "other";
   if (kind === "auth")
     return (
       <MessageCard severity={MessageCardSeverity.Info} buttonProps={[{ text: "Sign in with GitHub", onClick: signIn, primary: true, disabled: busy }]}>
-        Sign in with GitHub to browse this repository.
+        Sign in with GitHub to {subject}.
       </MessageCard>
     );
   if (kind === "access")
     return (
-      <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Back to repositories", onClick: back }, { text: "Sign in again", onClick: signIn, disabled: busy }]}>
-        You don't have access, or the GitHub App lacks Contents permission. Sign out and sign in again after the app is updated.
+      <MessageCard severity={MessageCardSeverity.Error} buttonProps={[...(back ? [{ text: "Back to repositories", onClick: back }] : []), { text: "Sign in again", onClick: signIn, disabled: busy }]}>
+        You don't have access, or the GitHub App lacks {permission} permission. Sign out and sign in again after the app is updated.
       </MessageCard>
     );
   if (kind === "rateLimit") {
@@ -75,7 +76,7 @@ function ErrorView({ err, signIn, busy, retry, back }: { err: unknown; signIn: (
     );
   }
   return (
-    <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Try again", onClick: retry }, { text: "Back to repositories", onClick: back }]}>
+    <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Try again", onClick: retry }, ...(back ? [{ text: "Back to repositories", onClick: back }] : [])]}>
       Could not load this from GitHub.
     </MessageCard>
   );
@@ -499,7 +500,7 @@ function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: {
 // ---------- repo switcher (left pane header) ----------
 
 /** The project's connected github.com repos as "owner/name", from the same (cached) load as the list view. */
-function useConnectedRepos(current: string): string[] | undefined {
+export function useConnectedRepos(current: string): string[] | undefined {
   const [repos, setRepos] = React.useState<string[]>();
   React.useEffect(() => {
     let dead = false;
@@ -512,7 +513,7 @@ function useConnectedRepos(current: string): string[] | undefined {
   return repos && (repos.some((r) => r.toLowerCase() === current.toLowerCase()) ? repos : [current, ...repos]);
 }
 
-function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTick: number; onPick: (r: string) => void }) {
+export function RepoSwitcher({ repo, openTick, onPick }: { repo: string; openTick: number; onPick: (r: string) => void }) {
   const repos = useConnectedRepos(repo);
   const dd = React.useRef<Dropdown>(null);
   // The header breadcrumb asks for the switcher through the hash (see hostNav); each request bumps openTick.
