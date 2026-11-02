@@ -21,7 +21,11 @@ function show(hash: string) {
   items.splice(0, items.length, ...(repo ? [{ key: "gh-repo", text: repo, ariaLabel: `Repository ${repo}. Switch repository`, href: serialize({ repo, switch: true }), iconProps: { iconName: "GitHubLogo" }, rank: 1000 }] : []));
 }
 
-SDK.register(SERVICE, () => items);
+// The host asks the frame for an object by exact name: registeredObjectId, the full contribution id or serviceName,
+// depending on the code path. Register under all of them. It then calls getBreadcrumbItems(breadcrumbId) if present,
+// otherwise treats the object itself as the observable list (host ContributedBreadcrumb.getBreadcrumbItems).
+const provider = { getBreadcrumbItems: () => items };
+for (const id of [SERVICE, `TrueNorthIT.github-repos.${SERVICE}`]) SDK.register(id, provider);
 
 SDK.init().then(async () => {
   const nav = await SDK.getService<IHostNavigationService>(NAV_SERVICE);

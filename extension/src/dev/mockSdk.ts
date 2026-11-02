@@ -106,11 +106,16 @@ export function setMockTheme(dark: boolean) {
 // ---------- the SDK surface the app uses ----------
 export async function init(_opts?: unknown) { setMockTheme(isMockDark()); }
 export const ready = async () => {};
-// Breadcrumb providers register a service factory; the fake header (fakeHeader.ts) reads it back.
-const registered = new Map<string, () => unknown>();
-export const register = (id: string, factory: () => unknown) => { registered.set(id, factory); };
+// Breadcrumb providers register an object (or factory); the fake header (fakeHeader.ts) reads it back like the host does:
+// call getBreadcrumbItems() if present, otherwise use the object itself as the observable list.
+const registered = new Map<string, unknown>();
+export const register = (id: string, instance: unknown) => { registered.set(id, instance); };
 export const unregister = (id: string) => { registered.delete(id); };
-export const registeredService = (id: string) => registered.get(id)?.();
+export const registeredService = (id: string) => {
+  const r = registered.get(id);
+  const o = typeof r === "function" ? r() : r;
+  return o && typeof (o as { getBreadcrumbItems?: unknown }).getBreadcrumbItems === "function" ? (o as { getBreadcrumbItems: () => unknown }).getBreadcrumbItems() : o;
+};
 export const notifyLoadSucceeded = async () => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];
