@@ -65,3 +65,9 @@
 .gh-markdown th, .gh-markdown td { border: 1px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); padding: 4px 10px; }
 .gh-markdown blockquote { margin: 0; padding-left: 1em; border-left: 4px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
 .gh-markdown .anchor { display: none; }
+
+/* Folder listing: Commits cell (native: bold underlined monospace SHA, message, grey author). */
+.gh-commit { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.gh-commit-sha { flex: none; font: 600 14px Consolas, "Courier New", monospace; text-decoration: underline; }
+.gh-commit-msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-commit-author { flex: none; white-space: nowrap; }

@@ -1,6 +1,7 @@
 // GitHub REST calls for the file browser. Every call carries the signed-in user's token.
 import { getTokens } from "./auth";
 import { tokenAction } from "./lib/tokens";
+import { buildQueries, mapResponse, type CommitInfo } from "./lib/commits";
 import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitTree, type TreeEntry } from "./lib/tree";
 import type { GitHubTokenSet } from "../../shared/contract";
 
@@ -25,17 +26,17 @@ async function token(force = false): Promise<string> {
   return cached.accessToken;
 }
 
-async function request(url: string, accept: string, retry = true): Promise<Response> {
+async function request(url: string, accept: string, retry = true, body?: string): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url.startsWith("http") ? url : API + url, { headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept } });
+    res = await fetch(url.startsWith("http") ? url : API + url, { method: body ? "POST" : "GET", body, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
   } catch (e) {
     if (e instanceof GhError) throw e;
     throw new GhError("other");
   }
   if (res.ok) return res;
   if (res.status === 401) {
-    if (retry) return request(url, accept, false); // token may have been revoked or just expired: refresh once
+    if (retry) return request(url, accept, false, body); // token may have been revoked or just expired: refresh once
     cached = null;
     throw new GhError("auth", 401);
   }
@@ -74,6 +75,7 @@ export async function listBranches(repo: string): Promise<string[]> {
 // In-memory caches. ponytail: unbounded; fine for one browsing session, add eviction if memory shows up.
 const trees = new Map<string, Promise<GitTree>>();
 const folderTrees = new Map<string, Promise<GitTree>>();
+const commits = new Map<string, Promise<Record<string, CommitInfo>>>();
 const memo = <T>(m: Map<string, Promise<T>>, key: string, make: () => Promise<T>) => {
   let p = m.get(key);
   if (!p) m.set(key, (p = make().catch((e) => (m.delete(key), Promise.reject(e)))));
@@ -83,6 +85,7 @@ const memo = <T>(m: Map<string, Promise<T>>, key: string, make: () => Promise<T>
 export const clearCache = () => {
   trees.clear();
   folderTrees.clear();
+  commits.clear();
   cached = null;
 };
 
@@ -134,3 +137,28 @@ export async function getBlob(repo: string, ref: string, path: string): Promise<
   const mime = IMAGE_MIME[path.slice(path.lastIndexOf(".") + 1).toLowerCase()];
   return mime ? new Blob([blob], { type: mime }) : blob;
 }
+
+const COMMIT_PARALLEL = 4;
+
+/** Latest commit per entry of a folder (one GraphQL request per 50 entries, a few at a time). Cached per repo, ref and folder. Rejects only when every request failed. */
+export const getCommits = (repo: string, ref: string, folder: string, entries: TreeEntry[]) =>
+  memo(commits, `${repo}@${ref}:${folder}`, async () => {
+    const queue = buildQueries(repo, ref, entries);
+    const out: Record<string, CommitInfo> = {};
+    let failure: unknown;
+    let ok = 0;
+    const worker = async () => {
+      for (let q = queue.shift(); q; q = queue.shift()) {
+        try {
+          const res = await request("/graphql", "application/json", true, JSON.stringify({ query: q.query, variables: q.variables }));
+          Object.assign(out, mapResponse(await res.json(), q.aliases));
+          ok++;
+        } catch (e) {
+          failure = e;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: COMMIT_PARALLEL }, worker));
+    if (!ok && failure) throw failure;
+    return out;
+  });

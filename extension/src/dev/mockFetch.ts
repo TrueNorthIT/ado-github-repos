@@ -10,6 +10,30 @@ const status = (code: number, headers: Record<string, string> = {}) => new Respo
 const pngBytes = () => Uint8Array.from(atob(PNG_BASE64), (c) => c.charCodeAt(0));
 const BRANCH_PAGE = 100;
 
+// Plausible commits for GraphQL history lookups: a spread of ages, authors and message lengths, picked by path.
+const AUTHORS = [
+  { name: "Ann Author", user: { name: "Ann Display", login: "ann" } },
+  { name: "bob", user: { name: null, login: "bob-dev" } },
+  { name: "Carol Commit", user: null },
+];
+const MESSAGES = ["Update dependencies", "Fix login redirect", "Merged PR 412: Add retry handling to the sync job and tidy up the logging so failures include the correlation id", "Initial commit", "Docs: clarify setup", "Refactor listing"];
+const AGES_MIN = [12, 48, 135, 60 * 26, 60 * 24 * 9, 60 * 24 * 75, 60 * 24 * 400, 60 * 24 * 1000];
+const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+function mockHistory(path: string) {
+  const h = hash(path);
+  const oid = (h.toString(16).padStart(8, "0") + "0123456789abcdef0123456789abcdef01234567").slice(0, 40);
+  return { nodes: [{ oid, messageHeadline: MESSAGES[h % MESSAGES.length], committedDate: new Date(Date.now() - AGES_MIN[h % AGES_MIN.length] * 60e3).toISOString(), author: AUTHORS[h % AUTHORS.length] }] };
+}
+
+function graphql(init: RequestInit | undefined, sc: string): Response {
+  if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
+  const { variables } = JSON.parse(String(init?.body ?? "{}"));
+  if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
+  const object: Record<string, unknown> = {};
+  for (const k of Object.keys(variables)) if (/^p\d+$/.test(k)) object["e" + k.slice(1)] = mockHistory(variables[k]);
+  return json({ data: { repository: { object } } });
+}
+
 function github(u: URL, accept: string, sc: string): Response {
   if (sc === "rateLimit") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const m = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(u.pathname);
@@ -39,6 +63,7 @@ function github(u: URL, accept: string, sc: string): Response {
 
 async function handle(u: URL, init: RequestInit | undefined, sc: string): Promise<Response | undefined> {
   const accept = new Headers(init?.headers).get("Accept") ?? "";
+  if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
   if (u.hostname === "api.github.com") return github(u, accept, sc);
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);

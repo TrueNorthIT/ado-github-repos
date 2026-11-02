@@ -20,7 +20,7 @@ window.open = (url?: string | URL, ...rest: any[]) => {
   return popup as unknown as Window;
 };
 
-const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "noAccess", "slow"];
+const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "slow"];
 
 function toolbar() {
   const bar = document.createElement("div");

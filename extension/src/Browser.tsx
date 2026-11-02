@@ -13,6 +13,9 @@ import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
 import { Table, ITableColumn, SimpleTableCell, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
+import { Ago } from "azure-devops-ui/Ago";
+import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { Tooltip } from "azure-devops-ui/TooltipEx";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Tree, ExpandableTreeCell, ITreeColumn } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
@@ -22,14 +25,15 @@ import { BrowseState, parse, serialize } from "./lib/browseState";
 import { breadcrumbs, findReadme, needsFolderFetch, type GitTree, type TreeEntry } from "./lib/tree";
 import { filterBranches, pathAfterSwitch } from "./lib/branchSwitch";
 import { classifyFile, monacoLanguage, type FileKind } from "./lib/fileKind";
-import { formatSize, sortListing } from "./lib/listing";
+import { sortListing } from "./lib/listing";
+import { commitUrl, type CommitInfo } from "./lib/commits";
 import { githubUrl } from "./lib/githubUrl";
 import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import { watchTheme } from "./theme";
 import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
-import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getRepo, getTree, listBranches, listDir, pathExistsOn } from "./githubBrowse";
+import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, listBranches, listDir, pathExistsOn } from "./githubBrowse";
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
@@ -258,16 +262,24 @@ function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: stri
 
 // ---------- listing ----------
 
-function Listing({ entries, go, repo, refName }: { entries: TreeEntry[]; go: (path: string) => void; repo: string; refName: string }) {
+function Listing({ entries, go, repo, refName, folder }: { entries: TreeEntry[]; go: (path: string) => void; repo: string; refName: string; folder: string }) {
+  // Names show at once; commit info fills in after. A failed lookup just leaves those cells blank.
+  const [commits, setCommits] = React.useState<Record<string, CommitInfo>>({});
+  React.useEffect(() => {
+    let dead = false;
+    setCommits({});
+    getCommits(repo, refName, folder, entries).then((c) => !dead && setCommits(c), () => {});
+    return () => { dead = true; };
+  }, [entries, repo, refName, folder]);
   const [dir, setDir] = React.useState<"asc" | "desc">("asc");
-  const sorted = React.useMemo(() => new ArrayItemProvider(sortListing(entries, dir)), [entries, dir]);
+  const sorted = React.useMemo(() => new ArrayItemProvider(sortListing(entries, dir)), [entries, dir, commits]); // a new provider when commits arrive makes Table redraw its cells
   const sorting = React.useMemo(() => new ColumnSorting<TreeEntry>((_i, order) => setDir(order === SortOrder.descending ? "desc" : "asc")), []);
   const columns = React.useMemo<ITableColumn<TreeEntry>[]>(
     () => [
       {
         id: "name",
         name: "Name",
-        width: -100,
+        width: -35,
         sortProps: { ariaLabelAscending: "Sorted A to Z", ariaLabelDescending: "Sorted Z to A", sortOrder: dir === "asc" ? SortOrder.ascending : SortOrder.descending },
         renderCell: (_r, columnIndex, tableColumn, e) => (
           <SimpleTableCell key="name" columnIndex={columnIndex} tableColumn={tableColumn}>
@@ -281,15 +293,35 @@ function Listing({ entries, go, repo, refName }: { entries: TreeEntry[]; go: (pa
         ),
       },
       {
-        id: "size",
-        name: "Size",
-        width: 120,
-        renderCell: (_r, columnIndex, tableColumn, e) => (
-          <SimpleTableCell key="size" columnIndex={columnIndex} tableColumn={tableColumn}>{e.kind === "file" ? formatSize(e.size) : ""}</SimpleTableCell>
-        ),
+        id: "changed",
+        name: "Last change",
+        width: -20,
+        renderCell: (_r, columnIndex, tableColumn, e) => {
+          const c = commits[e.path];
+          return <SimpleTableCell key="changed" columnIndex={columnIndex} tableColumn={tableColumn}>{c && <Ago date={c.date} format={AgoFormat.Compact} />}</SimpleTableCell>;
+        },
+      },
+      {
+        id: "commits",
+        name: "Commits",
+        width: -45,
+        renderCell: (_r, columnIndex, tableColumn, e) => {
+          const c = commits[e.path];
+          return (
+            <SimpleTableCell key="commits" columnIndex={columnIndex} tableColumn={tableColumn}>
+              {c && (
+                <div className="gh-commit">
+                  <Link className="gh-commit-sha" subtle href={commitUrl(repo, c.sha)} target="_blank" rel="noopener noreferrer">{c.shortSha}</Link>
+                  <Tooltip text={c.headline} overflowOnly><span className="gh-commit-msg">{c.headline}</span></Tooltip>
+                  {c.author && <span className="gh-commit-author secondary-text">{c.author}</span>}
+                </div>
+              )}
+            </SimpleTableCell>
+          );
+        },
       },
     ],
-    [go, repo, refName, dir]
+    [go, repo, refName, dir, commits]
   );
   if (!entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
   return (
@@ -731,7 +763,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       {view.t === "submodule" && <MessageCard severity={MessageCardSeverity.Info}>{view.entry.name} is a submodule, which can't be opened here.</MessageCard>}
                       {view.t === "folder" && (
                         <>
-                          <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} />
+                          <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} folder={path} />
                           <Readme entries={view.entries} repo={repo} refName={ctx.ref} go={go} />
                         </>
                       )}
