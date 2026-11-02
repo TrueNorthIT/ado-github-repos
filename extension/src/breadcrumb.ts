@@ -5,7 +5,7 @@ import type { IHostNavigationService } from "azure-devops-extension-api/Common/C
 import { ObservableArray } from "azure-devops-ui/Core/Observable";
 import type { IBreadcrumbItem } from "azure-devops-ui/Breadcrumb";
 import { parse, serialize } from "./lib/browseState";
-import { REPO_CHANNEL, type RepoMessage } from "./lib/repoChannel";
+import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 
 // Must match serviceName in vss-extension.json. CommonServiceIds is a const enum, so the nav service id is a literal.
 const SERVICE = "github-repos-breadcrumb";
@@ -13,6 +13,7 @@ const NAV_SERVICE = "ms.vss-features.host-navigation-service";
 
 const items = new ObservableArray<IBreadcrumbItem>([]);
 let shown: string | undefined;
+let isReady = false;
 
 function setRepo(candidate?: string) {
   const repo = candidate ? parse(serialize({ repo: candidate })).repo : undefined; // validate owner/name
@@ -20,17 +21,28 @@ function setRepo(candidate?: string) {
   shown = repo;
   // Clicking sets the one-shot switch flag; the hub opens its repo switcher (see hostNav.ts).
   items.splice(0, items.length, ...(repo ? [{ key: "gh-repo", text: repo, ariaLabel: `Repository ${repo}. Switch repository`, href: serialize({ repo, switch: true }), iconProps: { iconName: "GitHubLogo" }, rank: 1000 }] : []));
+  if (isReady) checkSubscribed();
 }
 
-// Source 1: the hub frame announces the open repo over a same-origin BroadcastChannel (see hostNav.ts). Seen live in 0.10.0:
-// on a direct load this frame's getHash() can come back without the repo, while the hub always has it.
-const ch = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel(REPO_CHANNEL);
+// On a full page load ADO never subscribes to this list, so the item would never reach the header. Tell the hub, which
+// re-enters itself with an in-app navigation (see selfNavigate in hostNav.ts). Short delay: ADO subscribes right after
+// it receives the list.
+let checkTimer: ReturnType<typeof setTimeout> | undefined;
+function checkSubscribed() {
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(() => {
+    // subscriberCount is protected in the typings but a plain field at runtime (it is in the list ADO receives).
+    if (shown && (items as unknown as { subscriberCount: number }).subscriberCount === 0) post(sibling("hub.html"), { type: "tn-gh-unsubscribed" });
+  }, 2500);
+}
+
+// Source 1: the hub frame on this page tells us the open repo (see hostNav.ts).
 let heard: () => void = () => {};
 const heardFromHub = new Promise<void>((r) => (heard = r));
-ch?.addEventListener("message", (e: MessageEvent<RepoMessage>) => {
-  if (e.data?.type === "repo") { setRepo(e.data.repo); heard(); }
+onRepoMessage((m) => {
+  if (m.type === "tn-gh-repo") { setRepo(m.repo); heard(); }
 });
-ch?.postMessage({ type: "hello" } satisfies RepoMessage);
+post(sibling("hub.html"), { type: "tn-gh-hello" });
 
 // The host asks the frame for an object by exact name: registeredObjectId, the full contribution id or serviceName,
 // depending on the code path. Register under all of them. It then calls getBreadcrumbItems(breadcrumbId) if present,
@@ -48,3 +60,4 @@ ready = SDK.init().then(async () => {
   nav.onHashChanged(fromHash);
   if (!shown) await Promise.race([heardFromHub, new Promise((r) => setTimeout(r, 1500))]);
 });
+ready.then(() => { isReady = true; checkSubscribed(); });
