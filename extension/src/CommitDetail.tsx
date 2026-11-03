@@ -27,6 +27,7 @@ import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
 import { watchTheme } from "./theme";
 import { MoreButton } from "azure-devops-ui/Menu";
+import { useCommitActions } from "./CommitActions";
 import "./browser.css";
 
 type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
@@ -175,6 +176,7 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
   const [load, retry] = useLoad(() => getCommitDetail(repo, sha), [repo, sha, props.signedIn]);
+  const actions = useCommitActions(repo, props.signedIn);
   const tab = state.commitTab ?? "files";
   const back = () => go({ repo, ref: state.ref });
   const set = (s: Partial<typeof state>) => go({ ...state, ...s });
@@ -209,6 +211,7 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
                   menuProps: {
                     id: "gh-commit-menu",
                     items: [
+                      ...(d ? actions.menu(d.sha) : []),
                       { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => { window.open(ghUrl, "_blank", "noopener"); } },
                       { id: "copy", text: "Copy SHA", iconProps: { iconName: "Copy" }, onActivate: () => { void navigator.clipboard?.writeText(d?.sha ?? sha); } },
                     ],
@@ -220,6 +223,7 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
         ]}
       />
       <div className="gh-pr-sub">
+        {actions.ui}
         {d ? <Meta d={d} repo={repo} branch={branch} branchHref={href("files", { repo, ref: branch })} openBranch={openInHub("files", { repo, ref: branch })} /> : <div className="gh-pr-meta" />}
       </div>
       <TabBar ariaLabel="Commit" selectedTabId={tab} onSelectedTabChanged={(id) => set({ commitTab: id as "files" | "details" })} tabSize={TabSize.Tall} disableSticky>

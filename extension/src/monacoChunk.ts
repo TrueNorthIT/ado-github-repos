@@ -3,6 +3,9 @@
 import "monaco-editor/editor/browser/coreCommands.js";
 import "monaco-editor/editor/contrib/clipboard/browser/clipboard.js";
 import "monaco-editor/editor/contrib/find/browser/findController.js";
+// Only the editable variant needs these two: Ctrl+M lets Tab leave the editor (a keyboard trap otherwise), and the line shortcuts people expect when typing.
+import "monaco-editor/editor/contrib/toggleTabFocusMode/browser/toggleTabFocusMode.js";
+import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js";
 import "monaco-editor/basic-languages/monaco.contribution.js";
 import "../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import * as monaco from "monaco-editor/editor/editor.api.js";
@@ -69,6 +72,16 @@ export function createViewer(el: HTMLElement, value: string, language: string, d
     fontFamily: 'Consolas, "Courier New", monospace',
   });
 }
+
+/** The same editor, editable: for a web edit. `onChange` runs after each edit. The caller reads `getValue()` (the model keeps the file's line endings) and disposes the editor. */
+export function createEditor(el: HTMLElement, value: string, language: string, dark: boolean, label: string, onChange: () => void) {
+  const editor = createViewer(el, value, language, dark, label);
+  editor.updateOptions({ readOnly: false, domReadOnly: false, renderLineHighlight: "line", scrollBeyondLastLine: false, ariaLabel: `${label}. Press Ctrl+M to make Tab move focus out of the editor.` });
+  const sub = editor.onDidChangeModelContent(onChange);
+  return { editor, dispose: () => { sub.dispose(); editor.dispose(); } };
+}
+
+export const setLanguage = (editor: monaco.editor.IStandaloneCodeEditor, language: string) => monaco.editor.setModelLanguage(editor.getModel()!, language);
 
 export const setTheme = (dark: boolean) => monaco.editor.setTheme(themeName(dark));
 

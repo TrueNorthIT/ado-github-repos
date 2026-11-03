@@ -550,7 +550,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
           {actions.notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => actions.dismiss()}>{actions.notice}</MessageCard>}
         </div>
       )}
-      <PrActionDialogs store={actions} repo={repo} number={n} workItemIds={pr?.workItemIds ?? []} ui={ui} setUi={setUi} />
+      <PrActionDialogs store={actions} repo={repo} number={n} workItemIds={pr?.workItemIds ?? []} ui={ui} setUi={setUi} prTitle={pr?.title ?? ""} openPr={(m) => go({ repo, view: "prs", prTab: state.prTab ?? listTab, pr: m })} />
       <TabBar ariaLabel="Pull request" selectedTabId={page} onSelectedTabChanged={(id) => nav({ prPage: id as PrPageId, file: undefined })} tabSize={TabSize.Tall} disableSticky>
         {PAGES.map((p) => <Tab key={p.id} id={p.id} name={p.name} />)}
       </TabBar>

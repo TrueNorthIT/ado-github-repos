@@ -65,13 +65,15 @@ export function NewBranchDialog({ branches, existing, defaultBase, fixedBase, bu
   );
 }
 
-export function NewTagDialog({ branches, existing, defaultBase, busy, error, clearError, create, close }: {
-  branches: string[]; existing: string[]; defaultBase: string; busy: boolean; error: string | null; clearError: () => void;
+export function NewTagDialog({ branches, existing, defaultBase, presetSha, busy, error, clearError, create, close }: {
+  branches: string[]; existing: string[]; defaultBase: string;
+  /** Tag this commit: the commit ID is filled in and the branch picker is left out. */
+  presetSha?: string; busy: boolean; error: string | null; clearError: () => void;
   create: (p: { name: string; base: string; sha: string; message: string }) => void; close: () => void;
 }) {
   const [name, setName] = React.useState("");
   const [base, setBase] = React.useState(defaultBase);
-  const [sha, setSha] = React.useState("");
+  const [sha, setSha] = React.useState(presetSha ?? "");
   const [message, setMessage] = React.useState("");
   const shaBad = sha.trim() !== "" && !isShaPrefix(sha.trim());
   const ok = isNameOk(name, existing) && !shaBad;
@@ -84,9 +86,9 @@ export function NewTagDialog({ branches, existing, defaultBase, busy, error, cle
       <div className="gh-dialog-form flex-column">
         <ErrorLine error={error} dismiss={clearError} />
         <NameField label="Name" name={name} setName={setName} existing={existing} what="Tag" />
-        <BaseBranch label="Based on" branches={branches} value={base} setValue={setBase} />
-        <FormItem label="Or a commit ID" error={shaBad} message={shaBad ? "Enter 4 to 40 hexadecimal characters." : "Optional. Overrides the branch."}>
-          <TextField value={sha} onChange={(_e, v) => setSha(v)} placeholder="Commit ID" ariaLabel="Commit ID" spellCheck={false} />
+        {!presetSha && <BaseBranch label="Based on" branches={branches} value={base} setValue={setBase} />}
+        <FormItem label={presetSha ? "Commit ID" : "Or a commit ID"} error={shaBad} message={shaBad ? "Enter 4 to 40 hexadecimal characters." : presetSha ? "The tag points at this commit." : "Optional. Overrides the branch."}>
+          <TextField value={sha} onChange={(_e, v) => setSha(v)} readOnly={!!presetSha} placeholder="Commit ID" ariaLabel="Commit ID" spellCheck={false} />
         </FormItem>
         <FormItem label="Description" message="Optional. With a description the tag is annotated; without one it is lightweight.">
           <TextField value={message} onChange={(_e, v) => setMessage(v)} multiline rows={4} placeholder="Tag message" ariaLabel="Tag description" />

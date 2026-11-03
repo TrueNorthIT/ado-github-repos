@@ -8,6 +8,7 @@ import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell } from "azure-devops-ui/Table";
+import { MoreButton, type IMenuItem } from "azure-devops-ui/Menu";
 import { TextField } from "azure-devops-ui/TextField";
 import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
@@ -17,6 +18,7 @@ import { computeGraph, type GraphLayout, type GraphRow } from "./lib/commitGraph
 import { isShaPrefix, normalizeHistoryPath, type CommitRow } from "./lib/commitsQuery";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
+import { useCommitActions } from "./CommitActions";
 import { GraphCell, graphWidth } from "./CommitGraph";
 import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, PersonLine, PrCell, RepoHubPage, switcherItem, useDefaultBranch } from "./RepoHub";
 import { findCommit, invalidateRefs, listCommits } from "./githubBrowse";
@@ -38,6 +40,8 @@ export interface CommitTableProps {
   prHref: (n: number) => string;
   openPr: (n: number) => void;
   showHeader?: boolean;
+  /** The ⋯ items of a commit; leave out for no actions column. */
+  menu?: (sha: string) => IMenuItem[];
 }
 
 function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
@@ -102,11 +106,24 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
       ),
     }
   );
+  if (p.menu) {
+    const menu = p.menu;
+    cols.push({
+      id: "more",
+      name: "",
+      width: 40,
+      renderCell: (_r, columnIndex, tableColumn, row) => (
+        <SimpleTableCell key="more" columnIndex={columnIndex} tableColumn={tableColumn}>
+          <MoreButton ariaLabel={`Actions for commit ${row.shortSha}`} contextualMenuProps={{ menuProps: { id: `gh-commit-menu-${row.sha}`, items: menu(row.sha) } }} />
+        </SimpleTableCell>
+      ),
+    });
+  }
   return cols;
 }
 
 export function CommitTable(p: CommitTableProps) {
-  const cols = React.useMemo(() => columns(p), [p.graph, p.commitHref, p.open, p.prHref, p.openPr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cols = React.useMemo(() => columns(p), [p.graph, p.commitHref, p.open, p.prHref, p.openPr, p.menu]); // eslint-disable-line react-hooks/exhaustive-deps
   const provider = React.useMemo(() => new ArrayItemProvider(p.rows), [p.rows]);
   return (
     <Table<CommitRow>
@@ -144,6 +161,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const [idText, setIdText] = React.useState("");
   const [notice, setNotice] = React.useState<string | null>(null);
   const filter = React.useMemo(() => new Filter(), []);
+  const actions = useCommitActions(repo, signedIn);
 
   React.useEffect(() => {
     // The keyword narrows the loaded rows at once; the path is asked of GitHub (history(path:)), so it waits for typing to pause.
@@ -238,6 +256,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
       />
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
+        {actions.ui}
         {filterOpen && (
           <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("keyword", { value: "" }); filter.setFilterItemState("path", { value: "" }); }} searchRoleAriaLabel="Filter commits">
             <KeywordFilterBarItem filterItemKey="keyword" placeholder="Author or message (loaded commits)" />
@@ -253,7 +272,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         ) : (
           <>
             <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
-              <CommitTable rows={filtered} graph={graph} label={`Commits on ${ref}`} commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} />
+              <CommitTable rows={filtered} graph={graph} label={`Commits on ${ref}`} commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} />
             </Card>
             {next.more && (
               <div className="gh-load-more flex-row justify-center">

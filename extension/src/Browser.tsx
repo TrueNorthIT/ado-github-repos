@@ -8,7 +8,7 @@ import { Page } from "azure-devops-ui/Page";
 import { Surface, SurfaceBackground } from "azure-devops-ui/Surface";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
-import { MoreButton } from "azure-devops-ui/Menu";
+import { MoreButton, type IMenuItem } from "azure-devops-ui/Menu";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
@@ -32,14 +32,18 @@ import { watchTheme } from "./theme";
 import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
-import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, listBranches, listDir, pathExistsOn } from "./githubBrowse";
+import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, getViewerLogin, getWriteContext, listBranches, listDir, pathExistsOn } from "./githubBrowse";
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
 import { BlameTab, CompareTab, HistoryTab } from "./FileTabs";
 import { applyAgainst, resolveTab, tabsFor, type FileTab } from "./lib/fileTabs";
 import { compareBaseFor } from "./lib/compareHash";
-import { patchHash, useHashExtras } from "./hostNav";
+import { openHub, patchHash, useHashExtras } from "./hostNav";
+import { EditPane, WriteDialogs, type WriteDialog } from "./FileWrites";
+import { decodeForEdit, treeLookup, validatePath, type CommitPlan, type WriteContext } from "./lib/fileCommit";
+import { branchRowNewPrHash } from "./lib/newPrHash";
+import { useRefWrites } from "./refWrites";
 import { usePrefs } from "./prefs";
 import "./browser.css";
 
@@ -267,7 +271,7 @@ function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: stri
 
 // ---------- listing ----------
 
-function Listing({ entries, go, repo, refName, folder }: { entries: TreeEntry[]; go: (path: string) => void; repo: string; refName: string; folder: string }) {
+function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEntry[]; go: (path: string) => void; repo: string; refName: string; folder: string; menu: (e: TreeEntry) => IMenuItem[] }) {
   // Names show at once; commit info fills in after. A failed lookup just leaves those cells blank.
   const [commits, setCommits] = React.useState<Record<string, CommitInfo>>({});
   React.useEffect(() => {
@@ -325,8 +329,21 @@ function Listing({ entries, go, repo, refName, folder }: { entries: TreeEntry[];
           );
         },
       },
+      {
+        id: "more",
+        name: "",
+        width: 40,
+        renderCell: (_r, columnIndex, tableColumn, e) => {
+          const items = menu(e);
+          return (
+            <SimpleTableCell key="more" columnIndex={columnIndex} tableColumn={tableColumn}>
+              {items.length > 0 && <MoreButton ariaLabel={`Actions for ${e.name}`} contextualMenuProps={{ menuProps: { id: `gh-entry-menu-${e.path}`, items } }} />}
+            </SimpleTableCell>
+          );
+        },
+      },
     ],
-    [go, repo, refName, dir, commits]
+    [go, repo, refName, dir, commits, menu]
   );
   if (!entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
   return (
@@ -543,7 +560,7 @@ export function RepoSwitcher({ repo, openTick, onPick, compact }: { repo: string
 
 // ---------- the browser ----------
 
-type Ctx = { ref: string; defaultBranch: string; tree: GitTree };
+type Ctx = { ref: string; defaultBranch: string; tree: GitTree; write: WriteContext | null };
 type View =
   | { t: "loading" }
   | { t: "error"; err: unknown }
@@ -587,6 +604,15 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const [query, setQuery] = React.useState("");
   const [notice, setNotice] = React.useState<string | null>(null);
   const [leftWidth] = React.useState(readWidth);
+  // Web edits (Edit, New file, Upload, Rename, Delete): see FileWrites.tsx.
+  const writes = useRefWrites();
+  const [dialog, setDialog] = React.useState<WriteDialog | null>(null);
+  const [editing, setEditing] = React.useState<{ kind: "edit"; path: string; initial: string; bom: boolean } | { kind: "new"; dir: string } | null>(null);
+  const [newPath, setNewPath] = React.useState("");
+  const [loadingEdit, setLoadingEdit] = React.useState(false);
+  const [committed, setCommitted] = React.useState<string | null>(null);
+  const [login, setLogin] = React.useState("");
+  const editText = React.useRef("");
   // In a truncated tree only the folders fetched so far are known; the finder searches those.
   const seen = React.useRef(new Set<string>());
   const [seenCount, setSeenCount] = React.useState(0);
@@ -610,8 +636,9 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
       try {
         const info = await getRepo(repo);
         const ref = state.ref ?? info.defaultBranch;
-        const tree = await getTree(repo, ref);
-        if (!dead) setCtx({ ref, defaultBranch: info.defaultBranch, tree });
+        // The head is read with the tree: a web edit commits against the head the page was loaded at. A failed lookup just means no edit actions.
+        const [tree, write] = await Promise.all([getTree(repo, ref), getWriteContext(repo, ref).catch(() => null)]);
+        if (!dead) setCtx({ ref, defaultBranch: info.defaultBranch, tree, write });
       } catch (e) {
         if (!dead) setCtxErr(e);
       }
@@ -664,6 +691,62 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const isFile = view.t === "file";
   const err = ctxErr ?? (view.t === "error" ? view.err : null);
 
+  // Leaving the path or branch drops an edit in progress; the page asks first when the editor is dirty (EditPane.cancel) and the browser asks when the page closes.
+  const lastWhere = React.useRef(`${refName}:${path}`);
+  React.useEffect(() => {
+    const where = `${refName}:${path}`;
+    if (lastWhere.current !== where) { lastWhere.current = where; setEditing(null); }
+  }, [refName, path]);
+  const write = ctx?.write;
+  const canEdit = !!write?.canWrite && !!write.headOid;
+  const lookup = React.useMemo(() => (ctx ? treeLookup(ctx.tree) : () => undefined), [ctx]);
+
+  const openWrite = (d: WriteDialog) => {
+    writes.clearError();
+    openBranches();
+    void getViewerLogin().then(setLogin, () => {});
+    // After the ⋯ menu has closed and handed focus back to its button, or the dialog's autofocus would be undone by it.
+    setTimeout(() => setDialog(d), 50);
+  };
+  const startNew = (dir: string) => { setCommitted(null); setNewPath(dir ? `${dir}/` : ""); editText.current = ""; setEditing({ kind: "new", dir }); };
+  const startEdit = async () => {
+    if (!ctx || view.t !== "file") return;
+    setCommitted(null);
+    setNotice(null);
+    setLoadingEdit(true);
+    try {
+      const d = decodeForEdit(new Uint8Array(await getRaw(repo, ctx.ref, path)));
+      if (d.ok) setEditing({ kind: "edit", path, initial: d.text, bom: d.bom });
+      else setNotice("This file is not UTF-8 text, so it can't be edited here.");
+    } catch {
+      setNotice("Could not load the file for editing.");
+    } finally {
+      setLoadingEdit(false);
+    }
+  };
+  const afterWrite = (plan: CommitPlan, goto?: string) => {
+    setDialog(null);
+    setEditing(null);
+    if (plan.openPr) return void openHub("prs", branchRowNewPrHash(repo, plan.branch));
+    setCommitted(`Committed to ${plan.branch}.`);
+    setReload((n) => n + 1);
+    if (goto !== undefined && goto !== path) nav(goto);
+  };
+  /** The ⋯ items of a folder (New file here, Upload here) or a file (Rename, Delete); none without push access to a branch. */
+  const entryMenu = React.useCallback(
+    (e: { path: string; kind: "file" | "folder" | "submodule" }): IMenuItem[] =>
+      !canEdit || e.kind === "submodule" ? []
+      : e.kind === "folder" ? [
+        { id: "new", text: "New file here", iconProps: { iconName: "Add" }, disabled: writes.busy, onActivate: () => startNew(e.path) },
+        { id: "upload", text: "Upload files here", iconProps: { iconName: "Upload" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "upload", dir: e.path }) },
+      ] : [
+        { id: "rename", text: "Rename", iconProps: { iconName: "Rename" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "rename", path: e.path }) },
+        { id: "delete", text: "Delete", iconProps: { iconName: "Delete" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "delete", path: e.path }) },
+      ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startNew and openWrite only use setters and refs
+    [canEdit, writes.busy, repo]
+  );
+
   const doSignIn = async () => {
     await signIn();
     setReload((n) => n + 1);
@@ -706,6 +789,13 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
   const tabProps = { repo, urlRef: state.ref, refName, path, signedIn, signIn: () => void doSignIn(), busy };
   const showable = view.t === "file" && (view.f.kind === "text" || view.f.kind === "markdown"); // Blame and Compare need text
+  const hereItems = view.t === "file" || view.t === "folder" ? entryMenu({ path, kind: view.t }) : [];
+  const editable = canEdit && view.t === "file" && tab === "contents" && (view.f.kind === "text" || view.f.kind === "markdown") && !editing;
+  const headerItems = editing ? [] : [
+    ...(editable ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, disabled: loadingEdit || writes.busy, onActivate: () => void startEdit() }] : []),
+    ...(hereItems.length ? [{ id: "more", important: true, text: "More actions", renderButton: () => <MoreButton key="more" ariaLabel={`Actions for ${baseOf(path) || "the repository root"}`} contextualMenuProps={{ menuProps: { id: "gh-files-menu", items: hereItems } }} /> }] : []),
+  ];
+  const newProblem = editing?.kind === "new" ? validatePath(newPath, lookup) : null;
   const menuItems = [
     { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => { window.open(githubUrl(repo, refName || "HEAD", path, isFile), "_blank", "noopener"); } },
     { id: "list", text: "All repositories", iconProps: { iconName: "Back" }, onActivate: toList },
@@ -757,7 +847,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                 ctx && (
                   <>
                     {/* In azure-devops-ui 2.281 the 21px/600 title (class title-m) is TitleSize.Large; TitleSize.Medium renders 17px/400. */}
-                    <Header className="repos-files-header" title={path === "" ? "Files" : baseOf(path)} titleSize={TitleSize.Large} titleAriaLevel={1} />
+                    <Header className="repos-files-header" title={path === "" ? "Files" : baseOf(path)} titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={headerItems} />
                     <TabBar
                       ariaLabel="View"
                       selectedTabId={tab}
@@ -769,6 +859,25 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                     </TabBar>
                     <div className="page-content page-content-top gh-body flex-column">
                       {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
+                      {committed && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setCommitted(null)}>{committed}</MessageCard>}
+                      {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
+                      {editing && (
+                        <EditPane
+                          key={editing.kind === "edit" ? editing.path : `new:${editing.dir}`}
+                          loadMonaco={loadMonaco}
+                          name={editing.kind === "edit" ? baseOf(editing.path) : null}
+                          dir={editing.kind === "new" ? editing.dir : ""}
+                          initial={editing.kind === "edit" ? editing.initial : ""}
+                          dark={dark}
+                          path={newPath}
+                          setPath={setNewPath}
+                          pathProblem={newProblem}
+                          busy={writes.busy}
+                          setText={(t) => { editText.current = t; }}
+                          cancel={() => setEditing(null)}
+                          commit={() => openWrite(editing.kind === "edit" ? { kind: "edit", path: editing.path, text: editText.current, original: editing.initial, bom: editing.bom } : { kind: "new", path: newPath, text: editText.current })}
+                        />
+                      )}
                       {view.t === "loading" && <Spinner size={SpinnerSize.large} ariaLabel="Loading" />}
                       {view.t === "missing" && (
                         <MessageCard severity={MessageCardSeverity.Warning} buttonProps={[{ text: "Go to the repository root", onClick: () => nav("") }]}>
@@ -777,9 +886,9 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       )}
                       {view.t === "submodule" && <MessageCard severity={MessageCardSeverity.Info}>{view.entry.name} is a submodule, which can't be opened here.</MessageCard>}
                       {view.t === "folder" && tab === "history" && <HistoryTab {...tabProps} />}
-                      {view.t === "folder" && tab !== "history" && (
+                      {view.t === "folder" && tab !== "history" && !editing && (
                         <>
-                          <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} folder={path} />
+                          <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} folder={path} menu={entryMenu} />
                           <Readme entries={view.entries} repo={repo} refName={ctx.ref} go={go} />
                         </>
                       )}
@@ -789,7 +898,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       {view.t === "file" && tab === "compare" && showable && (
                         <CompareTab {...tabProps} dark={dark} against={compareWith} defaultBranch={ctx.defaultBranch} setAgainst={(r) => patchHash((h) => applyAgainst(h, r))} />
                       )}
-                      {view.t === "file" && (tab === "contents" || tab === "preview") && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} />}
+                      {view.t === "file" && (tab === "contents" || tab === "preview") && !editing && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} />}
                     </div>
                   </>
                 )
@@ -798,6 +907,21 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
           )}
         />
       </div>
+      {dialog && ctx?.write && (
+        <WriteDialogs
+          dialog={dialog}
+          repo={repo}
+          branch={ctx.ref}
+          write={ctx.write}
+          tree={ctx.tree}
+          branches={branches}
+          viewerLogin={login}
+          writes={writes}
+          close={() => { if (!writes.busy) { setDialog(null); writes.clearError(); } }}
+          done={afterWrite}
+          reload={() => { setDialog(null); setEditing(null); writes.clearError(); setReload((n) => n + 1); }}
+        />
+      )}
     </Surface>
   );
 }

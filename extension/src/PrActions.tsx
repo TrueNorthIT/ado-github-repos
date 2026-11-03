@@ -13,6 +13,7 @@ import { Dropdown } from "azure-devops-ui/Dropdown";
 import { FormItem } from "azure-devops-ui/FormItem";
 import { Icon } from "azure-devops-ui/Icon";
 import { Link } from "azure-devops-ui/Link";
+import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { MenuItemType, type IMenuItem } from "azure-devops-ui/Menu";
 import { Panel } from "azure-devops-ui/Panel";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -20,6 +21,8 @@ import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { SplitButton } from "azure-devops-ui/SplitButton";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
+import { Toggle } from "azure-devops-ui/Toggle";
+import { canRevert, revertTitle } from "./lib/revertPr";
 import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ActionStore } from "./actionStore";
 import { getBranchNames, getMergeMessages } from "./githubBrowse";
@@ -38,6 +41,7 @@ export interface Ui {
   panel?: "complete" | "autoComplete";
   vote?: VoteId;
   target?: boolean;
+  revert?: boolean;
 }
 
 const STATUS_OF: Record<PolicyState, typeof Statuses.Success> = { success: Statuses.Success, failure: Statuses.Failed, pending: Statuses.Waiting, neutral: Statuses.Skipped };
@@ -137,6 +141,9 @@ export function prCommandItems(store: ActionStore, url: string, open: any, rest:
     { id: "follow", important: false, text: "Follow on GitHub", iconProps: { iconName: "Ringer" }, onActivate: () => void window.open(url, "_blank", "noopener") },
     { id: "githubDev", important: false, text: "Open in github.dev", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(githubDevPrUrl(store.repo, store.number), "_blank", "noopener") },
     { id: "target", important: false, text: "Change target branch", iconProps: { iconName: "BranchCompare" }, disabled: !v || store.busy || !v.pr.viewerCanUpdate || v.pr.state !== "OPEN", onActivate: () => setUi({ target: true }) },
+    ...(v && canRevert({ state: v.pr.state, viewerPermission: v.repo.viewerPermission })
+      ? [{ id: "revert", important: false, text: "Revert", iconProps: { iconName: "Undo" }, disabled: store.busy, onActivate: () => setUi({ revert: true }) }]
+      : []),
     ...rest.map((c) => ({ ...c, important: false })),
   ];
 }
@@ -195,6 +202,26 @@ function TargetDialog({ store, repo, close }: { store: ActionStore; repo: string
       <FormItem label={`Target branch (now ${pr.baseRefName})`}>
         <Dropdown ariaLabel="Target branch" items={items} selection={selection.current} placeholder={names ? "Choose a branch" : "Loading branches"} noItemsText={names ? "No other branches" : "Loading branches"} showFilterBox filterPlaceholderText="Find a branch" onSelect={(_e, i) => setPick(i.id)} />
       </FormItem>
+    </Dialog>
+  );
+}
+
+function RevertDialog({ store, prTitle, close, opened }: { store: ActionStore; prTitle: string; close: () => void; opened: (n: number) => void }) {
+  const [title, setTitle] = React.useState(revertTitle(prTitle));
+  const [draft, setDraft] = React.useState(false);
+  const go = () => void store.revert(title, draft).then((n) => { if (n !== null) { close(); opened(n); } });
+  return (
+    <Dialog
+      titleProps={{ text: "Revert pull request" }}
+      onDismiss={() => !store.busy && close()}
+      footerButtonProps={[{ text: "Cancel", onClick: close, disabled: store.busy }, { text: "Revert", primary: true, disabled: !title.trim() || store.busy, onClick: go }]}
+    >
+      <div className="gh-dialog-form flex-column">
+        {store.error && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => store.dismiss()}>{store.error}</MessageCard>}
+        <div>This creates a new branch and a pull request that undo the changes of this one.</div>
+        <TextField label="Title" required autoFocus value={title} onChange={(_e, v) => setTitle(v)} width={TextFieldWidth.auto} ariaLabel="Title of the revert pull request" />
+        <Toggle text="Create as draft" checked={draft} onChange={(_e, v) => setDraft(v)} />
+      </div>
     </Dialog>
   );
 }
@@ -321,7 +348,7 @@ function CompletePanel({ store, repo, number, mode, workItemIds, close }: { stor
 
 // ---------- the dialogs the page renders ----------
 
-export function PrActionDialogs({ store, repo, number, workItemIds, ui, setUi }: { store: ActionStore; repo: string; number: number; workItemIds: number[]; ui: Ui; setUi: (u: Ui) => void }) {
+export function PrActionDialogs({ store, repo, number, workItemIds, ui, setUi, prTitle, openPr }: { store: ActionStore; repo: string; number: number; workItemIds: number[]; ui: Ui; setUi: (u: Ui) => void; prTitle: string; openPr: (n: number) => void }) {
   const close = () => setUi({});
   if (!store.view) return null;
   return (
@@ -329,6 +356,7 @@ export function PrActionDialogs({ store, repo, number, workItemIds, ui, setUi }:
       {ui.panel && <CompletePanel store={store} repo={repo} number={number} mode={ui.panel} workItemIds={workItemIds} close={close} />}
       {ui.vote && <VoteDialog store={store} id={ui.vote} close={close} />}
       {ui.target && <TargetDialog store={store} repo={repo} close={close} />}
+      {ui.revert && <RevertDialog store={store} prTitle={prTitle} close={close} opened={openPr} />}
     </>
   );
 }
