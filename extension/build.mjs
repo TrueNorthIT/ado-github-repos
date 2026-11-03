@@ -13,6 +13,12 @@ if (!URL.canParse(AUTH_BASE) || (!isLocalHttp && new URL(AUTH_BASE).protocol !==
   throw new Error(`AUTH_BASE must be an https:// origin (or http://localhost:<port>), with no path or trailing slash, got: ${AUTH_BASE}`);
 }
 
+// Live mode (dev only): LIVE=1 with GH_SANDBOX_TOKEN puts the token into the dev bundle so the mock harness can talk to the sandbox repo.
+const LIVE = process.env.LIVE === "1";
+const LIVE_TOKEN = process.env.GH_SANDBOX_TOKEN || "";
+if (LIVE && !DEV) throw new Error("LIVE=1 is for the dev harness only; a production build never carries a token.");
+if (LIVE && !LIVE_TOKEN) throw new Error("LIVE=1 needs GH_SANDBOX_TOKEN in the environment.");
+
 const OUT = DEV ? process.env.DEV_OUT || "dist-dev" : "dist"; // DEV_OUT and PORT let a second dev server run beside the first (e.g. DEV_OUT=dist-dev/b PORT=3001); separate folders so a production build never clobbers the dev server
 rmSync(OUT, { recursive: true, force: true }); // chunk names are hashed, so don't let old ones pile up in the package
 mkdirSync(OUT, { recursive: true });
@@ -35,9 +41,10 @@ const options = {
   target: "es2020",
   metafile: true,
   loader: { ".woff": "dataurl", ".woff2": "dataurl", ".ttf": "dataurl", ".png": "dataurl", ".svg": "dataurl" },
-  define: { __AUTH_BASE__: JSON.stringify(AUTH_BASE), "process.env.NODE_ENV": DEV ? '"development"' : '"production"' },
+  define: { __AUTH_BASE__: JSON.stringify(AUTH_BASE), "process.env.NODE_ENV": DEV ? '"development"' : '"production"', ...(DEV && { __LIVE_TOKEN__: JSON.stringify(LIVE ? LIVE_TOKEN : "") }) },
   logLevel: "info",
 };
+if (!DEV && Object.keys(options.define).some((k) => /LIVE/.test(k))) throw new Error("The production build must not define live-mode values.");
 // Each lazy language chunk gets a copy of the editor CSS that nothing references; keep only the two linked stylesheets.
 const pruneCss = (metafile) => {
   for (const f of Object.keys(metafile.outputs)) if (f.endsWith(".css") && !/^dist.*\/(index|monaco)\.css$/.test(f)) { rmSync(f); delete metafile.outputs[f]; }
@@ -48,7 +55,7 @@ if (DEV) {
   await ctx.watch();
   const { port } = await ctx.serve({ servedir: OUT, port: Number(process.env.PORT) || 3000, host: "localhost" });
   console.log(`AUTH_BASE = ${AUTH_BASE}
-Mock mode: http://localhost:${port}/hub.html (edit, then refresh)`);
+${LIVE ? "LIVE mode: api.github.com is real, limited to TrueNorthIT/gh-repos-sandbox\n" : ""}Mock mode: http://localhost:${port}/hub.html (edit, then refresh)`);
 } else {
   const result = await build(options);
   pruneCss(result.metafile);

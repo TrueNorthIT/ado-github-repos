@@ -18,7 +18,10 @@ import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
 import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
+import { LIVE, SANDBOX, liveFetch } from "./live";
 
+// Live mode: the project is connected to the sandbox repo only.
+const CONNS = LIVE ? [{ id: "conn-live", isConnectionValid: true, repos: [SANDBOX] }] : CONNECTIONS;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -231,8 +234,8 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
   if (u.hostname === "dev.azure.com" && conn) {
     if (sc === "forbidden") return status(403);
-    if (conn[1]) return json({ value: (CONNECTIONS.find((c) => c.id === conn[1])?.repos ?? []).map((r) => ({ gitHubRepositoryUrl: `https://github.com/${r}` })) });
-    return json({ value: sc === "noConnections" ? [] : CONNECTIONS.map(({ id, isConnectionValid }) => ({ id, isConnectionValid })) });
+    if (conn[1]) return json({ value: (CONNS.find((c) => c.id === conn[1])?.repos ?? []).map((r) => ({ gitHubRepositoryUrl: `https://github.com/${r}` })) });
+    return json({ value: sc === "noConnections" ? [] : CONNS.map(({ id, isConnectionValid }) => ({ id, isConnectionValid })) });
   }
   return undefined;
 }
@@ -241,6 +244,7 @@ export function installMockFetch() {
   const real = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+    if (LIVE && u.hostname === "api.github.com") return liveFetch(real, u, input, init); // real GitHub, behind the repo guard
     const sc = scenario();
     const res = await handle(u, init ?? (input instanceof Request ? { headers: input.headers } : undefined), sc);
     if (!res) return real(input, init);

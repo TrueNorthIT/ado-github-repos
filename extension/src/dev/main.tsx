@@ -2,6 +2,7 @@
 import { AUTH_MESSAGE_TYPE } from "../../../shared/contract";
 import { AUTH_BASE } from "../config";
 import { installMockFetch } from "./mockFetch";
+import { LIVE } from "./live";
 import { MOCK_HUBS, fakeTokens, isMockDark, resetStorage, scenario, setMockTheme } from "./mockSdk";
 
 installMockFetch();
@@ -53,7 +54,7 @@ function toolbar() {
   SCENARIOS.forEach((s) => sel.add(new Option(s, s, false, s === scenario())));
   sel.onchange = () => { const u = new URL(location.href); u.searchParams.set("scenario", sel.value); location.href = u.href; };
   label.append(sel);
-  bar.append("MOCK ", hub, theme, label, btn("Reset storage", () => { resetStorage(); location.reload(); }));
+  bar.append(LIVE ? "LIVE (sandbox) " : "MOCK ", hub, theme, label, btn("Reset storage", () => { resetStorage(); location.reload(); }));
   document.body.append(bar);
 }
 

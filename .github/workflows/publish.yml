@@ -101,6 +101,7 @@ jobs:
           [ -f "$vsix" ] || { echo "::error::$vsix not found"; exit 1; }
           if unzip -l "$vsix" | grep -qi '\.svg$'; then echo "::error::SVG files in package (Marketplace rejects them)"; exit 1; fi
           if grep -rqE '__TN_MOCK__|mockSdk' dist; then echo "::error::Mock code in dist"; exit 1; fi
+          if grep -rqE 'ghu_|github_pat_|__TN_LIVE__|__LIVE_TOKEN__|liveGuard' dist; then echo "::error::Live-mode code or a token in dist"; exit 1; fi
           echo "path=extension/$vsix" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
