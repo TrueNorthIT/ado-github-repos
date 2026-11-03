@@ -22,8 +22,9 @@ const NAV_SERVICE = "ms.vss-features.host-navigation-service";
  * #...&pr=234 link opened the PR list, because the empty state made the PR hub fill in its default repo and replace
  * the real hash). An empty first answer is therefore read once more after a short wait before it is trusted.
  */
-/** Delays (ms) between the re-reads of the host hash before a default repo is written to the address (about 4 s in all). */
-export const IF_EMPTY_WAITS = [300, 700, 1200, 1800];
+/** Delays (ms) between the re-reads of the host hash before a default repo is written to the address (about 10 s in all).
+ *  4 s was not enough in 0.37.3: a cold load of an Actions job link (a heavier page) got its address replaced by #repo=<default>. */
+export const IF_EMPTY_WAITS = [300, 700, 1200, 1800, 2500, 3500];
 
 export async function readInitialHash(get: () => Promise<string>, waitMs = 400): Promise<string> {
   const first = await get();
