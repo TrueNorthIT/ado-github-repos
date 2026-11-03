@@ -11,7 +11,7 @@ const R = 4;
 export const graphWidth = (lanes: number) => Math.max(96, X0 + lanes * LANE_W + 16);
 
 const BLUE = "var(--communication-background, #0078d4)";
-const GREY = "var(--palette-neutral-60, rgba(110, 110, 110, 1))";
+const GREY = "rgba(var(--palette-neutral-60, 110, 110, 110), 1)";
 const x = (lane: number) => X0 + lane * LANE_W;
 const colour = (lane: number) => (lane === 0 ? BLUE : GREY);
 

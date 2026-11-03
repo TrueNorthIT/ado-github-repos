@@ -89,7 +89,7 @@ function Details({ d, repo, parentHref, openParent }: { d: CommitDetail; repo: s
               <span className="secondary-text">None (initial commit)</span>
             )}
           </Row>
-          <Row label="SHA"><span className="monospaced-xs">{d.sha}</span> <ClipboardButton className="gh-pr-copy" getContent={() => d.sha} ariaLabel="Copy the full commit SHA" showCopiedTooltip subtle /></Row>
+          <Row label="SHA"><div className="flex-row flex-center"><span className="monospaced-xs">{d.sha}</span><ClipboardButton className="gh-pr-copy" getContent={() => d.sha} ariaLabel="Copy the full commit SHA" showCopiedTooltip subtle /></div></Row>
           {d.treeSha && <Row label="Tree"><span className="monospaced-xs">{d.treeSha}</span></Row>}
           {d.signature && (
             <Row label="Signature">

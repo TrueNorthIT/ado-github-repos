@@ -200,7 +200,7 @@ function useWorkItems(ids: number[], version = 0): Wi {
 function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
   const t = (type && r.types[type]) || {};
   const [bad, setBad] = React.useState(false);
-  const color = t.color ? `#${t.color}` : "var(--palette-neutral-30, #888)";
+  const color = t.color ? `#${t.color}` : "rgba(var(--palette-neutral-30, 136, 136, 136), 1)";
   return t.iconUrl && !bad
     ? <img className="gh-pr-wi-icon" src={t.iconUrl} alt="" width={16} height={16} onError={() => setBad(true)} />
     : <span className="gh-pr-wi-icon gh-pr-wi-dot" style={{ background: color }} aria-hidden="true" />;
