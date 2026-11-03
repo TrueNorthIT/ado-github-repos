@@ -12,7 +12,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { buildRefTree, type RefLeaf } from "./lib/branches";
 import { branchFromTagMutation, type TagRow } from "./lib/tags";
 import { ErrorView } from "./Browser";
-import { HubProps, Loading, PersonLine, RepoHubPage, switcherItem } from "./RepoHub";
+import { HubProps, Loading, PersonLine, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { ConfirmDeleteDialog, NewBranchDialog, NewTagDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createTag, deleteRef, mutate, findCommit, invalidateRefs, listAllBranches, listAllTags, type BranchesData, type TagsData } from "./githubBrowse";
@@ -122,14 +122,15 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
-          switcherItem(repo, openSwitch, (r) => go({ repo: r })),
           { id: "new", text: "New tag", isPrimary: true, important: true, disabled: !v || writes.busy, onActivate: () => setDialog({ kind: "new" }) },
           {
             id: "search", text: "Search tag name", important: true,
             renderButton: () => <TextField key="search" className="gh-ref-search" value={query} onChange={(_e, t) => setQuery(t)} placeholder="Search tag name" ariaLabel="Search tag name" prefixIconProps={{ iconName: "Filter" }} />,
           },
         ]}
-      />
+      >
+        {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
+      </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}

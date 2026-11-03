@@ -353,10 +353,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
   const open = React.useCallback((n: number) => repo && goPr({ repo, prTab: tab, pr: n }), [goPr, repo, tab]);
   const doSignIn = () => { void signIn(); };
 
-  const switcher = (to: (r: string) => BrowseState) => ({
-    id: "repo", text: repo ?? "", important: true,
-    renderButton: () => <RepoSwitcher compact repo={repo!} openTick={openSwitch} onPick={(r) => goPr(to(r))} />,
-  });
+  const switcher = (to: (r: string) => BrowseState) => <RepoSwitcher compact repo={repo!} openTick={openSwitch} onPick={(r) => goPr(to(r))} />;
   const openOnGitHub = (href: string) => ({ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href, target: "_blank", important: true });
   const newPrItem = (r: string) => ({ id: "new", text: "New pull request", iconProps: { iconName: "Add" }, isPrimary: true, important: true, onActivate: () => gotoHash(prListNewPrHash(r)) });
   const extra = commandBarItems.map((c) => ({ ...c, important: false }));
@@ -387,7 +384,9 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     const p: TabProps = { repo, open, signedIn, signIn: doSignIn, busy, filterOpen, closeFilter: () => setFilterOpen(false) };
     body = (
       <>
-        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[newPrItem(repo), switcher((r) => ({ repo: r, prTab: tab })), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]} />
+        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[newPrItem(repo), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]}>
+          {switcher((r) => ({ repo: r, prTab: tab }))}
+        </Header>
         <TabBar
           ariaLabel="Pull request lists"
           selectedTabId={tab}

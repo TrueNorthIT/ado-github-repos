@@ -68,11 +68,8 @@ export function RepoHubPage({ state, go, children }: { state: BrowseState; go: H
   );
 }
 
-/** The compact repo switcher as a Header command item (the PR list's form). `to` says where picking a repo goes. */
-export const switcherItem = (repo: string, openSwitch: number, onPick: (r: string) => void) => ({
-  id: "repo", text: repo, important: true,
-  renderButton: () => <RepoSwitcher compact repo={repo} openTick={openSwitch} onPick={onPick} />,
-});
+/** The repo switcher beside a page title: pass it as the Header's child (Header renders children in its title area; CSS lays that out as a row). */
+export const titleSwitcher = (repo: string, openSwitch: number, onPick: (r: string) => void) => <RepoSwitcher compact repo={repo} openTick={openSwitch} onPick={onPick} />;
 
 // ---------- repo facts ----------
 

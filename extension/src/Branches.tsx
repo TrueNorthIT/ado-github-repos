@@ -16,7 +16,7 @@ import { Icon, IconSize } from "azure-devops-ui/Icon";
 import type { BranchTabId } from "./lib/browseState";
 import { barWidths, branchesToCompare, buildRefTree, canDeleteBranch, filterByTab, inBatches, maxDivergence, STALE_DAYS, type AheadBehind, type Branch, type RefLeaf } from "./lib/branches";
 import { ErrorView } from "./Browser";
-import { CheckStatusCell, HubProps, Loading, PersonLine, PrCell, RepoHubPage, switcherItem } from "./RepoHub";
+import { CheckStatusCell, HubProps, Loading, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { NewBranchDialog, ConfirmDeleteDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
@@ -205,10 +205,11 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
-          switcherItem(repo, openSwitch, (r) => go({ repo: r })),
           { id: "new", text: "New branch", isPrimary: true, important: true, disabled: !v || writes.busy, onActivate: () => setDialog({ kind: "new" }) },
         ]}
-      />
+      >
+        {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
+      </Header>
       <TabBar
         ariaLabel="Branch lists"
         selectedTabId={tab}

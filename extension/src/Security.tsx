@@ -21,7 +21,7 @@ import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { ErrorView, Markdown, BranchPicker } from "./Browser";
-import { HubProps, Loading, RepoHubPage, switcherItem } from "./RepoHub";
+import { HubProps, Loading, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { RelDate } from "./RelDate";
 import { GhError, listBranches, renderMarkdown } from "./githubBrowse";
 import { gotoHash, patchHash, useHashExtras } from "./hostNav";
@@ -484,11 +484,12 @@ function SecurityPage({ repo, props }: { repo: string; props: HubProps }) {
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
-          switcherItem(repo, props.openSwitch, go),
           { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: `https://github.com/${repo}/security`, target: "_blank", important: true },
           ...props.commandBarItems.map((c) => ({ ...c, important: false })),
         ]}
-      />
+      >
+        {titleSwitcher(repo, props.openSwitch, go)}
+      </Header>
       <TabBar ariaLabel="Advanced Security" selectedTabId={tab} onSelectedTabChanged={(id) => gotoHash(serializeSecurity({ repo, tab: id as SecTab }))} tabSize={TabSize.Tall} disableSticky>
         {TABS.map((t) => {
           const c = counts[kindForTab(t.id)];

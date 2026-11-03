@@ -190,7 +190,9 @@
 .gh-hub-header .bolt-header-title, .gh-pr-header .bolt-header-title { line-height: 34px; } /* native's title box is 34px tall */
 .gh-pr-header .bolt-header-back-button { margin-right: 2px; } /* keeps the title at native's x=32 with the arrow in the gutter */
 .gh-pr-header.bolt-header-with-back-button { padding-left: 0; }
-.gh-repo-switch-compact { max-width: 180px; }
+/* Beside the page title (titleSwitcher): the title area becomes a row, title then switcher. */
+.bolt-header-title-area:has(> .gh-repo-switch) { flex-direction: row; align-items: center; gap: 12px; min-width: 0; }
+.bolt-header-title-area > .gh-repo-switch { flex: 0 1 auto; max-width: 360px; }
 .gh-repo-switch-compact .bolt-button { font-weight: inherit; }
 
 /* Native PR description body sits 32px inside its card (16px content padding + 16px): measured on dev.azure.com */
@@ -496,6 +498,8 @@
 /* The tree's filter box and menu (VW-5) */
 .gh-tree-filter { gap: 4px; padding: 8px 8px 4px 12px; flex: 0 0 auto; flex-wrap: nowrap; }
 .gh-tree-filter-box { flex: 1 1 60px; min-width: 60px; }
+/* azure-devops-ui's GitHub contact card hard-codes one login for everyone, and the suggestion row already shows avatar, name and login */
+.bolt-contact-card-button { display: none; }
 .gh-tree-filter-box input { min-width: 0; }
 .gh-tree-filter-menu { flex: none; }
 /* File card header additions */

@@ -20,7 +20,7 @@ import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
 import { useCommitActions } from "./CommitActions";
 import { GraphCell, graphWidth } from "./CommitGraph";
-import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, PersonLine, PrCell, RepoHubPage, switcherItem, useDefaultBranch } from "./RepoHub";
+import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, PersonLine, PrCell, RepoHubPage, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { findCommit, invalidateRefs, listCommits } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
@@ -234,7 +234,6 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
-          switcherItem(repo, openSwitch, pick),
           { id: "filter", text: "Filter", important: true, renderButton: () => <Button key="filter" className="gh-cmd-icon" subtle iconProps={{ iconName: "Filter" }} ariaLabel="Filter commits" ariaPressed={filterOpen} tooltipProps={{ text: "Filter" }} onClick={() => setFilterOpen((o) => !o)} /> },
           { id: "graph", text: prefs.graph ? "On" : "Off", important: true, renderButton: () => <Button key="graph" className="gh-graph-toggle" subtle iconProps={{ iconName: "BranchCommit" }} text={prefs.graph ? "On" : "Off"} ariaLabel={`Graph: ${prefs.graph ? "on" : "off"}. Toggle the commit graph`} ariaPressed={prefs.graph} tooltipProps={{ text: "Show the commit graph" }} onClick={() => setPrefs((p) => ({ ...p, graph: !p.graph }))} /> },
           {
@@ -253,7 +252,9 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
             ),
           },
         ]}
-      />
+      >
+        {titleSwitcher(repo, openSwitch, pick)}
+      </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {actions.ui}

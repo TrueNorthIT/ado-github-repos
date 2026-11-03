@@ -15,7 +15,7 @@ import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib
 import type { CommitRow } from "./lib/commitsQuery";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitTable } from "./Commits";
-import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, RepoHubPage, switcherItem, useDefaultBranch } from "./RepoHub";
+import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, RepoHubPage, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { invalidateRefs, listPushCommits, listPushes, type PushesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import "./browser.css";
@@ -126,9 +126,10 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
     <>
       {defaultBranch && ref && <BranchBar repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
       <Header className="repos-files-header" title="Pushes" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[
-        switcherItem(repo, openSwitch, (r) => go({ repo: r })),
         { id: "filter", text: "Filter", important: true, renderButton: () => <Button key="filter" className="gh-cmd-icon" subtle iconProps={{ iconName: "Filter" }} ariaLabel="Filter pushes" ariaPressed={filterOpen} tooltipProps={{ text: "Filter" }} onClick={() => setFilterOpen((o) => !o)} /> },
-      ]} />
+      ]}>
+        {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
+      </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {filterOpen && (
           <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("actor", { value: "" }); }} searchRoleAriaLabel="Filter pushes">

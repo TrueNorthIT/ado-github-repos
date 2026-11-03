@@ -14,7 +14,7 @@ import { serializeNewPr } from "./lib/newPrHash";
 import { ErrorView } from "./Browser";
 import { CommitTable } from "./Commits";
 import { FilesPreview } from "./NewPullRequest";
-import { BranchBar, HubProps, Loading, switcherItem, useDefaultBranch } from "./RepoHub";
+import { BranchBar, HubProps, Loading, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { getBranchCompare, invalidateRefs } from "./githubBrowse";
 import { gotoHash, patchHash } from "./hostNav";
 import { openInHub, useHubHref } from "./repoHref";
@@ -53,11 +53,12 @@ export function BranchCompare({ repo, cmp, props }: { repo: string; cmp: Compare
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
-          switcherItem(repo, openSwitch, (r) => go({ repo: r })),
           { id: "back", text: "Branches", important: true, iconProps: { iconName: "Back" }, onActivate: () => go({ repo }) },
           { id: "newpr", text: "New pull request", isPrimary: true, important: true, iconProps: { iconName: "BranchPullRequest" }, disabled: base === head, onActivate: () => void openInHub("prs", newPr)() },
         ]}
-      />
+      >
+        {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
+      </Header>
       <div className="gh-compare-pickers flex-row flex-center flex-wrap">
         <div role="group" aria-label="Base branch" className="flex-row flex-center">
           <span className="gh-compare-label body-m">Base</span>
