@@ -697,6 +697,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
     const where = `${refName}:${path}`;
     if (lastWhere.current !== where) { lastWhere.current = where; setEditing(null); }
   }, [refName, path]);
+  const cancelEdit = React.useCallback(() => setEditing(null), []);
   const write = ctx?.write;
   const canEdit = !!write?.canWrite && !!write.headOid;
   const lookup = React.useMemo(() => (ctx ? treeLookup(ctx.tree) : () => undefined), [ctx]);
@@ -873,8 +874,9 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                           setPath={setNewPath}
                           pathProblem={newProblem}
                           busy={writes.busy}
+                          target={editing.kind === "edit" ? editing.path : newPath || "the new file"}
                           setText={(t) => { editText.current = t; }}
-                          cancel={() => setEditing(null)}
+                          cancel={cancelEdit}
                           commit={() => openWrite(editing.kind === "edit" ? { kind: "edit", path: editing.path, text: editText.current, original: editing.initial, bom: editing.bom } : { kind: "new", path: newPath, text: editText.current })}
                         />
                       )}

@@ -11,6 +11,7 @@ import { RadioButton, RadioButtonGroup, RadioButtonGroupDirection } from "azure-
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { TextField } from "azure-devops-ui/TextField";
 import { GhError, createBranch, getRaw, invalidateBrowse, invalidatePrs, mutate, pathExistsOn } from "./githubBrowse";
+import { setEditGuard } from "./hostNav";
 import { RefWriteError, type RefWrites } from "./refWrites";
 import { actionErrorText } from "./actionStore";
 import {
@@ -138,6 +139,8 @@ export interface EditPaneProps {
   setPath: (p: string) => void;
   pathProblem: string | null;
   busy: boolean;
+  /** The file being edited or drafted, for the Discard dialog. */
+  target: string;
   setText: (t: string) => void;
   commit: () => void;
   cancel: () => void;
@@ -174,6 +177,12 @@ export function EditPane(p: EditPaneProps) {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, isNew]);
+  // Any in-app navigation away (tree, breadcrumb, branch, find, tab) and back/forward asks first, through hostNav's guard.
+  const [pending, setPending] = React.useState<{ proceed: () => void } | null>(null);
+  React.useEffect(() => {
+    setEditGuard({ dirty: dirty || isNew, path: p.target, ask: (proceed) => setPending({ proceed }), discard: p.cancel });
+    return () => setEditGuard(null);
+  }, [dirty, isNew, p.target, p.cancel]);
   const cancel = () => { if (!dirty || window.confirm("Discard your changes?")) p.cancel(); };
   const canCommit = isNew ? !p.pathProblem : dirty;
   return (
@@ -190,6 +199,18 @@ export function EditPane(p: EditPaneProps) {
           <Button text="Commit…" primary disabled={!canCommit || p.busy} onClick={p.commit} />
         </ButtonGroup>
       </div>
+      {pending && (
+        <Dialog
+          titleProps={{ text: `Discard your changes to ${p.target}?` }}
+          onDismiss={() => setPending(null)}
+          footerButtonProps={[
+            { text: "Keep editing", onClick: () => setPending(null) },
+            { text: "Discard changes", primary: true, onClick: () => { const go = pending.proceed; setPending(null); go(); } },
+          ]}
+        >
+          Your edits have not been committed and will be lost.
+        </Dialog>
+      )}
       {failed ? (
         <MessageCard severity={MessageCardSeverity.Error}>The editor could not be loaded.</MessageCard>
       ) : (

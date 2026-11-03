@@ -8,6 +8,7 @@ import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPref
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
 import { parseNewPr, type NewPrHashState } from "./lib/newPrHash";
 import { parseSecurity, type SecurityHashState } from "./lib/securityHash";
+import { decideNav } from "./lib/dirtyGuard";
 import { parseAgainst } from "./lib/fileTabs";
 import { parseCompare, type CompareHashState } from "./lib/compareHash";
 import * as React from "react";
@@ -51,6 +52,20 @@ export const patchHash = (fn: (hash: string) => string) => patcher?.(fn);
 let hasher: ((hash: string) => void) | undefined;
 export const gotoHash = (hash: string) => hasher?.(hash);
 
+/**
+ * An open editor with unsaved text (or a New file draft) registers itself here; every in-app navigation and every external
+ * hash change then asks it first. `ask` shows the Discard dialog and calls `proceed` on Discard; `discard` closes the editor.
+ */
+export interface EditGuard { dirty: boolean; path: string; ask: (proceed: () => void) => void; discard: () => void }
+let editGuard: EditGuard | null = null;
+export const setEditGuard = (g: EditGuard | null) => { editGuard = g; };
+const guarded = (cur: BrowseState, next: BrowseState, proceed: () => void): boolean => {
+  const g = editGuard;
+  if (!g || decideNav(g.dirty, cur, next) === "allow") return false;
+  g.ask(() => { g.discard(); proceed(); });
+  return true;
+};
+
 const carry = (next: BrowseState, prev: string) => {
   const h = serialize(next);
   if (!next.repo || next.repo !== parse(prev).repo) return h;
@@ -77,13 +92,14 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     setRaw(h);
   };
 
-  hasher = (h) => {
+  const applyHash = (h: string) => {
     setRaw(h);
     svc.setHash(h);
     const next = parse(h);
     announce(next);
     onChange(next);
   };
+  hasher = (h) => { if (!guarded(current, parse(h), () => applyHash(h))) applyHash(h); };
 
   const emit = (h: string) => {
     setRaw(h);
@@ -96,7 +112,12 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   // Bumped by every navigation, so a pending default fill can tell it has been overtaken.
   let navs = 0;
   emit(await readInitialHash(() => svc.getHash()));
-  svc.onHashChanged((h) => { navs++; emit(h); });
+  svc.onHashChanged((h) => {
+    navs++;
+    // Back/forward cannot be blocked: put the old address back, keep the editor, and ask. Discard moves on to the new address.
+    if (h.replace(/^#+/, "") !== rawHash.replace(/^#+/, "") && guarded(current, parse(h), () => emit(h))) svc.replaceHash(rawHash.replace(/^#+/, ""));
+    else emit(h);
+  });
   const write = (s: BrowseState, replace?: boolean) => {
     navs++;
     const h = carry(s, rawHash);
@@ -108,6 +129,7 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     onChange(next); // do not rely on the host echoing programmatic changes back
   };
   return (s, replace) => {
+    if (replace === undefined || replace === false) { if (guarded(current, s, () => write(s, replace))) return; } // a replace is a programmatic fix-up, not the user leaving
     if (replace !== "ifEmpty") return write(s, replace);
     // A default repo must never overwrite a real address. On a cold load the host can answer getHash() with "" for well
     // over a second (0.26.0, 0.27.1, and 0.31.0 even after a re-read: a #...&path=README.md link opened the repo root).
