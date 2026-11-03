@@ -17,6 +17,8 @@ export interface Prefs {
   favourites: Record<string, string[]>;
   /** PR Files diff layout (VW-2); unset means the built-in inline default. Kept apart from `sideBySide`, which is the commit page's. */
   prSideBySide?: boolean;
+  /** "Set as compare branch": the branch each "owner/name"'s Compare action compares against instead of the default branch. */
+  compareBase?: Record<string, string>;
   /** VW-9: when this user last opened each pull request, `${owner}/${name}#${number}` to an ISO time. */
   lastViewed: LastViewedMap;
 }

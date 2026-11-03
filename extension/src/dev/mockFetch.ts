@@ -11,7 +11,7 @@ import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/
 import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rangeData, renderMd, searchTerms, setViewed, sideOfOid, updatesData, viewedData } from "./fixtures/b4";
 import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
 import { securityFile, securityMarkdown, securityRest } from "./fixtures/security";
-import { refsContent, refsGraphql, refsRest } from "./refsMock";
+import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -149,7 +149,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
-  if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
+  if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);

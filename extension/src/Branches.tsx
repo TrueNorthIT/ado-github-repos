@@ -22,6 +22,9 @@ import { RefColumn, RefTree } from "./RefTree";
 import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { branchRowNewPrHash } from "./lib/newPrHash";
+import { branchCompareHash, compareBaseFor, withCompareBase } from "./lib/compareHash";
+import { BranchCompare } from "./BranchCompare";
+import { gotoHash, useHashExtras } from "./hostNav";
 import { usePrefs } from "./prefs";
 import { useRefWrites } from "./refWrites";
 import "./browser.css";
@@ -115,7 +118,11 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   });
   const names = v?.branches.map((b) => b.name) ?? [];
   const def = v?.defaultBranch ?? undefined;
-  const ghCompare = (b: string, pr: boolean) => `https://github.com/${repo}/compare/${encodeURIComponent(def ?? "")}...${b.split("/").map(encodeURIComponent).join("/")}${pr ? "?expand=1" : ""}`;
+  // The compare branch: the user's "Set as compare branch" while it still exists, else the default branch. The Compare action compares a branch against it.
+  const remembered = prefs.compareBase?.[repo];
+  const compareBranch = remembered && names.includes(remembered) ? remembered : def;
+  const compareHash = (b: string) => { const base = compareBaseFor(compareBranch, def, b); return base ? branchCompareHash(repo, b, base) : undefined; };
+  const setCompareBranch = (b: string) => setPrefs((p) => ({ ...p, compareBase: withCompareBase(p.compareBase, repo, b === def ? null : b) }));
 
   const columns = React.useMemo<RefColumn<Branch>[]>(() => [
     {
@@ -151,7 +158,8 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
                   { id: "pr", text: "New pull request", iconProps: { iconName: "BranchPullRequest" }, href: href("prs", branchRowNewPrHash(repo, b.name)), onActivate: openInHub("prs", branchRowNewPrHash(repo, b.name)) as any, disabled: b.isDefault },
                   { id: "delete", text: "Delete branch", iconProps: { iconName: "Delete" }, disabled: !del.ok || writes.busy, secondaryText: del.ok ? undefined : del.reason, onActivate: () => setDialog({ kind: "delete", branch: b }) },
                   { id: "history", text: "View history", iconProps: { iconName: "History" }, href: href("commits", { repo, ref: b.name === def ? undefined : b.name }), onActivate: openInHub("commits", { repo, ref: b.name === def ? undefined : b.name }) as any },
-                  { id: "compare", text: "Compare", iconProps: { iconName: "OpenInNewTab" }, href: ghCompare(b.name, false), target: "_blank", rel: "noopener noreferrer", disabled: b.isDefault },
+                  { id: "compare", text: "Compare", iconProps: { iconName: "BranchCompare" }, href: compareHash(b.name), onActivate: () => { const h = compareHash(b.name); if (h) gotoHash(h); }, disabled: !compareHash(b.name) },
+                  { id: "setcompare", text: "Set as compare branch", iconProps: { iconName: "BranchCompare" }, disabled: b.name === compareBranch, onActivate: () => setCompareBranch(b.name) },
                   { id: "copy", text: "Copy branch name", iconProps: { iconName: "Copy" }, onActivate: () => { void navigator.clipboard?.writeText(b.name); } },
                 ],
               },
@@ -160,7 +168,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         );
       },
     },
-  ], [compares, max, favs, def, href, repo, writes.busy]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [compares, max, favs, def, href, repo, writes.busy, compareBranch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameCell = React.useCallback((leaf: RefLeaf<Branch>) => {
     const b = leaf.item;
@@ -170,11 +178,13 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         <span className="gh-entry-icon"><Icon iconName="BranchFork2" size={IconSize.small} /></span>
         <Link className="bolt-table-link text-ellipsis" subtle removeUnderline href={href("files", to)} onClick={openInHub("files", to)}>{leaf.name}</Link>
         {b.isDefault && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Default</Pill>}
-        {b.isDefault && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Compare</Pill>}
+        {b.name === compareBranch && (
+          <Pill className="gh-pr-pill gh-compare-pill" size={PillSize.compact} variant={PillVariant.standard} onClick={() => gotoHash(branchCompareHash(repo, def && def !== b.name ? def : b.name, b.name))} ariaLabel={`Compare against ${b.name}`}>Compare</Pill>
+        )}
         {b.protected && !b.isDefault && <Icon iconName="Lock" size={IconSize.small} className="gh-branch-lock" ariaLabel="Protected" />}
       </>
     );
-  }, [def, href, repo]);
+  }, [def, href, repo, compareBranch]);
 
   const create = (name: string, base: string) => {
     const from = v?.branches.find((b) => b.name === base);
@@ -247,9 +257,10 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
 }
 
 export function BranchesHub(props: HubProps) {
+  const { compare } = useHashExtras(); // BrowseState drops view=compare, so the page is routed on its own parse of the hash
   return (
     <RepoHubPage state={props.state} go={props.go}>
-      {(repo) => <BranchList repo={repo} props={props} />}
+      {(repo) => (compare && compare.repo === repo ? <BranchCompare key={repo} repo={repo} cmp={compare} props={props} /> : <BranchList repo={repo} props={props} />)}
     </RepoHubPage>
   );
 }

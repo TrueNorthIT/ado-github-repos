@@ -63,7 +63,7 @@ const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 // ---------- the preview under the form ----------
 
-function FilesPreview({ repo, base, head, headOid, signIn, busy }: { repo: string; base: string; head: string; headOid: string; signIn: () => void; busy: boolean }) {
+export function FilesPreview({ repo, base, head, headOid, signIn, busy }: { repo: string; base: string; head: string; headOid: string; signIn: () => void; busy: boolean }) {
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
   const [reload, setReload] = React.useState(0);
