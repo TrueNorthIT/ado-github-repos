@@ -636,3 +636,12 @@
 .gh-rel-chip.bolt-button { border-radius: 16px; border: 1px solid rgba(var(--palette-neutral-20, 200, 200, 200), 1); padding: 4px 12px; min-height: 28px; }
 .gh-rel-chip.gh-rel-chip-on.bolt-button { background: rgba(var(--palette-primary, 0, 120, 212), 1); border-color: rgba(var(--palette-primary, 0, 120, 212), 1); color: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
 .gh-rel-chip-count { margin-left: 6px; opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* Actions hub lists */
+.gh-act-crumb { margin-bottom: 4px; }
+.gh-act-wf-head { margin: 4px 0 16px; min-height: 32px; gap: 12px; }
+.gh-act-wf-head .gh-pr-pill { margin-left: 8px; }
+.gh-act-wf-head + .bolt-messagecard, .gh-act-wf-head ~ .bolt-messagecard { margin-bottom: 12px; }
+.gh-act-more { margin: 16px 0; }
+.gh-act-dispatch { gap: 16px; }
+.gh-act-line2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
