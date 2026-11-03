@@ -353,3 +353,31 @@
    clicks through its own hit testing, so without this a click in a zone lands on the code and inputs never focus
    (seen live in 0.25.0). The layer itself is 0px tall, so only the zone cards take clicks. */
 .monaco-editor .lines-content > .view-zones { z-index: 1; }
+
+/* Editing a pull request (batch 2). */
+.gh-pr-title-edit { min-width: 0; gap: 8px; }
+.gh-pr-title-text { cursor: text; border-radius: 2px; padding: 0 4px; margin: 0 -4px; min-width: 0; }
+.gh-pr-title-text:hover { background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
+.gh-pr-title-text:focus-visible { outline: 2px solid var(--focus-border-color, rgba(0, 120, 212, 1)); outline-offset: 1px; }
+.gh-pr-title-pencil { opacity: 0; font-size: 14px; flex: none; }
+.gh-pr-title-edit:hover .gh-pr-title-pencil, .gh-pr-title-edit:focus-within .gh-pr-title-pencil { opacity: 1; }
+.gh-pr-title-form { min-width: 0; width: min(720px, 80vw); }
+.gh-pr-title-field { width: 100%; }
+.gh-pr-title-field input { font-size: 21px; line-height: 28px; }
+.gh-pr-field-error { color: var(--status-error-text, rgba(205, 74, 69, 1)); padding-top: 4px; white-space: normal; line-height: 16px; }
+.gh-pr-desc-edit { gap: 8px; padding-bottom: 16px; }
+.gh-pr-desc-edit textarea { font-family: Consolas, monospace; font-size: 13px; }
+.gh-pr-desc-actions { gap: 8px; }
+.gh-pr-edit-error { margin-bottom: 8px; }
+.gh-pr-add { gap: 8px; margin: 4px 0 8px; }
+.gh-pr-add-picker { min-width: 0; }
+.gh-pr-suggestion { gap: 8px; padding: 6px 12px; min-width: 0; }
+.gh-pr-row { position: relative; }
+.gh-pr-wi-row { align-items: flex-start; }
+.gh-pr-remove { opacity: 0; flex: none; }
+.gh-pr-row:hover .gh-pr-remove, .gh-pr-row:focus-within .gh-pr-remove, .gh-pr-remove:focus-visible, .gh-pr-remove[aria-disabled="true"]:focus-visible { opacity: 1; }
+.gh-pr-label-content { display: inline-flex; align-items: center; gap: 4px; }
+.gh-pr-pill-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; margin: 0 -4px 0 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; font-size: 10px; opacity: .75; }
+.gh-pr-pill-x:hover, .gh-pr-pill-x:focus-visible { opacity: 1; background: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-pr-pill-x:focus-visible { outline: 1px solid currentColor; }
+.gh-pr-issue { gap: 8px; }
