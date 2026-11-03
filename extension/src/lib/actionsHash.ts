@@ -16,12 +16,13 @@
 //    (no actRun -> no actAttempt/actJob/actLine; no actJob -> no actLine).
 //  - Filters only with actWorkflow, or with tab=runs: actBranch (trimmed, max 255), actActor (trimmed, max 100),
 //    actEvent (trimmed, max 50), actStatus one of RUN_STATUS_FILTERS. Blank values are dropped.
+//  - actEnv (an environment name, trimmed, max 255) only with tab=environments and without actWorkflow/actRun: that environment's deployments.
 //  - serializeActions writes `#repo=...&view=actions` then the keys in the order listed above, leaving out anything absent, and
 //    never writes tab=recent (the default). Values are encodeURIComponent-encoded.
 //  - applyActions(hash, s) keeps the hash's other segments verbatim and in order, drops every earlier `view` and every key of this
 //    module, and appends `view=actions` then the module's keys in the order above.
 
-export type ActTab = "recent" | "all" | "runs";
+export type ActTab = "recent" | "all" | "runs" | "environments";
 
 /** GitHub's run `status` filter values that the UI offers. */
 export const RUN_STATUS_FILTERS = ["queued", "in_progress", "waiting", "completed", "success", "failure", "cancelled", "skipped"] as const;
@@ -40,11 +41,13 @@ export interface ActionsHashState {
   status?: RunStatusFilter;
   actor?: string;
   event?: string;
+  /** An environment's name: its deployment history. Only with tab=environments (and no workflow or run). */
+  env?: string;
 }
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
-const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent"];
-const TABS: ActTab[] = ["recent", "all", "runs"];
+const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent", "actEnv"];
+const TABS: ActTab[] = ["recent", "all", "runs", "environments"];
 
 const id = (v: string | null): number | undefined => (v && /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
 
@@ -86,6 +89,8 @@ export function parseActions(hash: string): ActionsHashState | null {
     }
     if (RUN_STATUS_FILTERS.includes(status)) out.status = status;
   }
+  const env = (p.get("actEnv") ?? "").trim().slice(0, 255);
+  if (env && out.tab === "environments" && !workflow && !run) out.env = env;
   return out;
 }
 
@@ -111,5 +116,6 @@ export function applyActions(hash: string, s: Omit<ActionsHashState, "repo">): s
   add("actStatus", s.status);
   add("actActor", s.actor);
   add("actEvent", s.event);
+  if (s.tab === "environments") add("actEnv", s.env?.trim().slice(0, 255));
   return "#" + kept.join("&");
 }
