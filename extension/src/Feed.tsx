@@ -263,8 +263,25 @@ function EventRow({ e, repo, baseRef }: { e: EventItem; repo: string; baseRef: s
           ))}
         </ul>
       )}
-      {e.html && <div className="gh-feed-review"><Body html={e.html} repo={repo} baseRef={baseRef} /></div>}
     </div>
+  );
+}
+
+/** A submitted review with a body: a card like a comment's, the verdict in the header. */
+function ReviewCard({ e, repo, baseRef }: { e: EventItem; repo: string; baseRef: string }) {
+  return (
+    <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-thread" contentProps={{ contentPadding: false }}>
+      <div className="gh-feed-section">
+        <div className="gh-feed-head">
+          <Avatar url={e.avatarUrl} name={e.actor} size="small" />
+          <div className="gh-feed-who flex-column">
+            <span><span className="gh-feed-author font-weight-semibold">{e.actor}</span><span className="secondary-text"><Phrase e={e} baseRef={baseRef} /></span></span>
+            <When date={e.date} />
+          </div>
+        </div>
+        <div className="gh-feed-indent"><Body html={e.html!} repo={repo} baseRef={baseRef} /></div>
+      </div>
+    </Card>
   );
 }
 
@@ -328,12 +345,14 @@ export function ActivityFeed({ repo, number, baseRef, prTab, openFile, signIn, b
         {shown.map((item) => {
           const rail = RAIL[item.kind === "event" ? item.type : item.kind];
           return (
-            <li key={item.id} className={`gh-feed-row gh-feed-row-${item.kind}`}>
+            <li key={item.id} className={`gh-feed-row gh-feed-row-${item.kind === "event" && item.html ? "review" : item.kind}`}>
               {rail.icon && <span className={`gh-feed-rail secondary-text ${rail.tone ? `gh-feed-rail-${rail.tone}` : ""}`}><Icon iconName={rail.icon} /></span>}
               {item.kind === "thread" ? (
                 <ThreadCard store={store} thread={item} repo={repo} baseRef={baseRef} where={{ href: serialize({ repo, view: "prs", prTab, pr: number, prPage: "files", file: item.path }), open: () => openFile(item.path) }} />
               ) : item.kind === "comment" ? (
                 <CommentCard store={store} c={item} repo={repo} baseRef={baseRef} />
+              ) : item.html ? (
+                <ReviewCard e={item} repo={repo} baseRef={baseRef} />
               ) : (
                 <EventRow e={item} repo={repo} baseRef={baseRef} />
               )}

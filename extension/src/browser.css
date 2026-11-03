@@ -54,16 +54,36 @@
 
 /* Rendered README: Repos' markdown card (20px margin, 4px 12px padding). contain + relative: even a position:fixed descendant stays inside the box (defence in depth against UI redress). */
 .gh-markdown { flex: 1 1 auto; min-width: 0; margin: 20px; padding: 4px 12px; line-height: 1.5; overflow-wrap: anywhere; color: var(--text-primary-color, inherit); position: relative; contain: layout paint; }
-.gh-markdown h1 { font-size: 1.3125rem; font-weight: 600; margin: 0 0 8px; }
-.gh-markdown h2 { font-size: 1.0625rem; font-weight: 600; }
+.gh-markdown h1, .gh-markdown h2, .gh-markdown h3, .gh-markdown h4, .gh-markdown h5, .gh-markdown h6 { font-weight: 600; line-height: 1.25; margin: 1.25em 0 .5em; }
+.gh-markdown h1 { font-size: 1.3125rem; margin-top: 0; }
+.gh-markdown h2 { font-size: 1.125rem; padding-bottom: .25em; border-bottom: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-markdown h3 { font-size: 1rem; }
+.gh-markdown h4, .gh-markdown h5, .gh-markdown h6 { font-size: .875rem; }
+.gh-markdown p, .gh-markdown ul, .gh-markdown ol, .gh-markdown pre, .gh-markdown table, .gh-markdown blockquote, .gh-markdown details { margin: 0 0 12px; }
+.gh-markdown ul, .gh-markdown ol { padding-left: 2em; }
+.gh-markdown ul { list-style: disc outside; }
+.gh-markdown ul ul { list-style-type: circle; }
+.gh-markdown ul ul ul { list-style-type: square; }
+.gh-markdown ol { list-style: decimal outside; }
+.gh-markdown li { display: list-item; list-style: inherit; } /* the page-wide `li { list-style: none }` otherwise beats the list's own marker */
+.gh-markdown li + li { margin-top: .25em; }
+.gh-markdown li > ul, .gh-markdown li > ol, .gh-markdown li > p { margin-top: .25em; margin-bottom: 0; }
+.gh-markdown .contains-task-list, .gh-markdown .task-list-item { list-style: none; }
+.gh-markdown hr { border: 0; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); margin: 16px 0; }
 .gh-markdown img { max-width: 100%; }
 .gh-markdown a { color: var(--communication-foreground, #0078d4); }
-.gh-markdown pre { overflow: auto; padding: 12px; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
-.gh-markdown code { font-family: Consolas, monospace; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); padding: 0 .25em; }
-.gh-markdown pre code { background: none; padding: 0; }
-.gh-markdown table { border-collapse: collapse; display: block; overflow: auto; }
-.gh-markdown th, .gh-markdown td { border: 1px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); padding: 4px 10px; }
-.gh-markdown blockquote { margin: 0; padding-left: 1em; border-left: 4px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-markdown pre { overflow: auto; padding: 12px 16px; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); border-radius: 4px; line-height: 1.45; }
+.gh-markdown code { font-family: Consolas, monospace; font-size: .875em; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); padding: .15em .35em; border-radius: 3px; }
+.gh-markdown pre code { background: none; padding: 0; font-size: inherit; }
+.gh-markdown table { border-collapse: collapse; display: block; max-width: 100%; overflow: auto; }
+.gh-markdown th, .gh-markdown td { border: 1px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); padding: 6px 13px; }
+.gh-markdown th { font-weight: 600; text-align: left; background: var(--palette-black-alpha-4, rgba(0, 0, 0, .04)); }
+.gh-markdown blockquote { padding: 0 1em; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); border-left: 4px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-markdown details > summary { display: list-item; list-style: disclosure-closed inside; cursor: pointer; font-weight: 600; }
+.gh-markdown details[open] > summary { list-style-type: disclosure-open; margin-bottom: 8px; }
+.gh-markdown summary:focus-visible { outline: 2px solid var(--communication-foreground, #0078d4); outline-offset: 2px; }
+.gh-markdown sub, .gh-markdown sup { font-size: .85em; }
+.gh-markdown sub { vertical-align: baseline; } /* Copilot's "Review effort" line is a whole <sub> paragraph: keep it on the baseline at 85% */
 .gh-markdown .anchor { display: none; }
 
 /* Folder listing: Commits cell (native: bold underlined monospace SHA, message, grey author). */
@@ -185,9 +205,10 @@
 .gh-feed-list { list-style: none; margin: 0; padding: 0 0 0 32px; position: relative; }
 .gh-feed-list::before { content: ""; position: absolute; left: 11px; top: 28px; bottom: 28px; border-left: 2px dotted var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
 .gh-feed-row { position: relative; min-width: 0; }
-.gh-feed-row-thread, .gh-feed-row-comment, .gh-feed-row:first-child { margin-bottom: 16px; }
+.gh-feed-row-thread, .gh-feed-row-comment, .gh-feed-row-review, .gh-feed-row:first-child { margin-bottom: 16px; }
 .gh-feed-rail { position: absolute; left: -32px; top: 19px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(var(--palette-neutral-2, 248, 248, 248), 1); /* the page grey, so the icon masks the dotted line without a white box */ z-index: 1; }
 .gh-feed-row-event .gh-feed-rail { top: 14px; }
+.gh-feed-row-review .gh-feed-rail { top: 19px; }
 .gh-feed-rail .fabric-icon { margin: 4px 0; font-size: 14px; }
 .gh-feed-rail-success { color: var(--status-success-foreground, #107c10); }
 .gh-feed-rail-warning { color: var(--status-warning-icon-foreground, #c47400); }
@@ -225,7 +246,6 @@
 .gh-feed-expand.bolt-button { margin: -6px 0; }
 .gh-feed-commits { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .gh-feed-commits li { display: flex; gap: 8px; min-width: 0; }
-.gh-feed-review { margin-top: 8px; }
 .gh-feed-loading { padding: 24px 0; }
 /* Inline threads under a line of the Files diff: a Monaco view zone hosting a ThreadCard. flow-root so the card's margins count in the measured height. */
 .gh-zone { display: flow-root; box-sizing: border-box; padding: 8px 16px 8px 8px; cursor: default; user-select: text; }
