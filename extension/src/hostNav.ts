@@ -3,6 +3,7 @@ import * as SDK from "azure-devops-extension-sdk";
 import type { IHostNavigationService } from "azure-devops-extension-api/Common/CommonServices";
 import { BrowseState, parse, serialize } from "./lib/browseState";
 import { getProjectCtx } from "./connections";
+import { rememberRepo } from "./lib/lastRepo";
 import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPrefs";
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
@@ -79,8 +80,15 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   let current: BrowseState = {};
 
   // Tell the header breadcrumb frame on this page which repo is open; its own getHash() is unreliable.
+  let remembered: string | undefined;
   const announce = (s: BrowseState) => {
     current = s;
+    // Remember the repo on screen, so a hub opened from the left nav (no hash) opens it too (lib/lastRepo.ts).
+    if (s.repo && s.repo !== remembered) {
+      remembered = s.repo;
+      const repo = s.repo;
+      getProjectCtx().then((c) => rememberRepo(c.org, c.project, repo), () => {});
+    }
     post(sibling("breadcrumb.html"), { type: "tn-gh-repo", repo: s.repo });
   };
 

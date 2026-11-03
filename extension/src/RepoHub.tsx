@@ -15,6 +15,7 @@ import { filterBranches } from "./lib/branchSwitch";
 import { RelDate } from "./RelDate";
 import type { CheckStatus, Person } from "./lib/commitsQuery";
 import { loadProject } from "./connections";
+import { pickDefaultRepo, recallRepo } from "./lib/lastRepo";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { getRepo, listBranches } from "./githubBrowse";
@@ -32,7 +33,8 @@ export interface HubProps {
   commandBarItems: { id: string; text: string; iconProps?: { iconName: string }; disabled?: boolean; onActivate: () => void }[];
 }
 
-/** The first connected github.com repo, for a hub opened with no repo in the hash. */
+/** The repo for a hub opened with no repo in the hash (the left nav carries none): the one you last had open in this project if it is
+ *  still connected (lib/lastRepo.ts), otherwise the first connected github.com repo. */
 export function useDefaultRepo(enabled: boolean): { repo?: string; none: boolean } {
   const [r, setR] = React.useState<{ repo?: string; none: boolean }>({ none: false });
   React.useEffect(() => {
@@ -40,8 +42,9 @@ export function useDefaultRepo(enabled: boolean): { repo?: string; none: boolean
     let dead = false;
     loadProject().then(
       (p) => {
-        const first = mergeRows(p.connections).rows.find((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); });
-        if (!dead) setR({ repo: first?.label, none: !first });
+        const connected = mergeRows(p.connections).rows.filter((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); }).map((x) => x.label);
+        const repo = pickDefaultRepo(connected, recallRepo(p.ctx.org, p.ctx.project));
+        if (!dead) setR({ repo, none: !repo });
       },
       () => !dead && setR({ none: true })
     );
