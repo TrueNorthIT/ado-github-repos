@@ -21,6 +21,7 @@ import { NewBranchDialog, ConfirmDeleteDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
+import { serializeActions } from "./lib/actionsHash";
 import { branchRowNewPrHash } from "./lib/newPrHash";
 import { branchCompareHash, compareBaseFor, withCompareBase } from "./lib/compareHash";
 import { BranchCompare } from "./BranchCompare";
@@ -134,7 +135,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
     { id: "author", name: "Author", width: 150, render: ({ item: b }) => <PersonLine person={b.author} /> },
     { id: "date", name: "Authored Date", width: 130, render: ({ item: b }) => <RelDate date={b.authoredDate} /> },
     { id: "ba", name: "Behind | Ahead", width: 120, render: ({ item: b }) => (b.isDefault ? null : <BehindAhead value={compares[b.name]} max={max} />) },
-    { id: "status", name: "Status", width: 110, render: ({ item: b }) => <CheckStatusCell status={b.status} /> },
+    { id: "status", name: "Status", width: 110, render: ({ item: b }) => { const h = serializeActions({ repo, tab: "runs", branch: b.name }); return b.status ? <Link subtle removeUnderline href={href("actions", h)} onClick={openInHub("actions", h)} ariaLabel={`Workflow runs on ${b.name}`}><CheckStatusCell status={b.status} /></Link> : null; } }, // REQ-16: the status opens the branch's runs in the Actions hub
     { id: "pr", name: "Pull Request", width: 100, render: ({ item: b }) => <PrCell number={b.prNumber} href={b.prNumber ? href("prs", { repo, view: "prs", pr: b.prNumber }) : undefined} onOpen={(n) => void openInHub("prs", { repo, view: "prs", pr: n })()} /> },
     {
       id: "fav", name: "", width: 40,

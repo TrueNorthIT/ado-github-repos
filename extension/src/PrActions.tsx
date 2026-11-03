@@ -25,6 +25,9 @@ import { Toggle } from "azure-devops-ui/Toggle";
 import { canRevert, revertTitle } from "./lib/revertPr";
 import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ActionStore } from "./actionStore";
+import { actionsStateFromUrl } from "./lib/actionsLink";
+import { serializeActions } from "./lib/actionsHash";
+import { openInHub, useHubHref } from "./repoHref";
 import { getBranchNames, getMergeMessages } from "./githubBrowse";
 import { mergeMethodLabel, supportsCustomMessage, type MergeMethod } from "./lib/mergeOptions";
 import { groupChecks, reconcileOpen, type CheckGroup } from "./lib/checkGroups";
@@ -395,6 +398,10 @@ function UpdateBranchButton({ store, methods }: { store: ActionStore; methods: N
 
 function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }) {
   const href = safeUrl(r.url);
+  const hubHref = useHubHref();
+  // REQ-16: a GitHub Actions job opens in the Actions hub; other checks keep their external link.
+  const actState = r.kind === "check" && href ? actionsStateFromUrl(href, store.repo) : null;
+  const inHub = actState ? serializeActions(actState) : null;
   const info = r.kind === "check" ? store.view?.checkInfo.get(r.title) : undefined;
   // VW-7: GitHub gives no list of conflicting files, only its conflict editor, which is offered to someone who can update the pull request.
   const pr = store.view?.pr;
@@ -406,7 +413,7 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
       {r.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
       {!!info?.annotations && <span className="gh-policy-annotations secondary-text body-s">{info.annotations} {info.annotations === 1 ? "annotation" : "annotations"}</span>}
       {r.detail && <span className="gh-policy-detail secondary-text body-s text-ellipsis">{r.detail}</span>}
-      {href && <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>}
+      {href && (inHub ? <Link className="gh-policy-link body-s" href={hubHref("actions", inHub)} onClick={openInHub("actions", inHub)}>Details</Link> : <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>)}
       {/* Only on the rows that failed: skipped and passing jobs of the same failed run offered it too (seen live on TrueTunes #234). */}
       {info && r.state === "failure" && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
       {r.kind === "conflicts" && r.state === "failure" && conflictUrl && <Link className="gh-policy-link body-s" href={conflictUrl} target="_blank" rel="noopener noreferrer">Resolve conflicts on GitHub</Link>}
