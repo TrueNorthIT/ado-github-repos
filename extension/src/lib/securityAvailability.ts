@@ -48,7 +48,30 @@ export interface Availability {
   resetAt?: Date;
 }
 
+const FEATURE: Record<AlertKind, { name: string; permission: string; enable: string }> = {
+  dependabot: { name: "Dependabot alerts", permission: "Dependabot alerts", enable: "Enable Dependabot alerts" },
+  code: { name: "Code scanning", permission: "Code scanning alerts", enable: "Enable code scanning" },
+  secret: { name: "Secret scanning", permission: "Secret scanning alerts", enable: "Enable secret scanning" },
+};
+
 /** Classifies the outcome of loading `kind`'s alerts for `repo` ("owner/name"). `error` null or undefined is ok. */
 export function availability(kind: AlertKind, error: SecurityApiError | null | undefined, repo: string): Availability {
-  throw new Error("Not implemented");
+  if (!error) return { state: "ok", message: "" };
+  const f = FEATURE[kind];
+  const msg = error.message ?? "";
+  if (error.rateLimited || error.status === 429 || /rate limit/i.test(msg)) {
+    return { state: "error", message: "GitHub's rate limit has been reached. Try again later.", resetAt: error.resetAt };
+  }
+  if (/disabled|(advanced|code) security must be enabled|no analysis found/i.test(msg)) {
+    const why = /no analysis found/i.test(msg) ? "has no analysis for this repository yet" : "is not enabled for this repository";
+    return { state: "disabled", message: `${f.name} ${why}.`, actionUrl: `https://github.com/${repo}/settings/security_analysis`, actionLabel: f.enable };
+  }
+  if (error.status === 403) {
+    if (/resource not accessible by integration/i.test(msg)) {
+      return { state: "noPermission", message: `The GitHub App behind this extension does not have read access to ${f.permission}. Ask a GitHub organisation owner to grant it the "${f.permission}" repository permission (read), then accept the change on the installation.` };
+    }
+    return { state: "noPermission", message: "You do not have access to this repository's security alerts on GitHub. Ask a repository admin for access." };
+  }
+  if (error.status === 404) return { state: "notFound", message: "GitHub could not find this repository, or you do not have access to its security alerts." };
+  return { state: "error", message: `Could not load alerts from GitHub${error.status ? ` (status ${error.status})` : ""}. Try again.` };
 }

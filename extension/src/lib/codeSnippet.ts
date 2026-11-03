@@ -15,5 +15,13 @@ export interface SnippetLine {
  * a start line that is not a positive integer or lies beyond the last line gives no lines at all.
  */
 export function codeSnippet(text: string, startLine: number, endLine?: number, context = 3): SnippetLine[] {
-  throw new Error("Not implemented");
+  const lines = text.split(/\r?\n/);
+  if (lines[lines.length - 1] === "") lines.pop();
+  if (!Number.isInteger(startLine) || startLine < 1 || startLine > lines.length) return [];
+  const end = Math.max(startLine, endLine ?? startLine);
+  const from = Math.max(1, startLine - context);
+  const to = Math.min(lines.length, end + context);
+  const out: SnippetLine[] = [];
+  for (let n = from; n <= to; n++) out.push({ number: n, text: lines[n - 1], target: n >= startLine && n <= end });
+  return out;
 }

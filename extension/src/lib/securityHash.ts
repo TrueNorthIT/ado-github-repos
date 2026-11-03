@@ -31,37 +31,79 @@ export interface SecurityHashState {
   text?: string;
 }
 
+const REPO = /^[\w.-]+\/[\w.-]+$/;
+const TABS: SecTab[] = ["dependencies", "code", "secrets"];
+const STATES: StateFilter[] = ["open", "closed", "dismissed", "fixed"];
+const SEVERITIES: RatedSeverity[] = ["Critical", "High", "Medium", "Low", "Note"];
+const KEYS = ["view", "secTab", "alert", "secState", "secSeverity", "secBranch", "secTool", "secRule", "secText"];
+const CAPS = { branch: 255, tool: 255, rule: 255, text: 200 } as const;
+
 /** The Security state of a hash, or null (see the decisions above). */
 export function parseSecurity(hash: string): SecurityHashState | null {
-  throw new Error("Not implemented");
+  const p = new URLSearchParams(hash.replace(/^#+/, ""));
+  const repo = p.get("repo");
+  if (p.get("view") !== "security" || !repo || !REPO.test(repo) || repo.split("/").some((s) => s === "." || s === "..")) return null;
+  const out: SecurityHashState = { repo };
+  const tab = p.get("secTab") as SecTab;
+  if (TABS.includes(tab)) {
+    out.tab = tab;
+    const a = p.get("alert") ?? "";
+    if (/^\d+$/.test(a) && Number.isSafeInteger(Number(a)) && Number(a) > 0) out.alert = Number(a);
+  }
+  const state = p.get("secState") as StateFilter;
+  if (STATES.includes(state)) out.state = state;
+  const sev = SEVERITIES.find((s) => s.toLowerCase() === p.get("secSeverity"));
+  if (sev) out.severity = sev;
+  for (const [k, key] of [["branch", "secBranch"], ["tool", "secTool"], ["rule", "secRule"], ["text", "secText"]] as const) {
+    const v = (p.get(key) ?? "").trim().slice(0, CAPS[k]);
+    if (v) out[k] = v;
+  }
+  return out;
 }
 
 /** `#repo=...&view=security&secTab=...` (see the decisions above). */
 export function serializeSecurity(s: SecurityHashState): string {
-  throw new Error("Not implemented");
+  const { repo, ...rest } = s;
+  return applySecurity(`#repo=${encodeURIComponent(repo)}`, rest);
 }
 
 /** `hash` (with or without "#") with view and this module's keys replaced by view=security and the given state; the other segments are kept. Always starts with "#". */
 export function applySecurity(hash: string, s: Omit<SecurityHashState, "repo">): string {
-  throw new Error("Not implemented");
+  const kept = hash.replace(/^#+/, "").split("&").filter((x) => x && !KEYS.includes(x.split("=")[0]));
+  kept.push("view=security");
+  const add = (k: string, v: string | number | undefined) => {
+    const t = String(v ?? "").trim();
+    if (t) kept.push(`${k}=${encodeURIComponent(t)}`);
+  };
+  if (s.tab) {
+    add("secTab", s.tab);
+    add("alert", s.alert);
+  }
+  add("secState", s.state);
+  add("secSeverity", s.severity?.toLowerCase());
+  add("secBranch", s.branch?.trim().slice(0, CAPS.branch));
+  add("secTool", s.tool?.trim().slice(0, CAPS.tool));
+  add("secRule", s.rule?.trim().slice(0, CAPS.rule));
+  add("secText", s.text?.trim().slice(0, CAPS.text));
+  return "#" + kept.join("&");
 }
 
 /** The Repos menu entry: the Advanced Security page of a repository, on its default tab. */
 export function securityPageHash(repo: string): string {
-  throw new Error("Not implemented");
+  return serializeSecurity({ repo });
 }
 
 /** A table row's link: the alert's detail page on its tab. */
 export function alertDetailHash(repo: string, kind: AlertKind, number: number): string {
-  throw new Error("Not implemented");
+  return serializeSecurity({ repo, tab: tabForKind(kind), alert: number });
 }
 
 /** dependabot -> dependencies, code -> code, secret -> secrets. */
 export function tabForKind(kind: AlertKind): SecTab {
-  throw new Error("Not implemented");
+  return { dependabot: "dependencies", code: "code", secret: "secrets" }[kind] as SecTab;
 }
 
 /** dependencies -> dependabot, code -> code, secrets -> secret. */
 export function kindForTab(tab: SecTab): AlertKind {
-  throw new Error("Not implemented");
+  return { dependencies: "dependabot", code: "code", secrets: "secret" }[tab] as AlertKind;
 }

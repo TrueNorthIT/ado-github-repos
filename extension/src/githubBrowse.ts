@@ -43,7 +43,7 @@ const MAX_BRANCHES = 1000;
 export type GhErrorKind = "auth" | "access" | "rateLimit" | "other";
 
 export class GhError extends Error {
-  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date, /** GitHub's own message, when a mutation was refused. */ public detail?: string) {
+  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date, /** GitHub's own message, when a mutation was refused. */ public detail?: string, /** The failed response's body `message` (reads and writes), for the Security page's availability(). */ public apiMessage?: string) {
     super(`${kind} (${status})`);
   }
 }
@@ -56,6 +56,16 @@ async function token(force = false): Promise<string> {
   if (force || !cached || tokenAction(cached) !== "use") cached = await getTokens();
   if (!cached) throw new GhError("auth", 401);
   return cached.accessToken;
+}
+
+/** The `message` of a GitHub error body, or undefined when there is none. */
+async function bodyMessage(res: Response): Promise<string | undefined> {
+  try {
+    const m = (await res.json())?.message;
+    return typeof m === "string" ? m : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
@@ -86,6 +96,12 @@ async function request(url: string, accept: string, retry = true, body?: string,
 /** A REST call described as data (lib/restRequest.ts). GitHub answers a re-run with 201 and no body, so nothing is parsed. */
 export async function rest(r: RestRequest): Promise<void> {
   await request(r.path, "application/vnd.github+json", true, r.body ? JSON.stringify(r.body) : undefined, r.method);
+}
+
+/** A GET of a security-alerts request: the parsed body and the Link header (for paging). */
+export async function restJson<T = any>(r: RestRequest): Promise<{ body: T; link: string | null }> {
+  const res = await request(r.path, "application/vnd.github+json", true, undefined, r.method);
+  return { body: await res.json(), link: res.headers.get("link") };
 }
 
 const json = async <T>(url: string): Promise<T> => (await request(url, "application/vnd.github+json")).json();

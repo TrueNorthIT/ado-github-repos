@@ -50,55 +50,153 @@ export interface LinkPaging {
   lastPage: number | null;
 }
 
+const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+function checkRepo(repo: string): string {
+  if (!REPO_RE.test(repo) || repo.split("/").some((s) => s === "." || s === "..")) throw new Error(`Invalid repo "${repo}": expected owner/name`);
+  return `/repos/${repo}`;
+}
+function checkNumber(n: number): number {
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`Invalid alert number ${n}: expected a positive integer`);
+  return n;
+}
+const clampPer = (n?: number) => Math.min(100, Math.max(1, Math.trunc(n ?? 30) || 1));
+type Params = Record<string, string | undefined>;
+function withQuery(path: string, params: Params): string {
+  const q = Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`);
+  return q.length ? `${path}?${q.join("&")}` : path;
+}
+const get = (path: string, params: Params = {}): SecurityRequest => ({ method: "GET", path: withQuery(path, params) });
+const sortParams = (f: SecurityFilters): Params => ({ sort: f.sort, direction: f.direction });
+const pageParam = (page?: number) => (page ? String(page) : undefined);
+
 /** `GET /repos/{repo}/dependabot/alerts` with the filters and cursor paging. */
 export function dependabotAlertsRequest(repo: string, filters: SecurityFilters, paging: CursorPaging = {}): SecurityRequest {
-  throw new Error("Not implemented");
+  const state = ({ open: "open", dismissed: "auto_dismissed,dismissed", fixed: "fixed", closed: "auto_dismissed,dismissed,fixed" } as Record<string, string>)[filters.state ?? ""];
+  return get(`${checkRepo(repo)}/dependabot/alerts`, {
+    state,
+    severity: filters.severity && filters.severity !== "Note" ? filters.severity.toLowerCase() : undefined,
+    ecosystem: filters.ecosystem,
+    package: filters.package,
+    scope: filters.scope,
+    ...sortParams(filters),
+    per_page: String(clampPer(paging.perPage)),
+    after: paging.after,
+  });
 }
 
 /** `GET /repos/{repo}/code-scanning/alerts` with the filters and page numbers. */
 export function codeScanningAlertsRequest(repo: string, filters: SecurityFilters, paging: PagePaging = {}): SecurityRequest {
-  throw new Error("Not implemented");
+  const b = filters.branch?.trim();
+  return get(`${checkRepo(repo)}/code-scanning/alerts`, {
+    state: filters.state,
+    severity: filters.severity?.toLowerCase(),
+    ref: b ? (b.startsWith("refs/") ? b : `refs/heads/${b}`) : undefined,
+    tool_name: filters.tool,
+    ...sortParams(filters),
+    per_page: String(clampPer(paging.perPage)),
+    page: pageParam(paging.page),
+  });
 }
 
 /** `GET /repos/{repo}/secret-scanning/alerts` with the filters and page numbers; always hide_secret=true. */
 export function secretScanningAlertsRequest(repo: string, filters: SecurityFilters, paging: PagePaging = {}): SecurityRequest {
-  throw new Error("Not implemented");
+  const s = filters.state;
+  return get(`${checkRepo(repo)}/secret-scanning/alerts`, {
+    state: s ? (s === "open" ? "open" : "resolved") : undefined,
+    resolution: s === "dismissed" ? "false_positive,wont_fix,used_in_tests" : s === "fixed" ? "revoked" : undefined,
+    secret_type: filters.rule,
+    validity: filters.validity,
+    ...sortParams(filters),
+    per_page: String(clampPer(paging.perPage)),
+    page: pageParam(paging.page),
+    hide_secret: "true",
+  });
 }
 
 /** Reads a response's `Link` header (null, undefined or garbage give all-null). Never throws. */
 export function parsePaging(link: string | null | undefined): LinkPaging {
-  throw new Error("Not implemented");
+  const out: LinkPaging = { nextAfter: null, nextPage: null, lastPage: null };
+  const re = /<([^>]*)>\s*;\s*rel="(\w+)"/g;
+  for (let m = re.exec(link ?? ""); m; m = re.exec(link ?? "")) {
+    let u: URL;
+    try {
+      u = new URL(m[1]);
+    } catch {
+      continue;
+    }
+    const page = Number(u.searchParams.get("page"));
+    const n = Number.isInteger(page) && page > 0 ? page : null;
+    if (m[2] === "next") {
+      out.nextAfter = u.searchParams.get("after");
+      out.nextPage = n;
+    } else if (m[2] === "last") out.lastPage = n;
+  }
+  return out;
 }
+
+const SEGMENT: Record<AlertKind, string> = { dependabot: "dependabot", code: "code-scanning", secret: "secret-scanning" };
+const alertPath = (kind: AlertKind, repo: string, number: number) => `${checkRepo(repo)}/${SEGMENT[kind]}/alerts/${checkNumber(number)}`;
 
 /** `GET /repos/{repo}/{dependabot|code-scanning|secret-scanning}/alerts/{number}`. */
 export function alertRequest(kind: AlertKind, repo: string, number: number): SecurityRequest {
-  throw new Error("Not implemented");
+  return get(alertPath(kind, repo, number));
 }
 
 /** `GET .../code-scanning/alerts/{number}/instances`, optionally for one `ref`. */
 export function codeScanningInstancesRequest(repo: string, number: number, opts: { ref?: string; page?: number; perPage?: number } = {}): SecurityRequest {
-  throw new Error("Not implemented");
+  return get(`${alertPath("code", repo, number)}/instances`, { ref: opts.ref, page: pageParam(opts.page), per_page: opts.perPage ? String(clampPer(opts.perPage)) : undefined });
 }
 
 /** `GET .../secret-scanning/alerts/{number}/locations`. */
 export function secretLocationsRequest(repo: string, number: number, opts: { page?: number; perPage?: number } = {}): SecurityRequest {
-  throw new Error("Not implemented");
+  return get(`${alertPath("secret", repo, number)}/locations`, { page: pageParam(opts.page), per_page: opts.perPage ? String(clampPer(opts.perPage)) : undefined });
 }
+
+const REASONS: Record<AlertKind, { value: string; label: string }[]> = {
+  dependabot: [
+    { value: "fix_started", label: "A fix has already been started" },
+    { value: "inaccurate", label: "This alert is inaccurate or incorrect" },
+    { value: "no_bandwidth", label: "No bandwidth to fix this" },
+    { value: "not_used", label: "Vulnerable code is not actually used" },
+    { value: "tolerable_risk", label: "Risk is tolerable to this project" },
+  ],
+  code: [
+    { value: "false positive", label: "False positive" },
+    { value: "won't fix", label: "Won't fix" },
+    { value: "used in tests", label: "Used in tests" },
+    { value: "mitigated", label: "Mitigated" },
+  ],
+  secret: [
+    { value: "false_positive", label: "False positive" },
+    { value: "wont_fix", label: "Won't fix" },
+    { value: "revoked", label: "Revoked" },
+    { value: "used_in_tests", label: "Used in tests" },
+  ],
+};
 
 /** The reasons the dismiss dialog offers for a kind: the API value and the label shown. Secrets call it "resolve". */
 export function dismissReasons(kind: AlertKind): { value: string; label: string }[] {
-  throw new Error("Not implemented");
+  return REASONS[kind].map((r) => ({ ...r }));
 }
+
+export const MAX_DISMISS_COMMENT = 280;
 
 /**
  * `PATCH` that dismisses (resolves, for secrets) an alert: body { state, dismissed_reason, dismissed_comment } for Dependabot and code scanning, { state: "resolved", resolution, resolution_comment } for secrets.
  * Throws when `reason` is not one of dismissReasons(kind) (the message names the allowed values) or when the comment is over 280 characters (Dependabot and code scanning, the spec's maxLength).
  */
 export function dismissRequest(kind: AlertKind, repo: string, number: number, reason: string, comment?: string): SecurityRequest {
-  throw new Error("Not implemented");
+  const path = alertPath(kind, repo, number);
+  const allowed = REASONS[kind].map((r) => r.value);
+  if (!allowed.includes(reason)) throw new Error(`Invalid reason "${reason}": expected one of ${allowed.join(", ")}`);
+  const c = comment?.trim();
+  if (kind !== "secret" && c && c.length > MAX_DISMISS_COMMENT) throw new Error(`The comment is over ${MAX_DISMISS_COMMENT} characters`);
+  const body: Record<string, unknown> =
+    kind === "secret" ? { state: "resolved", resolution: reason, ...(c && { resolution_comment: c }) } : { state: "dismissed", dismissed_reason: reason, ...(c && { dismissed_comment: c }) };
+  return { method: "PATCH", path, body };
 }
 
 /** `PATCH` with body { state: "open" }. */
 export function reopenRequest(kind: AlertKind, repo: string, number: number): SecurityRequest {
-  throw new Error("Not implemented");
+  return { method: "PATCH", path: alertPath(kind, repo, number), body: { state: "open" } };
 }
