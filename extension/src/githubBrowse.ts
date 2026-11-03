@@ -892,3 +892,40 @@ export const getCompareFiles = (repo: string, base: string, head: string) =>
 export async function renderMarkdown(repo: string, text: string): Promise<string> {
   return (await request("/markdown", "text/html", true, JSON.stringify({ text, mode: "gfm", context: repo }))).text();
 }
+
+// ---------- releases (REL) ----------
+
+import { deleteReleaseRequest, latestReleaseQuery, releasesQuery, toLatestRelease, toReleasesPage, type ReleasesPage } from "./lib/releases";
+import { reactionMutation, type ReactionContent } from "./lib/reactions";
+
+const releaseSets = new Map<string, { at: number; p: Promise<ReleasesPage> }>();
+const latestReleases = new Map<string, { at: number; p: Promise<ReturnType<typeof toLatestRelease>> }>();
+
+/** Drops the cached releases and latest release, after a write (the form's onDone, delete) or Try again. */
+export const invalidateReleases = () => (releaseSets.clear(), latestReleases.clear());
+
+/** Every release (100 a page, newest first), cached 30 s like the other lists. */
+export const listAllReleases = (repo: string): Promise<ReleasesPage> =>
+  ttl(releaseSets, repo, async () => {
+    const out: ReleasesPage = { releases: [], hasNextPage: false, endCursor: null, viewerCanWrite: false };
+    for (let after: string | null = null; ; ) {
+      const page = toReleasesPage((await graphql(releasesQuery(repo, after))).data);
+      out.releases.push(...page.releases);
+      out.viewerCanWrite = page.viewerCanWrite;
+      if (!page.hasNextPage || !page.endCursor) break;
+      after = page.endCursor;
+    }
+    return out;
+  });
+
+/** The repo's latest release for the Files page line; undefined when there is none. */
+export const getLatestRelease = (repo: string) => ttl(latestReleases, repo, async () => toLatestRelease((await graphql(latestReleaseQuery(repo))).data));
+
+/** Adds or removes the viewer's reaction on a release (its GraphQL node id). */
+export const releaseReact = (subjectId: string, content: ReactionContent, add: boolean) => mutate(reactionMutation(subjectId, content, add));
+
+/** Deletes a release; its tag stays. */
+export const deleteRelease = async (repo: string, releaseId: number) => {
+  await rest(deleteReleaseRequest(repo, releaseId));
+  invalidateReleases();
+};
