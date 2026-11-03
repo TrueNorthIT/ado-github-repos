@@ -247,7 +247,11 @@ export function PeopleAdd({ repo, kind, current, authorLogin, onPick, onClose }:
       onFilterIdentities: (q) => search(q).catch(() => []),
       onEmptyInputFocus: () => search("").catch(() => []),
       onRequestConnectionInformation: () => ({}),
-      getEntityFromUniqueAttribute: (id) => toIdentity(known.current.get(id)!),
+      // The identity card looks people up by signInAddress (the login), not entityId; an unknown key must not throw, or the page blanks.
+      getEntityFromUniqueAttribute: (id) => {
+        const c = known.current.get(id) ?? [...known.current.values()].find((k) => toIdentity(k).signInAddress === id);
+        return c ? toIdentity(c) : (undefined as unknown as IIdentity);
+      },
     };
   }, [repo, kind, authorLogin, JSON.stringify(current)]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
