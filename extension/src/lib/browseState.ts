@@ -32,9 +32,20 @@ export interface BrowseState {
   parent?: number;
   /** Hash key `branchTab`: the Branches page tab. */
   branchTab?: BranchTabId;
-  /** Hash key `q`: the Branches / Tags name search. */
+  /** Hash key `q`: the Branches / Tags name search, and the Releases title/tag search. */
   q?: string;
+  /** Hash key `tagTab`: the Tags page tab; absent means "tags". (REL) */
+  tagTab?: TagTabId;
+  /** Hash key `release`: a tag name. With tagTab=releases and no releaseForm: that release's detail view. With releaseForm=new: the tag to preselect.
+   *  With releaseForm=edit: the release being edited. Only honoured with tagTab=releases. (REL) */
+  release?: string;
+  /** Hash key `releaseForm`: the draft/edit form. "edit" needs `release`. Only honoured with tagTab=releases. (REL) */
+  releaseForm?: "new" | "edit";
+  /** Hash key `relPage`: the Releases list page, a positive integer; absent means 1. Only honoured with tagTab=releases. (REL) */
+  relPage?: number;
 }
+
+export type TagTabId = "tags" | "releases";
 
 export type CommitTab = "files" | "details";
 export type BranchTabId = "mine" | "all" | "stale";
