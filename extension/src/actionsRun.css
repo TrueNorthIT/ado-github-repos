@@ -2,35 +2,54 @@
 .gh-act-body { padding: 0 0 24px; gap: 16px; } /* cards 32px in from the page edge, 16px apart, as native Pipelines */
 .gh-act-card { margin: 0; }
 .gh-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.gh-act-facts-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; padding: 4px 4px 8px; }
-.gh-act-facts-grid dt { color: rgba(var(--palette-neutral-60, 100, 100, 100), 1); }
-.gh-act-facts-grid dd { margin: 0; min-width: 0; }
-.gh-act-prlink + .gh-act-prlink { margin-left: 8px; }
-.gh-act-empty { padding: 16px; }
 
-/* graph */
-.gh-act-graph-wrap { overflow: auto; padding: 16px; }
-.gh-act-graph { position: relative; display: flex; align-items: flex-start; gap: 56px; min-width: min-content; }
+/* summary card: native padding 20px 0, content 0 20px */
+.gh-act-summary.bolt-card .bolt-card-content, .gh-act-summary .bolt-card-content { padding: 20px 20px; flex-direction: column; align-items: stretch; }
+.gh-act-sum-top { gap: 8px; min-width: 0; }
+.gh-act-sum-title { margin: 0; font-size: 17px; font-weight: 400; line-height: 24px; gap: 6px; min-width: 0; }
+.gh-act-sum-title .bolt-persona, .gh-act-sum-title .vss-Persona { flex: none; }
+.gh-act-sum-meta { margin-top: 8px; gap: 16px; font-size: 14px; }
+.gh-act-sum-meta > span, .gh-act-sum-cols section > div { gap: 6px; min-height: 22px; }
+.gh-act-sum-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; font-size: 14px; }
+.gh-act-sum-cols h3 { margin: 0; padding: 4px 0 4px 6px; font-size: 14px; font-weight: 400; }
+.gh-act-sum-cols section > div { padding-left: 6px; min-width: 0; }
+.gh-act-sum-cols .bolt-status { flex: none; }
+@media (max-width: 800px) { .gh-act-sum-cols { grid-template-columns: 1fr; } }
+
+/* stages | jobs card */
+.gh-act-stagecard .bolt-card-content { padding: 0; flex-direction: column; }
+.gh-act-innertabs.bolt-tabbar { padding: 0 20px; height: 40px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); flex: none; }
+.gh-act-innertabs .bolt-tab { padding: 0 8px; }
+.gh-act-empty { padding: 16px; }
+.gh-act-graph-wrap { overflow: auto; padding: 32px 32px 32px; }
+.gh-act-graph { position: relative; display: flex; align-items: flex-start; gap: 64px; min-width: min-content; }
 .gh-act-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .gh-act-lines path { stroke: rgba(var(--palette-neutral-30, 150, 150, 150), 1); stroke-width: 1.5; }
-.gh-act-col { display: flex; flex-direction: column; gap: 12px; position: relative; flex: 0 0 auto; width: 230px; }
-.gh-act-node { background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-left-width: 4px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
-.gh-act-succeeded { border-left-color: rgb(16, 124, 16); }
-.gh-act-failed { border-left-color: rgb(168, 0, 0); }
-.gh-act-inProgress { border-left-color: rgb(0, 120, 212); }
-.gh-act-cancelled, .gh-act-skipped, .gh-act-neutral, .gh-act-queued, .gh-act-waiting { border-left-color: rgba(var(--palette-neutral-30, 150, 150, 150), 1); }
-.gh-act-cardbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
-.gh-act-cardbtn:hover { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
-.gh-act-cardbtn:focus-visible, .gh-act-stepbtn:focus-visible { outline: 2px solid rgba(var(--palette-primary, 0, 120, 212), 1); outline-offset: -2px; }
+.gh-act-col { display: flex; flex-direction: column; gap: 16px; position: relative; flex: 0 0 auto; width: 224px; }
+.gh-act-stage { width: 224px; box-sizing: border-box; border: 1px solid rgba(var(--palette-neutral-10, 234, 234, 234), 1); border-radius: 4px; background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); overflow: hidden; }
+.gh-act-stage-primary { padding: 4px 4px 12px 12px; background: rgba(var(--palette-neutral-2, 248, 248, 248), 1); border-bottom: 1px solid rgba(var(--palette-neutral-10, 234, 234, 234), 1); }
+.gh-act-stage-title { height: 34px; gap: 8px; min-width: 0; }
+.gh-act-stage-title h3 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
+.gh-act-stage-progress { font-size: 12px; padding: 6px 8px 0 0; gap: 8px; }
+.gh-act-stage-info { font-size: 12px; padding-top: 9px; gap: 6px; }
+.gh-act-stage-jobs { list-style: none; margin: 0; padding: 2px 8px; }
+.gh-act-stage-job { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 2px 4px; background: none; border: 0; border-radius: 2px; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; min-width: 0; }
+.gh-act-stage-job:hover { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
+.gh-act-stage-job:focus-visible, .gh-act-stepbtn:focus-visible { outline: 2px solid rgba(var(--palette-primary, 0, 120, 212), 1); outline-offset: -2px; }
+.gh-act-stage-foot { padding: 12px; border-top: 1px solid rgba(var(--palette-neutral-10, 234, 234, 234), 1); }
+.gh-act-stage-foot .bolt-button { width: 100%; justify-content: center; }
 .gh-act-title { flex: 1 1 auto; min-width: 0; }
-.gh-act-dur, .gh-act-count { flex: 0 0 auto; font-size: .8rem; }
-.gh-act-matrix { list-style: none; margin: 0; padding: 0 0 4px 16px; }
+.gh-act-dur { flex: 0 0 auto; font-size: .8rem; }
 
 /* tables */
 .gh-act-jobs { width: 100%; border-collapse: collapse; }
 .gh-act-jobs th { text-align: left; font-weight: 600; font-size: .8rem; padding: 8px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); color: rgba(var(--palette-neutral-60, 100, 100, 100), 1); }
 .gh-act-jobs td { padding: 4px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); max-width: 260px; }
 .gh-act-jobname { gap: 8px; min-width: 0; }
+.gh-act-jobtable th { height: 45px; padding: 0 20px; font-size: 12px; }
+.gh-act-jobtable td { height: 48px; padding: 0 20px; font-size: 14px; }
+.gh-act-jobtable td:first-child, .gh-act-jobtable th:first-child { width: 50%; }
+.gh-act-jobtable tr:last-child td { border-bottom: 0; }
 .gh-act-rowmenu { width: 40px; text-align: right; }
 .gh-act-pill { margin-left: 8px; }
 .gh-act-notes { padding: 4px 12px 8px; }
@@ -51,10 +70,17 @@
 .gh-act-stepbtn.selected { background: rgba(var(--palette-primary, 0, 120, 212), .12); }
 .gh-act-jobbtn { font-weight: 600; }
 .gh-act-steplist { list-style: none; margin: 0; padding: 0 0 4px 16px; }
-.gh-act-logpane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
-.gh-act-logbar { gap: 4px; padding: 4px 8px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); flex: 0 0 auto; }
+/* native's log pane is dark whatever the ADO theme: these remap the palette for the buttons and checkbox in it */
+.gh-act-logpane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; background: #201f1e; color: #e1dfdd; color-scheme: dark;
+  --palette-neutral-0: 32, 31, 30; --palette-neutral-2: 37, 36, 35; --palette-neutral-4: 43, 42, 41; --palette-neutral-6: 255, 255, 255; --palette-neutral-8: 59, 58, 57; --palette-neutral-10: 72, 70, 68; --palette-neutral-20: 96, 94, 92; --palette-neutral-30: 121, 119, 116; --palette-neutral-60: 161, 159, 157; --palette-neutral-100: 225, 223, 221;
+  --text-primary-color: 225, 223, 221; --text-secondary-color: 161, 159, 157; --palette-primary: 79, 160, 255; --palette-primary-shade-30: 121, 183, 255; }
+.gh-act-logpane .bolt-button, .gh-act-logpane .bolt-checkbox-label, .gh-act-logpane .bolt-button .bolt-button-text { color: #e1dfdd; }
+.gh-act-logpane .bolt-button:hover:not(.disabled), .gh-act-logpane .bolt-button.subtle:hover:not(.disabled) { background: rgba(255, 255, 255, .1); }
+.gh-act-logpane .bolt-button.disabled, .gh-act-logpane .bolt-button.disabled .bolt-button-text { color: #797774; }
+.gh-act-logtitle { margin: 0; padding: 16px 20px; font-size: 17px; font-weight: 400; line-height: 24px; flex: 0 0 auto; color: #e1dfdd; }
+.gh-act-logbar { gap: 4px; padding: 4px 20px; border-bottom: 1px solid #484644; flex: 0 0 auto; }
 .gh-act-editor { flex: 1 1 0; min-height: 0; }
-.gh-act-logwait { padding: 24px; }
+.gh-act-logwait { padding: 24px; color: #a19f9d; }
 
 /* Monaco: the log's own decorations */
 .monaco-editor .gh-log-error { background: rgba(207, 34, 46, .16); }

@@ -10,7 +10,6 @@ import { foldRanges, parseLog, stepRanges, logCounts } from "./lib/workflowLog";
 import { buildLogDoc } from "./lib/logDoc";
 import { getJobLog } from "./actionsApi";
 import { loadMonaco } from "./Browser";
-import { watchTheme } from "./theme";
 import { Loading } from "./RepoHub";
 import { StateIcon, STATE_TEXT, dur, isActive, jobMs, spanMs, type RunPageProps } from "./ActionsRun";
 import "./actionsRun.css";
@@ -34,7 +33,6 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
   const [log, setLog] = React.useState<{ id: number; text?: string; err?: boolean }>({ id: 0 });
   const [tries, setTries] = React.useState(0);
   const [showTs, setShowTs] = React.useState(false);
-  const [dark, setDark] = React.useState(false);
   const [viewerFailed, setViewerFailed] = React.useState(false);
   const [rerunFailed, setRerunFailed] = React.useState(false);
   const [step, setStep] = React.useState<number>();
@@ -43,8 +41,6 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
   const [ready, setReady] = React.useState(0);
   const errIdx = React.useRef(-1);
   const clicked = React.useRef(0);
-
-  React.useEffect(() => watchTheme(setDark), []);
 
   // Fetch the log once the job has finished (the log is not available while it runs).
   React.useEffect(() => {
@@ -73,7 +69,7 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
     loadMonaco().then(
       (m) => {
         if (dead || !box.current) return;
-        v = m.createLogViewer(box.current, dark, `Log of ${job?.name ?? "job"}`, (n: number) => { clicked.current = n; v?.reveal(n, true, false); go({ ...state, line: n }, true); });
+        v = m.createLogViewer(box.current, `Log of ${job?.name ?? "job"}`, (n: number) => { clicked.current = n; v?.reveal(n, true, false); go({ ...state, line: n }, true); });
         viewer.current = v;
         setReady((r) => r + 1);
       },
@@ -81,7 +77,6 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
     );
     return () => { dead = true; v?.dispose(); viewer.current = undefined; };
   }, [shown, jobId]); // eslint-disable-line react-hooks/exhaustive-deps
-  React.useEffect(() => { viewer.current?.setTheme(dark); }, [dark, ready]);
   React.useEffect(() => { if (doc && viewer.current) viewer.current.setDoc(doc); }, [doc, ready]);
   // actLine: scroll to and highlight it on load, and when the hash changes it from elsewhere (a click on a line number already shows it).
   React.useEffect(() => {
@@ -166,6 +161,7 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
           ))}
         </nav>
         <div className="gh-act-logpane">
+          <h2 className="gh-act-logtitle text-ellipsis">{job.name}</h2>
           <div className="gh-act-logbar flex-row flex-center">
             <Checkbox label="Show timestamps" checked={showTs} onChange={(_e, c) => setShowTs(c)} disabled={!shown} />
             <span className="flex-grow" />

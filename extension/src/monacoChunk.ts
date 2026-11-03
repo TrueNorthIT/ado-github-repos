@@ -47,6 +47,9 @@ const diffColors = (removed: string, added: string) => ({
 });
 monaco.editor.defineTheme("ado-light", { base: "vs", inherit: true, rules: [], colors: { "editorLineNumber.foreground": "#0b216f", "editorLineNumber.activeForeground": "#0b216f", ...diffColors("#fae8e8", "#eaf4eb") } });
 monaco.editor.defineTheme("ado-dark", { base: "vs-dark", inherit: true, rules: [], colors: diffColors("#4b1818", "#1b3a1f") });
+// Native Pipelines' log is always dark (sampled: pane rgb(32,31,30), text rgb(225,223,221), line numbers rgb(161,159,157)). Monaco's theme is global
+// (a per-editor `theme` option calls the same setTheme), so the log viewer switches to this theme while it is open; file viewers set their own on creation.
+monaco.editor.defineTheme("ado-log", { base: "vs-dark", inherit: true, rules: [], colors: { "editor.background": "#201f1e", "editor.foreground": "#e1dfdd", "editorLineNumber.foreground": "#a19f9d", "editorLineNumber.activeForeground": "#e1dfdd", "editorGutter.background": "#201f1e" } });
 const themeName = (dark: boolean) => (dark ? "ado-dark" : "ado-light");
 
 export function createViewer(el: HTMLElement, value: string, language: string, dark: boolean, label: string) {
@@ -369,8 +372,8 @@ export interface LogDoc {
   folds: { start: number; end: number }[];
 }
 
-export function createLogViewer(el: HTMLElement, dark: boolean, label: string, onLineClick: (line: number) => void) {
-  monaco.editor.setTheme(themeName(dark));
+export function createLogViewer(el: HTMLElement, label: string, onLineClick: (line: number) => void) {
+  monaco.editor.setTheme("ado-log");
   let folds: { start: number; end: number }[] = [];
   const provider = monaco.languages.registerFoldingRangeProvider("ghlog", { provideFoldingRanges: () => folds.map((f) => ({ start: f.start, end: f.end })) });
   const editor = monaco.editor.create(el, {
@@ -417,7 +420,6 @@ export function createLogViewer(el: HTMLElement, dark: boolean, label: string, o
       editor.setPosition({ lineNumber: n, column: 1 });
       hl.set(mark ? [{ range: new monaco.Range(n, 1, n, 1), options: { isWholeLine: true, className: "gh-log-hl" } }] : []);
     },
-    setTheme: (d: boolean) => monaco.editor.setTheme(themeName(d)),
     dispose() { down.dispose(); provider.dispose(); const m = editor.getModel(); editor.dispose(); m?.dispose(); },
   };
 }

@@ -4,6 +4,9 @@ import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Header, TitleSize } from "azure-devops-ui/Header";
+import { Icon } from "azure-devops-ui/Icon";
+import { Tab, TabBar } from "azure-devops-ui/Tabs";
+import { VssPersona } from "azure-devops-ui/VssPersona";
 import { Link } from "azure-devops-ui/Link";
 import { MenuButton, MoreButton } from "azure-devops-ui/Menu";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
@@ -19,8 +22,9 @@ import {
   cancelRun, downloadArtifact, getRun, getWorkflowYaml, listArtifacts, listJobAnnotations, listJobs, listPendingDeployments, rerunAll, rerunFailed, rerunJob, reviewDeployments, useCanWriteActions,
 } from "./actionsApi";
 import { ErrorView } from "./Browser";
-import { Loading, PersonLine } from "./RepoHub";
-import { RelDate } from "./RelDate";
+import { Loading } from "./RepoHub";
+import { commitDateText } from "./lib/dateText";
+import { RepoIcon } from "./fileIcons";
 import { openInHub, useHubHref } from "./repoHref";
 import { GhError } from "./githubBrowse";
 import { LogView } from "./ActionsLog";
@@ -171,7 +175,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   const href = useHubHref();
   const defs = useWorkflowDefs(repo, run);
   const notes = useAnnotations(repo, jobs);
-  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
+  const [tab, setTab] = React.useState<"stages" | "jobs">("stages");
   const [failure, setFailure] = React.useState<string>();
   const [reviewing, setReviewing] = React.useState(false);
   const latest = run.attempt === data.latestAttempt;
@@ -205,6 +209,9 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   ];
 
   const commit = { repo, commit: run.headSha };
+  const wfFile = { repo, ref: run.headSha, path: run.path };
+  const errorCount = notes.filter((n) => n.level === "failure").length;
+  const warnCount = notes.filter((n) => n.level === "warning").length;
   const groups = React.useMemo(() => (defs === undefined ? [] : jobGraph(jobs, defs).filter((c) => c.length)), [jobs, defs]);
   const openJob = (j: Job) => go({ run: run.id, attempt: state.attempt, job: j.id });
 
@@ -225,41 +232,65 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
         {!latest && <MessageCard severity={MessageCardSeverity.Info} buttonProps={[{ text: "Go to the latest attempt", onClick: () => go({ run: run.id }) }]}>You are looking at attempt {run.attempt} of {data.latestAttempt}.</MessageCard>}
         {data.pending.length > 0 && <MessageCard severity={MessageCardSeverity.Warning}>Waiting for review: {data.pending.map((p) => p.environmentName).join(", ")}.</MessageCard>}
 
-        <Card className="gh-act-card" titleProps={{ text: "Summary" }}>
-          <dl className="gh-act-facts-grid">
-            <dt>Workflow</dt><dd>{run.name}</dd>
-            <dt>Trigger</dt><dd>{run.event}</dd>
-            {run.actor && <><dt>Actor</dt><dd><PersonLine person={run.actor} /></dd></>}
-            <dt>Branch</dt><dd>{run.branch ? <Pill size={PillSize.compact} variant={PillVariant.outlined}>{run.branch}</Pill> : "–"}</dd>
-            <dt>Commit</dt>
-            <dd><Link className="gh-sha-link monospaced-xs" href={href("commits", commit)} onClick={openInHub("commits", commit)} ariaLabel={`Commit ${run.headSha.slice(0, 8)}`}>{run.headSha.slice(0, 8)}</Link></dd>
-            {run.prNumbers.length > 0 && <><dt>Pull requests</dt><dd>{run.prNumbers.map((n) => <Link key={n} className="gh-act-prlink" href={href("prs", { repo, view: "prs", pr: n })} onClick={openInHub("prs", { repo, view: "prs", pr: n })}>#{n}</Link>)}</dd></>}
-            <dt>Duration</dt><dd>{dur(total) || "–"}</dd>
-            <dt>Created</dt><dd><RelDate date={run.createdAt} /></dd>
+        <Card className="gh-act-card gh-act-summary">
+          <div className="gh-act-sum-top flex-row flex-center">
+            <h2 className="gh-act-sum-title flex-row flex-center flex-grow">
+              <span>{triggerText(run.event)}</span>
+              {run.actor && <><span className="gh-act-sum-by">by</span><VssPersona imageUrl={run.actor.avatarUrl} displayName={run.actor.name} size="small" suppressPersonaCard showInitialsOnImageError /><span className="text-ellipsis">{run.actor.name}</span></>}
+            </h2>
             {data.latestAttempt > 1 && (
-              <>
-                <dt>Attempt</dt>
-                <dd>
-                  <MenuButton
-                    ariaLabel="Choose an attempt"
-                    text={`Attempt ${run.attempt}${latest ? " (latest)" : ""}`}
-                    contextualMenuProps={{ menuProps: { id: "gh-act-attempts", items: Array.from({ length: data.latestAttempt }, (_, i) => data.latestAttempt - i).map((n) => ({ id: `a${n}`, text: `Attempt ${n}${n === data.latestAttempt ? " (latest)" : ""}`, onActivate: () => go({ run: run.id, attempt: n === data.latestAttempt ? undefined : n }) })) } }}
-                  />
-                </dd>
-              </>
+              <MenuButton
+                ariaLabel="Choose an attempt"
+                text={`Attempt ${run.attempt}${latest ? " (latest)" : ""}`}
+                contextualMenuProps={{ menuProps: { id: "gh-act-attempts", items: Array.from({ length: data.latestAttempt }, (_, i) => data.latestAttempt - i).map((n) => ({ id: `a${n}`, text: `Attempt ${n}${n === data.latestAttempt ? " (latest)" : ""}`, onActivate: () => go({ run: run.id, attempt: n === data.latestAttempt ? undefined : n }) })) } }}
+              />
             )}
-          </dl>
+            <Button text="View changes" href={href("commits", commit)} onClick={(e) => openInHub("commits", commit)(e)} />
+            <Button text="Workflow file" href={href("files", wfFile)} onClick={(e) => openInHub("files", wfFile)(e)} />
+          </div>
+          <div className="gh-act-sum-meta flex-row flex-center">
+            <span className="flex-row flex-center"><Icon iconName="Calendar" />{commitDateText(run.createdAt)}</span>
+            <span className="flex-row flex-center"><Icon iconName="Clock" />{dur(total) || "–"}</span>
+          </div>
+          <div className="gh-act-sum-cols">
+            <section aria-label="Repository and version">
+              <h3 className="secondary-text">Repository and version</h3>
+              <div className="flex-row flex-center"><RepoIcon /><span className="text-ellipsis">{repo.split("/").pop()}</span></div>
+              {run.branch && <div className="flex-row flex-center"><Icon iconName="BranchFork2" /><span className="text-ellipsis">{run.branch}</span></div>}
+              <div className="flex-row flex-center"><Icon iconName="BranchCommit" /><Link className="gh-sha-link monospaced-xs" href={href("commits", commit)} onClick={openInHub("commits", commit)} ariaLabel={`Commit ${run.headSha.slice(0, 8)}`}>{run.headSha.slice(0, 8)}</Link></div>
+            </section>
+            <section aria-label="Related">
+              <h3 className="secondary-text">Related</h3>
+              {run.prNumbers.length ? run.prNumbers.map((n) => {
+                const pr = { repo, view: "prs", pr: n } as const;
+                return <div key={n} className="flex-row flex-center"><Icon iconName="BranchPullRequest" /><Link href={href("prs", pr)} onClick={openInHub("prs", pr)}>#{n}</Link></div>;
+              }) : <div className="flex-row flex-center secondary-text"><Icon iconName="BranchPullRequest" />No pull requests</div>}
+              {data.artifacts.length > 0 && (
+                <div className="flex-row flex-center"><Icon iconName="Package" /><Link href="#" onClick={(e) => { e.preventDefault(); document.getElementById("gh-act-artifacts")?.scrollIntoView({ block: "start" }); }}>{data.artifacts.length} published</Link></div>
+              )}
+            </section>
+            <section aria-label="Checks">
+              <h3 className="secondary-text">Checks</h3>
+              <div className="flex-row flex-center">
+                <Status {...(errorCount ? Statuses.Failed : warnCount ? Statuses.Warning : Statuses.Success)} size={StatusSize.s} ariaLabel="" />
+                <span>{errorCount || warnCount ? [errorCount && plural(errorCount, "error"), warnCount && plural(warnCount, "warning")].filter(Boolean).join(", ") : "No errors or warnings"}</span>
+              </div>
+            </section>
+          </div>
         </Card>
 
-        <Card className="gh-act-card" titleProps={{ text: "Jobs" }}>
-          <div className="gh-act-cardbody">
-          <div className="gh-act-graph-wrap">
-            {defs === undefined ? <Loading label="Loading the job graph" /> : (
-              <JobGraph groups={groups} now={now} expanded={expanded} toggle={(k) => setExpanded((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; })} open={openJob} />
-            )}
-          </div>
-          <JobsTable jobs={jobs} now={now} canRerun={write && !isActive(run.state)} open={openJob} rerun={(j) => void act(`re-run ${j.name}`, () => rerunJob(repo, j.id))} />
-          </div>
+        <Card className="gh-act-card gh-act-stagecard">
+          <TabBar ariaLabel="Stages and jobs" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as "stages" | "jobs")} className="gh-act-innertabs" disableSticky>
+            <Tab id="stages" name="Stages" />
+            <Tab id="jobs" name="Jobs" />
+          </TabBar>
+          {tab === "stages" ? (
+            defs === undefined ? <Loading label="Loading the stages" /> : (
+              <StageGraph groups={groups} notes={notes} artifactCount={data.artifacts.length} now={now} canRerun={write} open={openJob} rerun={(js) => void act("re-run the stage", async () => { for (const j of js) await rerunJob(repo, j.id); })} />
+            )
+          ) : (
+            <JobsTable jobs={jobs} now={now} canRerun={write && !isActive(run.state)} open={openJob} rerun={(j) => void act(`re-run ${j.name}`, () => rerunJob(repo, j.id))} />
+          )}
         </Card>
 
         <Artifacts repo={repo} artifacts={data.artifacts} />
@@ -270,9 +301,25 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   );
 }
 
-// ---------- the jobs graph (ACT-5, 6) ----------
+// ---------- stages and jobs (ACT-5, 6) ----------
 
-function JobGraph({ groups, now, expanded, toggle, open }: { groups: JobGroup[][]; now: number; expanded: Set<string>; toggle: (key: string) => void; open: (j: Job) => void }) {
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+/** Native's trigger heading for a run's event. */
+export function triggerText(event: string): string {
+  const t: Record<string, string> = { push: "Push", pull_request: "Pull request", pull_request_target: "Pull request", workflow_dispatch: "Manual run", schedule: "Scheduled", release: "Release", workflow_run: "Triggered by another workflow", merge_group: "Merge queue" };
+  return t[event] ?? event;
+}
+const JOB_STATUS_TEXT: Record<RunState, string> = { ...STATE_TEXT, succeeded: "Success", inProgress: "Running" };
+
+function progressText(g: JobGroup): string {
+  const done = g.jobs.filter((j) => j.status === "completed").length;
+  if (done === g.jobs.length) return `${plural(done, "job")} completed`;
+  if (done > 0) return `${done} of ${g.jobs.length} jobs completed`;
+  return g.state === "inProgress" ? "Running" : STATE_TEXT[g.state];
+}
+
+/** Each job group is a native "stage card"; columns and connector lines as before (GitHub has no stages). */
+function StageGraph({ groups, notes, artifactCount, now, canRerun, open, rerun }: { groups: JobGroup[][]; notes: JobNote[]; artifactCount: number; now: number; canRerun: boolean; open: (j: Job) => void; rerun: (js: Job[]) => void }) {
   const box = React.useRef<HTMLDivElement>(null);
   const cards = React.useRef(new Map<string, HTMLElement>());
   const [lines, setLines] = React.useState<{ d: string; w: number; h: number }>({ d: "", w: 0, h: 0 });
@@ -280,7 +327,7 @@ function JobGraph({ groups, now, expanded, toggle, open }: { groups: JobGroup[][
     const b = box.current;
     if (!b) return;
     const o = b.getBoundingClientRect();
-    const rect = (k: string) => { const r = cards.current.get(k)?.getBoundingClientRect(); return r && { l: r.left - o.left, r: r.right - o.left, m: r.top - o.top + Math.min(r.height / 2, 22) }; };
+    const rect = (k: string) => { const r = cards.current.get(k)?.getBoundingClientRect(); return r && { l: r.left - o.left, r: r.right - o.left, m: r.top - o.top + 21 }; };
     let d = "";
     for (const g of groups.flat()) {
       const to = rect(g.key);
@@ -291,7 +338,7 @@ function JobGraph({ groups, now, expanded, toggle, open }: { groups: JobGroup[][
     }
     setLines((p) => (p.d === d && p.w === o.width && p.h === o.height ? p : { d, w: o.width, h: o.height }));
   }, [groups]);
-  React.useLayoutEffect(() => { measure(); }); // after every render: expanding a matrix moves the cards
+  React.useLayoutEffect(() => { measure(); }); // after every render: card heights change with progress
   React.useEffect(() => {
     if (!box.current || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
@@ -300,62 +347,63 @@ function JobGraph({ groups, now, expanded, toggle, open }: { groups: JobGroup[][
   }, [measure]);
   if (!groups.length) return <div className="secondary-text gh-act-empty">No jobs have started yet.</div>;
   return (
-    <div className="gh-act-graph" ref={box} role="group" aria-label="Job graph">
-      <svg className="gh-act-lines" width={lines.w} height={lines.h} aria-hidden="true"><path d={lines.d} fill="none" /></svg>
-      {groups.map((col, i) => (
-        <div className="gh-act-col" key={i}>
-          {col.map((g) => (
-            <div key={g.key} className={`gh-act-node gh-act-${g.state}`} ref={(el) => { if (el) cards.current.set(g.key, el); else cards.current.delete(g.key); }}>
-              {g.jobs.length === 1 ? (
-                <button type="button" className="gh-act-cardbtn" onClick={() => open(g.jobs[0])} aria-label={`${g.jobs[0].name}, ${STATE_TEXT[g.state]}`}>
-                  <StateIcon state={g.state} />
-                  <span className="gh-act-title text-ellipsis">{g.jobs[0].name}</span>
-                  <span className="gh-act-dur secondary-text">{dur(groupMs(g.jobs, now))}</span>
-                </button>
-              ) : (
-                <>
-                  <button type="button" className="gh-act-cardbtn" aria-expanded={expanded.has(g.key)} onClick={() => toggle(g.key)}>
-                    <StateIcon state={g.state} />
-                    <span className="gh-act-title text-ellipsis">{g.title}</span>
-                    <span className="gh-act-count secondary-text">{g.jobs.length} jobs</span>
-                    <span className="gh-act-dur secondary-text">{dur(groupMs(g.jobs, now))}</span>
-                  </button>
-                  {expanded.has(g.key) && (
-                    <ul className="gh-act-matrix">
-                      {g.jobs.map((j) => (
-                        <li key={j.id}>
-                          <button type="button" className="gh-act-cardbtn" onClick={() => open(j)} aria-label={`${j.name}, ${STATE_TEXT[j.state]}`}>
-                            <StateIcon state={j.state} />
-                            <span className="gh-act-title text-ellipsis">{j.name.slice(g.title.length).trim() || j.name}</span>
-                            <span className="gh-act-dur secondary-text">{dur(jobMs(j, now))}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+    <div className="gh-act-graph-wrap">
+      <div className="gh-act-graph" ref={box} role="group" aria-label="Stage graph">
+        <svg className="gh-act-lines" width={lines.w} height={lines.h} aria-hidden="true"><path d={lines.d} fill="none" /></svg>
+        {groups.map((col, i) => (
+          <div className="gh-act-col" key={i}>
+            {col.map((g) => {
+              const finished = g.jobs.every((j) => j.status === "completed");
+              const mine = notes.filter((n) => g.jobs.some((j) => j.id === n.job.id));
+              const errs = mine.filter((n) => n.level === "failure").length;
+              const warns = mine.filter((n) => n.level === "warning").length;
+              const info = [errs && plural(errs, "error"), warns && plural(warns, "warning")].filter(Boolean).join(" · ");
+              const arts = i === groups.length - 1 && artifactCount > 0;
+              const failedJobs = g.jobs.filter((j) => j.state === "failed");
+              return (
+                <section key={g.key} className="gh-act-stage" aria-label={`${g.title}, ${STATE_TEXT[g.state]}`} ref={(el) => { if (el) cards.current.set(g.key, el); else cards.current.delete(g.key); }}>
+                  <div className="gh-act-stage-primary">
+                    <div className="gh-act-stage-title flex-row flex-center"><StateIcon state={g.state} size={StatusSize.l} /><h3 className="text-ellipsis">{g.title}</h3></div>
+                    <div className="gh-act-stage-progress secondary-text flex-row"><span className="flex-grow">{progressText(g)}</span><span>{dur(groupMs(g.jobs, now))}</span></div>
+                    {arts && <div className="gh-act-stage-info flex-row flex-center"><Icon iconName="Package" />{plural(artifactCount, "artifact")}</div>}
+                    {info && <div className="gh-act-stage-info flex-row flex-center"><Icon iconName={errs ? "ErrorBadge" : "Warning"} />{info}</div>}
+                  </div>
+                  <ul className="gh-act-stage-jobs">
+                    {g.jobs.map((j) => (
+                      <li key={j.id}>
+                        <button type="button" className="gh-act-stage-job" onClick={() => open(j)} aria-label={`${j.name}, ${STATE_TEXT[j.state]}`}>
+                          <StateIcon state={j.state} size={StatusSize.m} />
+                          <span className="gh-act-title text-ellipsis">{g.jobs.length > 1 ? j.name.slice(g.title.length).trim().replace(/^\((.*)\)$/, "$1") || j.name : j.name}</span>
+                          <span className="secondary-text">{dur(jobMs(j, now))}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {canRerun && finished && (
+                    <div className="gh-act-stage-foot"><Button text="Re-run stage" ariaLabel={`Re-run stage ${g.title}`} onClick={() => rerun(failedJobs.length ? failedJobs : g.jobs)} /></div>
                   )}
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
+                </section>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 function JobsTable({ jobs, now, canRerun, open, rerun }: { jobs: Job[]; now: number; canRerun: boolean; open: (j: Job) => void; rerun: (j: Job) => void }) {
-  if (!jobs.length) return null;
+  if (!jobs.length) return <div className="secondary-text gh-act-empty">No jobs have started yet.</div>;
   return (
-    <table className="gh-act-jobs">
+    <table className="gh-act-jobs gh-act-jobtable">
       <caption className="gh-visually-hidden">Jobs</caption>
-      <thead><tr><th scope="col">Job</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Runner</th><th scope="col"><span className="gh-visually-hidden">Actions</span></th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col"><span className="gh-visually-hidden">Actions</span></th></tr></thead>
       <tbody>
         {jobs.map((j) => (
           <tr key={j.id}>
-            <td><span className="flex-row flex-center gh-act-jobname"><StateIcon state={j.state} /><Link className="bolt-table-link text-ellipsis" href="#" onClick={(e) => { e.preventDefault(); open(j); }}>{j.name}</Link></span></td>
-            <td>{STATE_TEXT[j.state]}</td>
-            <td>{dur(jobMs(j, now)) || "–"}</td>
-            <td className="text-ellipsis">{j.runnerName || "–"}</td>
+            <td><span className="flex-row flex-center gh-act-jobname"><StateIcon state={j.state} size={StatusSize.m} /><Link className="bolt-table-link text-ellipsis" href="#" onClick={(e) => { e.preventDefault(); open(j); }}>{j.name}</Link></span></td>
+            <td>{JOB_STATUS_TEXT[j.state]}</td>
+            <td className="secondary-text"><span className="flex-row flex-center gh-act-jobname"><Icon iconName="Clock" />{dur(jobMs(j, now)) || "–"}</span></td>
             <td className="gh-act-rowmenu">
               {canRerun && j.status === "completed" && (
                 <MoreButton ariaLabel={`Actions for ${j.name}`} contextualMenuProps={{ menuProps: { id: `gh-act-job-${j.id}`, items: [{ id: "rerun", text: "Re-run job", iconProps: { iconName: "Refresh" }, onActivate: () => rerun(j) }] } }} />
@@ -393,7 +441,7 @@ function Artifacts({ repo, artifacts }: { repo: string; artifacts: Artifact[] })
     }
   };
   return (
-    <Card className="gh-act-card" titleProps={{ text: `Artifacts (${artifacts.length})` }}>
+    <div id="gh-act-artifacts"><Card className="gh-act-card" titleProps={{ text: `Artifacts (${artifacts.length})` }}>
       {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}
       <table className="gh-act-jobs">
         <caption className="gh-visually-hidden">Artifacts</caption>
@@ -408,7 +456,7 @@ function Artifacts({ repo, artifacts }: { repo: string; artifacts: Artifact[] })
           ))}
         </tbody>
       </table>
-    </Card>
+    </Card></div>
   );
 }
 
