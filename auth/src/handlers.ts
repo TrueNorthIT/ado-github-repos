@@ -1,6 +1,6 @@
 // GitHub App user-to-server token exchange. See shared/contract.ts for the flow.
 // Never log or echo request errors: a failed fetch can carry the client secret in its message.
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Cookie, HttpResponseInit } from "@azure/functions";
 import { AUTH_MESSAGE_TYPE, type AuthMessage, type GitHubTokenSet } from "../../shared/contract";
 
@@ -200,6 +200,51 @@ export async function refresh(request: HandlerRequest, config: AuthConfig, fetch
   }
   if (typeof refreshToken !== "string" || !refreshToken) return unauthorised;
 
+  const replay = recall(refreshToken);
+  if (replay) return { status: 200, jsonBody: replay, headers };
   const tokens = await exchange({ grant_type: "refresh_token", refresh_token: refreshToken }, config, fetchFn);
+  if (tokens) remember(refreshToken, tokens);
   return tokens ? { status: 200, jsonBody: tokens, headers } : unauthorised;
 }
+
+// ---- refresh replay ----
+// GitHub refresh tokens are single use. If the extension page is reloaded while a refresh is in flight, GitHub has
+// already rotated the token but the dying page never stores the new set, so the next page refreshes with a spent
+// token and is signed out (seen live, 0.32.0). A refresh result is therefore kept for a short while and handed back
+// if the same refresh token comes again. It is held in memory only, keyed by a hash of the old token and encrypted
+// with a key derived from it, so nothing here can read it back without the token that was presented.
+// ponytail: per-instance memory; a scaled-out Flex app can route the retry elsewhere. Move to shared storage if it bites.
+export const REPLAY_TTL_MS = 2 * 60 * 1000;
+const replays = new Map<string, { expires: number; iv: Buffer; tag: Buffer; data: Buffer }>();
+
+const replayId = (token: string) => createHash("sha256").update("id:" + token).digest("hex");
+const replayKey = (token: string) => createHash("sha256").update("key:" + token).digest();
+
+function remember(token: string, tokens: GitHubTokenSet) {
+  const now = Date.now();
+  for (const [id, r] of replays) if (r.expires <= now) replays.delete(id);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", replayKey(token), iv);
+  const data = Buffer.concat([cipher.update(JSON.stringify(tokens), "utf8"), cipher.final()]);
+  replays.set(replayId(token), { expires: now + REPLAY_TTL_MS, iv, tag: cipher.getAuthTag(), data });
+}
+
+function recall(token: string): GitHubTokenSet | null {
+  const id = replayId(token);
+  const r = replays.get(id);
+  if (!r) return null;
+  if (r.expires <= Date.now()) {
+    replays.delete(id);
+    return null;
+  }
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", replayKey(token), r.iv);
+    decipher.setAuthTag(r.tag);
+    return JSON.parse(Buffer.concat([decipher.update(r.data), decipher.final()]).toString("utf8")) as GitHubTokenSet;
+  } catch {
+    return null;
+  }
+}
+
+/** Test support: forget every remembered refresh. */
+export const clearReplays = () => replays.clear();

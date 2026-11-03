@@ -1,12 +1,12 @@
 // Contract step 3: POST /api/auth/refresh (production code: refresh() in auth/src/handlers.ts)
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { refresh } from "../src/handlers";
+import { clearReplays, refresh } from "../src/handlers";
 import {
   GITHUB_TOKEN_URL, ORIGIN_A, config, expectedTokenSet, freezeClock, githubTokens, headerOf, jsonOf, jsonResponse,
   refreshRequest, restoreClock, sentToGitHub, stubFetch,
 } from "./helpers";
 
-beforeEach(freezeClock);
+beforeEach(() => { freezeClock(); clearReplays(); });
 afterEach(restoreClock);
 
 const body = (refreshToken: unknown) => JSON.stringify({ refreshToken });
