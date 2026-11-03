@@ -12,7 +12,9 @@ import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { RadioButton, RadioButtonGroup, RadioButtonGroupDirection } from "azure-devops-ui/RadioButton";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { TextField } from "azure-devops-ui/TextField";
-import { GhError, createBranch, getRaw, invalidateBrowse, invalidatePrs, mutate, pathExistsOn } from "./githubBrowse";
+import { FolderTooLarge, GhError, createBranch, getCommitTree, getRaw, invalidateBrowse, invalidatePrs, listItemsUnder, mutate, pathExistsOn, restSend } from "./githubBrowse";
+import { TabBar, Tab, TabSize } from "azure-devops-ui/Tabs";
+import { commitRequest, createRefRequest, deleteFolderMessage, deleteTreeRequest, filesUnder, isNotFastForward, updateRefRequest } from "./lib/folderDelete";
 import { setEditGuard } from "./hostNav";
 import { RefWriteError, type RefWrites } from "./refWrites";
 import { actionErrorText } from "./actionStore";
@@ -35,6 +37,33 @@ export async function runCommit(p: { repo: string; repoId: string; plan: CommitP
   } catch (e) {
     if (e instanceof GhError && isStaleHeadError(e.detail)) throw new RefWriteError(STALE_TEXT);
     if (p.plan.createFrom) throw new RefWriteError(`Created the branch ${p.plan.branch}, but the commit failed. ${actionErrorText(e)}`);
+    throw e;
+  } finally {
+    invalidateBrowse();
+    invalidatePrs();
+  }
+}
+
+/** Deletes every file under `folder` in one commit through the REST Git data API (lib/folderDelete.ts): a direct commit moves the
+ *  branch without force, so a branch that moved since the page loaded is refused as stale; a new branch is created at the commit. */
+export async function runFolderDelete(p: { repo: string; tree: GitTree; folder: string; plan: CommitPlan; message: { headline: string; body?: string } }): Promise<void> {
+  let items;
+  try {
+    items = await listItemsUnder(p.repo, p.tree, p.folder);
+  } catch (e) {
+    if (e instanceof FolderTooLarge) throw new RefWriteError(`${p.folder} has too many files to delete here. Delete it on GitHub or with Git.`);
+    throw e;
+  }
+  const entries = filesUnder(items, p.folder);
+  if (!entries.length) throw new RefWriteError(`${p.folder} has no files to delete.`);
+  try {
+    const head = p.plan.expectedHeadOid;
+    const tree = await restSend<{ sha: string }>(deleteTreeRequest(p.repo, await getCommitTree(p.repo, head), entries));
+    const commit = await restSend<{ sha: string }>(commitRequest(p.repo, { message: p.message, tree: tree.sha, parent: head }));
+    await restSend(p.plan.createFrom ? createRefRequest(p.repo, p.plan.branch, commit.sha) : updateRefRequest(p.repo, p.plan.branch, commit.sha));
+  } catch (e) {
+    if (e instanceof GhError && e.status === 422 && isNotFastForward(e.apiMessage)) throw new RefWriteError(STALE_TEXT);
+    if (e instanceof GhError && e.status === 422 && p.plan.createFrom) throw new RefWriteError(`Could not create the branch ${p.plan.branch}: ${e.apiMessage ?? "GitHub refused it"}.`);
     throw e;
   } finally {
     invalidateBrowse();
@@ -146,6 +175,8 @@ export interface EditPaneProps {
   setText: (t: string) => void;
   commit: () => void;
   cancel: () => void;
+  /** Markdown only: renders the text as it stands for the Preview tab. */
+  renderPreview?: (text: string) => React.ReactNode;
 }
 
 /** Monaco, editable, with Commit and Cancel above it. The text lives in the editor; `setText` reports each change so the parent knows it to commit. */
@@ -155,6 +186,8 @@ export function EditPane(p: EditPaneProps) {
   const ed = React.useRef<{ setLanguage(l: string): void; dispose(): void } | null>(null);
   const [failed, setFailed] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
+  const [mode, setMode] = React.useState<"edit" | "preview">("edit");
+  const text = React.useRef(p.initial);
   const isNew = p.name === null;
   const label = isNew ? "New file contents" : `Editing ${p.name}`;
   React.useEffect(() => {
@@ -162,7 +195,8 @@ export function EditPane(p: EditPaneProps) {
     loadMonaco()
       .then((m) => {
         if (dead || !box.current) return;
-        const e = m.createEditor(box.current, p.initial, monacoLanguage(p.name ?? p.path), p.dark, label, () => { const t = e.editor.getValue(); p.setText(t); setDirty(t !== p.initial); });
+        const e = m.createEditor(box.current, p.initial, monacoLanguage(p.name ?? p.path), p.dark, label, () => { const t = e.editor.getValue(); text.current = t; p.setText(t); setDirty(t !== p.initial); });
+        text.current = p.initial;
         p.setText(p.initial);
         ed.current = { setLanguage: (l) => m.setLanguage(e.editor, l), dispose: e.dispose };
       })
@@ -190,6 +224,12 @@ export function EditPane(p: EditPaneProps) {
   return (
     <div className="gh-edit flex-column">
       <div className="gh-edit-bar flex-row flex-center">
+        {p.renderPreview && (
+          <TabBar ariaLabel="Editor view" className="gh-edit-tabs" selectedTabId={`md-${mode}`} onSelectedTabChanged={(id) => setMode(id === "md-preview" ? "preview" : "edit")} tabSize={TabSize.Compact} disableSticky>
+            <Tab id="md-edit" name="Edit" />
+            <Tab id="md-preview" name="Preview" />
+          </TabBar>
+        )}
         {isNew && (
           <FormItem className="gh-edit-path flex-grow" message={p.pathProblem ?? undefined} error={!!p.pathProblem && p.path.trim() !== "" && p.path !== (p.dir ? `${p.dir}/` : "")}>
             <TextField value={p.path} onChange={(_e, v) => p.setPath(v)} ariaLabel="File path. Use / to put it in a folder" placeholder="Name the file, for example docs/notes.md" autoFocus spellCheck={false} required />
@@ -216,7 +256,11 @@ export function EditPane(p: EditPaneProps) {
       {failed ? (
         <MessageCard severity={MessageCardSeverity.Error}>The editor could not be loaded.</MessageCard>
       ) : (
-        <div className="gh-edit-card"><div ref={box} className="gh-code gh-code-edit" /></div>
+        <>
+          {/* The editor stays mounted (hidden) while previewing, so its text, undo history and scroll position survive. */}
+          <div className="gh-edit-card" style={mode === "preview" ? { display: "none" } : undefined}><div ref={box} className="gh-code gh-code-edit" /></div>
+          {mode === "preview" && p.renderPreview?.(text.current)}
+        </>
       )}
     </div>
   );
@@ -253,7 +297,8 @@ export type WriteDialog =
   | { kind: "new"; path: string; text: string }
   | { kind: "upload"; dir: string }
   | { kind: "rename"; path: string }
-  | { kind: "delete"; path: string };
+  | { kind: "delete"; path: string }
+  | { kind: "deleteFolder"; path: string };
 
 export interface WriteDialogsProps {
   dialog: WriteDialog;
@@ -308,6 +353,25 @@ export function WriteDialogs(p: WriteDialogsProps) {
         commit={(f) => commit(f, async () => deleteChanges(dialog.path), parentDir(dialog.path))}
       />
     );
+  if (dialog.kind === "deleteFolder") {
+    const folder = dialog.path;
+    const commitFolder = (form: CommitForm) => {
+      const v = validateCommitForm(form, p.branches ?? []);
+      if (!v.ok || !write.headOid) return;
+      const plan = planCommit(form.target, p.branch, write.headOid);
+      void writes.run(() => runFolderDelete({ repo, tree, folder, plan, message: v.message }), () => p.done(plan, parentDir(folder)));
+    };
+    return (
+      <CommitDialog
+        {...common}
+        danger
+        title="Delete folder"
+        summary={<div>Delete <strong>{folder}</strong> and everything in it from {p.branch}?</div>}
+        defaultMessage={deleteFolderMessage(folder)}
+        commit={commitFolder}
+      />
+    );
+  }
   if (dialog.kind === "rename") return <RenameDialog repo={repo} branch={p.branch} common={common} commit={commit} guardNew={guardNew} lookup={lookup} path={dialog.path} />;
   return <UploadDialog common={common} commit={commit} lookup={lookup} dir={dialog.dir} />;
 }

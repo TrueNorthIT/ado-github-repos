@@ -85,7 +85,21 @@ export function createEditor(el: HTMLElement, value: string, language: string, d
   return { editor, dispose: () => { sub.dispose(); editor.dispose(); } };
 }
 
-export const setLanguage = (editor: monaco.editor.IStandaloneCodeEditor, language: string) => monaco.editor.setModelLanguage(editor.getModel()!, language);
+/** A link to lines (Files: `line`/`lineEnd`): tints them like native Repos and scrolls them to the middle. Lines past the end are clamped. */
+export function highlightLines(editor: monaco.editor.IStandaloneCodeEditor, line: number, lineEnd: number) {
+  const last = editor.getModel()?.getLineCount() ?? 1;
+  const a = Math.min(line, last), b = Math.min(Math.max(line, lineEnd), last);
+  const c = editor.createDecorationsCollection([{ range: new monaco.Range(a, 1, b, 1), options: { isWholeLine: true, className: "gh-line-linked", linesDecorationsClassName: "gh-line-linked-gutter" } }]);
+  editor.revealLinesInCenter(a, b);
+  return () => c.clear();
+}
+
+/** Calls `cb` with each selection the user makes (mouse or keyboard), for "Copy link to lines". */
+export function onUserSelection(editor: monaco.editor.IStandaloneCodeEditor, cb: (s: { startLineNumber: number; endLineNumber: number; endColumn: number }) => void) {
+  return editor.onDidChangeCursorSelection((e) => { if (e.source === "mouse" || e.source === "keyboard") cb(e.selection); });
+}
+
+export const setLanguage =(editor: monaco.editor.IStandaloneCodeEditor, language: string) => monaco.editor.setModelLanguage(editor.getModel()!, language);
 
 export const setTheme = (dark: boolean) => monaco.editor.setTheme(themeName(dark));
 

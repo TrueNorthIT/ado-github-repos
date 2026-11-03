@@ -95,7 +95,7 @@ export function treeFor(repo: FixtureRepo, shaOrRef: string, recursive: boolean)
   const folder = shaOrRef.startsWith(ROOT) ? shaOrRef.slice(ROOT.length) : "";
   const sha = ROOT + folder;
   if (!recursive) return { sha, truncated: false, tree: children(repo, folder) };
-  if (repo.truncated) return { sha, truncated: true, tree: children(repo, "") };
+  if (repo.truncated && !folder) return { sha, truncated: true, tree: children(repo, "") }; // a folder's own recursive tree is whole
   const all: Item[] = [];
   const walk = (dir: string) =>
     children(repo, dir).forEach((c) => {
@@ -103,6 +103,6 @@ export function treeFor(repo: FixtureRepo, shaOrRef: string, recursive: boolean)
       all.push({ ...c, path: full });
       if (c.type === "tree") walk(full);
     });
-  walk("");
-  return { sha, truncated: false, tree: all };
+  walk(folder);
+  return { sha, truncated: false, tree: folder ? all.map((i) => ({ ...i, path: i.path.slice(folder.length + 1) })) : all };
 }

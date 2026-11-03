@@ -21,6 +21,7 @@ const REPO = LIVE ? `#repo=${encodeURIComponent(SANDBOX)}` : "#repo=truenorthit%
 /** name -> query and hash after hub.html. */
 const MOCK_PAGES = {
   files: `?hub=files${REPO}`,
+  "file-lines": `?hub=files${REPO}&path=src%2Findex.ts&line=3&lineEnd=5`,
   commits: `?hub=commits${REPO}`,
   pushes: `?hub=pushes${REPO}`,
   branches: `?hub=branches${REPO}&branchTab=all`,

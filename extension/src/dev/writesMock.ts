@@ -88,3 +88,64 @@ export function writesGraphql(query: string, v: Record<string, any>, sc: string)
   }
   return undefined;
 }
+
+// ---------- the REST Git data writes of "Delete folder": a tree with sha: null entries, a commit, then the ref ----------
+// A tree or commit is only remembered here; the files go when a ref moves to the commit. `staleHead` moves the branch before the first ref update.
+
+const restJson = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const pendingTrees = new Map<string, string[]>();
+const pendingCommits = new Map<string, { deletes: string[]; parent: string }>();
+
+function landCommit(full: string, branch: string, sha: string) {
+  const r = repoOf(full)!;
+  for (const p of pendingCommits.get(sha)!.deletes) {
+    written.delete(`${full.toLowerCase()}|${p}`);
+    delete r.files[p];
+  }
+  heads.set(headKey(full, branch), sha);
+}
+
+export function writesRest(full: string, rest: string, init: RequestInit | undefined, sc: string): Response | undefined {
+  const method = init?.method ?? "GET";
+  const body = () => JSON.parse(String(init?.body ?? "{}"));
+  const commitOf = /^\/git\/commits\/([0-9a-z-]+)$/.exec(rest);
+  if (commitOf && method === "GET") return restJson({ sha: commitOf[1], tree: { sha: "tree-" } });
+  if (rest === "/git/trees" && method === "POST") {
+    if (sc === "readOnlyViewer") return restJson({ message: "Resource not accessible by integration" }, 403);
+    const sha = `7ee${String(++counter).padStart(37, "0")}`;
+    pendingTrees.set(sha, (body().tree as { path: string; sha: string | null }[]).filter((e) => e.sha === null).map((e) => e.path));
+    return restJson({ sha, truncated: false, tree: [] }, 201);
+  }
+  if (rest === "/git/commits" && method === "POST") {
+    const b = body();
+    const sha = newOid();
+    pendingCommits.set(sha, { deletes: pendingTrees.get(b.tree) ?? [], parent: b.parents?.[0] });
+    return restJson({ sha, tree: { sha: b.tree }, message: b.message }, 201);
+  }
+  const upd = /^\/git\/refs\/heads\/(.+)$/.exec(rest);
+  if (upd && method === "PATCH") {
+    const branch = upd[1].split("/").map(decodeURIComponent).join("/");
+    const head = headOf(full, branch);
+    const { sha } = body();
+    if (!head || !pendingCommits.has(sha)) return restJson({ message: "Reference does not exist" }, 422);
+    if (sc === "staleHead" && !staleFired) {
+      staleFired = true;
+      heads.set(headKey(full, branch), newOid());
+    }
+    if (pendingCommits.get(sha)!.parent !== heads.get(headKey(full, branch))) return restJson({ message: "Update is not a fast forward" }, 422);
+    landCommit(full, branch, sha);
+    return restJson({ ref: `refs/heads/${branch}`, object: { sha, type: "commit" } });
+  }
+  if (rest === "/git/refs" && method === "POST") {
+    const { ref, sha } = body();
+    const n = String(ref).replace(/^refs\/heads\//, "");
+    const r = repoOf(full)!;
+    if (r.branches.includes(n)) return restJson({ message: "Reference already exists" }, 422);
+    if (!pendingCommits.has(sha)) return restJson({ message: "Object does not exist" }, 422);
+    r.branches.push(n);
+    refsOf(r.fullName).branches.push({ name: n, tip: refsOf(r.fullName).main, protected: false, pr: null });
+    landCommit(full, n, sha);
+    return restJson({ ref, object: { sha, type: "commit" } }, 201);
+  }
+  return undefined;
+}

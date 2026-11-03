@@ -16,7 +16,7 @@ import { releasesGraphql, releasesRest } from "./releasesMock";
 import { releaseFormRest } from "./releaseFormMock";
 import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
-import { writesGraphql, writtenFile } from "./writesMock";
+import { writesGraphql, writesRest, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -151,13 +151,15 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const repo = m && repoOf(`${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}`);
   if (!m || !repo || repo.missing) return status(404);
   const rest = m[3] ?? "";
-  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" } });
+  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" }, clone_url: `https://github.com/${repo.fullName}.git`, ssh_url: `git@github.com:${repo.fullName}.git` });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);
     const names = repo.branches.slice((page - 1) * BRANCH_PAGE, page * BRANCH_PAGE);
     const more = page * BRANCH_PAGE < repo.branches.length;
     return json(names.map((name) => ({ name })), 200, more ? { link: `<https://api.github.com${u.pathname}?per_page=100&page=${page + 1}>; rel="next"` } : {});
   }
+  const wrRest = writesRest(repo.fullName, rest, init, sc); // Delete folder: the REST Git data writes
+  if (wrRest) return wrRest;
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
