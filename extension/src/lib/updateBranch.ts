@@ -8,8 +8,14 @@ import type { PolicyRow } from "./policies";
 export type UpdateMethod = "MERGE" | "REBASE";
 
 /** `mutation($input: UpdatePullRequestBranchInput!)`. expectedHeadOid is required (throws when blank) so the update is refused if the head moved. Returns pullRequest { id headRefOid mergeStateStatus viewerCanUpdateBranch }. */
-export function updateBranchMutation(_p: { pullRequestId: string; expectedHeadOid: string; updateMethod: UpdateMethod }): GraphQlRequest {
-  throw new Error("Not implemented");
+export function updateBranchMutation({ pullRequestId, expectedHeadOid, updateMethod }: { pullRequestId: string; expectedHeadOid: string; updateMethod: UpdateMethod }): GraphQlRequest {
+  if (!expectedHeadOid.trim()) throw new Error("expectedHeadOid is required");
+  return {
+    query: `mutation($input: UpdatePullRequestBranchInput!) {
+  updatePullRequestBranch(input: $input) { pullRequest { id headRefOid mergeStateStatus viewerCanUpdateBranch } }
+}`,
+    variables: { input: { pullRequestId, expectedHeadOid, updateMethod } },
+  };
 }
 
 export interface UpdateBranchInput {
@@ -49,14 +55,26 @@ export interface UpdateBranchOptions {
  * the viewer cannot do it), otherwise mergeStateStatus BEHIND. REBASE is disabled with a reason when the head is in a fork the viewer cannot push to:
  * a fork is pushable when the viewer has WRITE, MAINTAIN or ADMIN on it, or maintainerCanModify is set and the viewer has WRITE, MAINTAIN or ADMIN on the base repository.
  */
-export function updateBranchOptions(_i: UpdateBranchInput): UpdateBranchOptions {
-  throw new Error("Not implemented");
+export function updateBranchOptions(i: UpdateBranchInput): UpdateBranchOptions {
+  const no = (reason: string): UpdateBranchOptions => ({ offered: false, reason, methods: [] });
+  if (i.state !== "OPEN") return no("The pull request is not open.");
+  const behind = i.viewerCanUpdateBranch ?? i.mergeStateStatus === "BEHIND";
+  if (!behind) return no(i.viewerCanUpdateBranch === false ? "The branch is up to date, or you cannot update it." : "The branch is up to date with the base branch.");
+  const push = (p: string | null) => p === "WRITE" || p === "MAINTAIN" || p === "ADMIN";
+  const pushable = !i.isCrossRepository || push(i.headRepositoryViewerPermission) || (i.maintainerCanModify && push(i.viewerPermission));
+  return {
+    offered: true,
+    methods: [
+      { method: "MERGE", label: "Update branch (merge)", disabled: false },
+      { method: "REBASE", label: "Update branch (rebase)", disabled: !pushable, ...(pushable ? {} : { reason: "The head branch is in a fork you cannot push to." }) },
+    ],
+  };
 }
 
 /** A policy row that may carry an action button. */
 export type ActionablePolicyRow = PolicyRow & { action?: { kind: "updateBranch"; methods: UpdateBranchMethod[] } };
 
 /** policyRows output with the "behind" row given the update-branch action when `options.offered`. Every other row, and the behind row when not offered, is returned unchanged (no `action` key). Does not reorder. */
-export function withUpdateBranchAction(_rows: PolicyRow[], _options: UpdateBranchOptions): ActionablePolicyRow[] {
-  throw new Error("Not implemented");
+export function withUpdateBranchAction(rows: PolicyRow[], options: UpdateBranchOptions): ActionablePolicyRow[] {
+  return rows.map((r) => (r.kind === "behind" && options.offered ? { ...r, action: { kind: "updateBranch" as const, methods: options.methods } } : r));
 }

@@ -12,8 +12,19 @@
 import type { GraphQlRequest } from "./prQuery";
 
 /** The PR's last 50 DeployedEvents, oldest first as GitHub orders them. Variables { owner, name, number }. Selects, per event, deployment { environment state commitOid createdAt updatedAt creator { login } latestStatus { state environmentUrl logUrl updatedAt creator { login } } }. */
-export function deploymentsQuery(_p: { owner: string; name: string; number: number }): GraphQlRequest {
-  throw new Error("Not implemented");
+export function deploymentsQuery({ owner, name, number }: { owner: string; name: string; number: number }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      timelineItems(last: 50, itemTypes: [DEPLOYED_EVENT]) { nodes { __typename
+        ... on DeployedEvent { deployment { environment state commitOid createdAt updatedAt creator { login } latestStatus { state environmentUrl logUrl updatedAt creator { login } } } }
+      } }
+    }
+  }
+}`,
+    variables: { owner, name, number },
+  };
 }
 
 export type DeploymentTone = "success" | "failure" | "pending" | "neutral";
@@ -34,8 +45,22 @@ export interface DeploymentNode {
  * Raw state to ADO-like tone: SUCCESS and ACTIVE -> success; FAILURE and ERROR -> failure; PENDING, QUEUED, IN_PROGRESS and WAITING -> pending;
  * INACTIVE, ABANDONED, DESTROYED, an unknown value, null -> neutral.
  */
-export function deploymentTone(_rawState: string | null | undefined): DeploymentTone {
-  throw new Error("Not implemented");
+export function deploymentTone(rawState: string | null | undefined): DeploymentTone {
+  switch (rawState) {
+    case "SUCCESS":
+    case "ACTIVE":
+      return "success";
+    case "FAILURE":
+    case "ERROR":
+      return "failure";
+    case "PENDING":
+    case "QUEUED":
+    case "IN_PROGRESS":
+    case "WAITING":
+      return "pending";
+    default:
+      return "neutral";
+  }
 }
 
 export interface DeploymentRow {
@@ -56,6 +81,31 @@ export interface DeploymentRow {
  * Inactive deployments (INACTIVE, ABANDONED, DESTROYED) are dropped first, so an environment that has only inactive deployments is hidden while any other
  * deployment exists; when every deployment is inactive, the newest inactive one per environment is returned instead. Rows are newest first by createdAt.
  */
-export function latestDeployments(_nodes: DeploymentNode[]): DeploymentRow[] {
-  throw new Error("Not implemented");
+export function latestDeployments(nodes: DeploymentNode[]): DeploymentRow[] {
+  const INACTIVE = ["INACTIVE", "ABANDONED", "DESTROYED"];
+  const raw = (n: DeploymentNode) => n.latestStatus?.state ?? n.state;
+  const live = nodes.filter((n) => !INACTIVE.includes(raw(n) ?? ""));
+  const newest = new Map<string, DeploymentNode>();
+  for (const n of live.length ? live : nodes) {
+    const env = n.environment || "Unknown environment";
+    const old = newest.get(env);
+    if (!old || Date.parse(n.createdAt) >= Date.parse(old.createdAt)) newest.set(env, n); // ties go to the later node
+  }
+  return [...newest]
+    .map(([environment, n]) => {
+      const url = n.latestStatus?.environmentUrl || n.latestStatus?.logUrl;
+      return {
+        n,
+        row: {
+          environment,
+          tone: deploymentTone(raw(n)),
+          ...(url ? { url } : {}),
+          updatedAt: n.latestStatus?.updatedAt ?? n.updatedAt,
+          ...(n.creator ? { creator: n.creator.login } : {}),
+          ...(n.commitOid ? { commitOid: n.commitOid } : {}),
+        } as DeploymentRow,
+      };
+    })
+    .sort((a, b) => Date.parse(b.n.createdAt) - Date.parse(a.n.createdAt))
+    .map((x) => x.row);
 }

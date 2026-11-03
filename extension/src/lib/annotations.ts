@@ -24,8 +24,19 @@ export type AnnotatedContext =
   | { __typename: "StatusContext" };
 
 /** The head commit's check runs with annotations. Variables { owner, name, number }. Selects, per CheckRun, databaseId, name and annotations(first: 50) { totalCount nodes { path location { start { line } end { line } } annotationLevel title message rawDetails } }. */
-export function annotationsQuery(_p: { owner: string; name: string; number: number }): GraphQlRequest {
-  throw new Error("Not implemented");
+export function annotationsQuery({ owner, name, number }: { owner: string; name: string; number: number }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      statusCheckRollup { contexts(first: 100) { nodes { __typename
+        ... on CheckRun { databaseId name annotations(first: 50) { totalCount nodes { path location { start { line } end { line } } annotationLevel title message rawDetails } } }
+      } } }
+    }
+  }
+}`,
+    variables: { owner, name, number },
+  };
 }
 
 export interface InlineAnnotation {
@@ -73,6 +84,39 @@ export interface MappedAnnotations {
  * (start line when no end line), and counts every annotation per check, whether or not it could be placed.
  * An annotation is dropped from the inline view when its path is not in `prPaths` or it has no line.
  */
-export function mapAnnotations(_contexts: AnnotatedContext[], _prPaths: Iterable<string>): MappedAnnotations {
-  throw new Error("Not implemented");
+export function mapAnnotations(contexts: AnnotatedContext[], prPaths: Iterable<string>): MappedAnnotations {
+  const paths = new Set(prPaths);
+  const rank: Record<AnnotationLevel, number> = { FAILURE: 0, WARNING: 1, NOTICE: 2 };
+  const anchors = new Map<string, Map<number, AnnotationAnchor>>();
+  const perCheck: CheckAnnotationCount[] = [];
+  for (const c of contexts) {
+    if (c.__typename !== "CheckRun" || !c.annotations || c.annotations.totalCount <= 0) continue;
+    const n: CheckAnnotationCount = { checkName: c.name, total: c.annotations.totalCount, failure: 0, warning: 0, notice: 0, inline: 0, truncated: c.annotations.totalCount > c.annotations.nodes.length };
+    for (const a of c.annotations.nodes) {
+      const level: AnnotationLevel = a.annotationLevel ?? "NOTICE";
+      n[level === "FAILURE" ? "failure" : level === "WARNING" ? "warning" : "notice"]++;
+      const line = a.location?.end?.line ?? a.location?.start?.line;
+      if (!a.path || !paths.has(a.path) || !line) continue;
+      n.inline++;
+      const item: InlineAnnotation = { checkName: c.name, level, title: a.title ?? "", message: a.message ?? "", ...(a.rawDetails?.trim() ? { details: a.rawDetails } : {}) };
+      const lines = anchors.get(a.path) ?? new Map<number, AnnotationAnchor>();
+      anchors.set(a.path, lines);
+      const anchor = lines.get(line) ?? { line, side: "RIGHT" as const, level, annotations: [] };
+      lines.set(line, anchor);
+      anchor.annotations.push(item);
+    }
+    perCheck.push(n);
+  }
+  const byFile = new Map<string, AnnotationAnchor[]>();
+  for (const [path, lines] of anchors) {
+    const list = [...lines.values()].sort((a, b) => a.line - b.line);
+    for (const a of list) {
+      a.annotations.sort((p, q) => rank[p.level] - rank[q.level]); // stable
+      a.level = a.annotations[0].level;
+    }
+    byFile.set(path, list);
+  }
+  const worst = (c: CheckAnnotationCount) => (c.failure ? 0 : c.warning ? 1 : 2);
+  perCheck.sort((a, b) => worst(a) - worst(b)); // stable
+  return { byFile, perCheck };
 }

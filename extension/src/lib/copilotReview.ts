@@ -14,8 +14,14 @@ import type { GraphQlRequest } from "./prQuery";
 export type CopilotReviewEffort = "LITE" | "BALANCED" | "MAX" | "AUTO";
 
 /** `mutation($input: RequestCopilotCodeReviewInput!)` with { pullRequestId } and, only when given, reviewEffort. Throws when pullRequestId is blank. Returns success failureReason reviewRequest { id } pullRequest { id }. */
-export function copilotReviewMutation(_pullRequestId: string, _reviewEffort?: CopilotReviewEffort): GraphQlRequest {
-  throw new Error("Not implemented");
+export function copilotReviewMutation(pullRequestId: string, reviewEffort?: CopilotReviewEffort): GraphQlRequest {
+  if (!pullRequestId.trim()) throw new Error("pullRequestId is required");
+  return {
+    query: `mutation($input: RequestCopilotCodeReviewInput!) {
+  requestCopilotCodeReview(input: $input) { success failureReason reviewRequest { id } pullRequest { id } }
+}`,
+    variables: { input: { pullRequestId, ...(reviewEffort ? { reviewEffort } : {}) } },
+  };
 }
 
 export interface CopilotAvailabilityInput {
@@ -38,13 +44,32 @@ export interface CopilotAvailability {
  * Offered when the pull request is OPEN, the viewer can update it, no Copilot review request is pending, and no earlier attempt failed with a reason that will not
  * change (ACTOR_INELIGIBLE, REPOSITORY_INELIGIBLE, APP_NOT_INSTALLED, LICENSED_ORGANIZATION_UNAVAILABLE). NO_QUOTA_REMAINING and unknown reasons keep it offered.
  */
-export function copilotAvailability(_i: CopilotAvailabilityInput): CopilotAvailability {
-  throw new Error("Not implemented");
+const PERMANENT = ["ACTOR_INELIGIBLE", "REPOSITORY_INELIGIBLE", "APP_NOT_INSTALLED", "LICENSED_ORGANIZATION_UNAVAILABLE"];
+
+export function copilotAvailability(i: CopilotAvailabilityInput): CopilotAvailability {
+  const no = (reason: string) => ({ offered: false, reason });
+  if (i.state !== "OPEN") return no("The pull request is not open.");
+  if (!i.viewerCanUpdate) return no("You cannot request reviews on this pull request.");
+  if (i.reviewRequests.some((r) => r.requestedReviewer?.__typename === "Bot" && r.requestedReviewer.login === "copilot-pull-request-reviewer")) return no("A Copilot review is already requested.");
+  if (i.lastFailureReason && PERMANENT.includes(i.lastFailureReason)) return no("Copilot code review is not available here.");
+  return { offered: true };
 }
 
 export type CopilotResult = { ok: true } | { ok: false; message: string; /** The button should be hidden from now on. */ hide: boolean };
 
 /** Reads the mutation payload: success true -> ok. REQUEST_CONFLICT -> "already requested" (not hidden). A known reason -> a message naming the cause, hide true for the four permanent ones above. An unknown reason -> a message containing the raw reason, not hidden. success false with no reason -> a generic message, not hidden. */
-export function copilotResult(_payload: { success?: boolean | null; failureReason?: string | null } | null | undefined): CopilotResult {
-  throw new Error("Not implemented");
+const MESSAGES: Record<string, string> = {
+  REQUEST_CONFLICT: "A Copilot review is already requested on this pull request.",
+  ACTOR_INELIGIBLE: "Your account is not eligible to request a Copilot review.",
+  REPOSITORY_INELIGIBLE: "Copilot code review is not available for this repository.",
+  APP_NOT_INSTALLED: "The Copilot code review app is not installed for this repository.",
+  LICENSED_ORGANIZATION_UNAVAILABLE: "Copilot code review is not available for this organisation's licence.",
+  NO_QUOTA_REMAINING: "No Copilot review quota remains.",
+};
+
+export function copilotResult(payload: { success?: boolean | null; failureReason?: string | null } | null | undefined): CopilotResult {
+  if (payload?.success) return { ok: true };
+  const r = payload?.failureReason;
+  if (!r) return { ok: false, message: "GitHub did not accept the Copilot review request.", hide: false };
+  return { ok: false, message: MESSAGES[r] ?? `GitHub refused the Copilot review request: ${r}`, hide: PERMANENT.includes(r) };
 }
