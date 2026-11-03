@@ -9,6 +9,9 @@ import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
+import { SimpleTableCell } from "azure-devops-ui/Table";
+import { ExpandableTreeCell, ITreeColumn, Tree } from "azure-devops-ui/TreeEx";
+import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib/pushes";
@@ -45,40 +48,73 @@ function PushCommits({ repo, push, branch }: { repo: string; push: PushRow; bran
   );
 }
 
-function PushItem({ repo, branch, push, head, open, expanded, toggle }: { repo: string; branch?: string; push: PushRow; head?: PushHead; open: (sha: string) => void; expanded: boolean; toggle: () => void }) {
+type PushNode = { kind: "push"; push: PushRow } | { kind: "commits"; push: PushRow };
+
+/** One day's pushes as a Tree: a row per push (who pushed and what, then when), expandable to its commits. */
+function PushDay({ repo, branch, pushes, heads, open, expanded, toggle, keyOf, day }: { repo: string; branch?: string; pushes: PushRow[]; heads: Record<string, PushHead>; open: (sha: string) => void; expanded: Set<string>; toggle: (key: string) => void; keyOf: (p: PushRow) => string; day: string }) {
   const href = useHubHref();
-  const title = head ? pushTitle(push, head) : `Updated to ${push.shortAfter}`;
-  const label = `${title}${push.forced ? ", force push" : ""}`;
+  const provider = React.useMemo(
+    () => new TreeItemProvider<PushNode>(pushes.map((p): ITreeItem<PushNode> => ({
+      id: keyOf(p), data: { kind: "push", push: p }, expanded: expanded.has(keyOf(p)),
+      childItems: [{ id: `${keyOf(p)}/commits`, data: { kind: "commits", push: p } }],
+    }))),
+    [pushes, expanded, keyOf]
+  );
+  const columns = React.useMemo<ITreeColumn<PushNode>[]>(() => [
+    {
+      id: "push",
+      name: "Push",
+      width: -100,
+      renderCell: (_r, columnIndex, treeColumn, treeItem) => {
+        const n = treeItem.underlyingItem.data;
+        if (n.kind === "commits") return <ExpandableTreeCell key="push" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem}><PushCommits repo={repo} push={n.push} branch={branch} /></ExpandableTreeCell>;
+        const push = n.push;
+        const head = heads[push.after];
+        const title = head ? pushTitle(push, head) : `Updated to ${push.shortAfter}`;
+        return (
+          <ExpandableTreeCell key="push" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem}>
+            <VssPersona imageUrl={push.actor.avatarUrl} displayName={push.actor.name} size="medium" suppressPersonaCard showInitialsOnImageError />
+            <div className="gh-push-text flex-column flex-grow">
+              <div className="gh-push-line1 flex-row flex-center">
+                <Link className="gh-push-title commit-title font-weight-semibold text-ellipsis" subtle removeUnderline href={href("commits", { repo, ref: branch, commit: push.after })} onClick={hubClick(() => open(push.after))}>
+                  {title}
+                </Link>
+                {push.forced && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Force push</Pill>}
+                {push.created && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Branch created</Pill>}
+              </div>
+              <div className="gh-push-line2 flex-row flex-center secondary-text body-s">
+                <span className="monospaced-xs gh-commit-sha">{push.shortAfter}</span>
+                <span>{push.actor.name}</span>
+              </div>
+            </div>
+          </ExpandableTreeCell>
+        );
+      },
+    },
+    {
+      id: "when",
+      name: "When",
+      width: 200,
+      renderCell: (_r, columnIndex, treeColumn, treeItem) => {
+        const n = treeItem.underlyingItem.data;
+        return (
+          <SimpleTableCell key="when" columnIndex={columnIndex} tableColumn={treeColumn}>
+            {n.kind === "push" && <span className="flex-row flex-center gh-push-when secondary-text body-s"><CommitTime date={n.push.date} /><CheckStatusCell status={heads[n.push.after]?.status ?? null} /></span>}
+          </SimpleTableCell>
+        );
+      },
+    },
+  ], [repo, branch, heads, open, href]);
   return (
-    <li className="gh-push" role="listitem">
-      <div className="gh-push-row flex-row flex-center">
-        <Button
-          className="gh-push-chevron"
-          subtle
-          iconProps={{ iconName: expanded ? "ChevronDownMed" : "ChevronRightMed" }}
-          ariaLabel={`${expanded ? "Collapse" : "Expand"} ${label}`}
-          ariaExpanded={expanded}
-          onClick={toggle}
-        />
-        <VssPersona imageUrl={push.actor.avatarUrl} displayName={push.actor.name} size="medium" suppressPersonaCard showInitialsOnImageError />
-        <div className="gh-push-text flex-column flex-grow">
-          <div className="gh-push-line1 flex-row flex-center">
-            <Link className="gh-push-title commit-title font-weight-semibold text-ellipsis" subtle removeUnderline href={href("commits", { repo, ref: branch, commit: push.after })} onClick={hubClick(() => open(push.after))}>
-              {title}
-            </Link>
-            {push.forced && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Force push</Pill>}
-            {push.created && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Branch created</Pill>}
-          </div>
-          <div className="gh-push-line2 flex-row flex-center secondary-text body-s">
-            <span className="monospaced-xs gh-commit-sha">{push.shortAfter}</span>
-            <span>{push.actor.name}</span>
-            <CommitTime date={push.date} />
-            <CheckStatusCell status={head?.status ?? null} />
-          </div>
-        </div>
-      </div>
-      {expanded && <PushCommits repo={repo} push={push} branch={branch} />}
-    </li>
+    <Tree<PushNode>
+      ariaLabel={`Pushes ${day}`}
+      columns={columns}
+      itemProvider={provider as any}
+      onToggle={(_e, ex) => { const n = (ex.underlyingItem as ITreeItem<PushNode>).data; if (n.kind === "push") toggle(keyOf(n.push)); }}
+      showHeader={false}
+      showLines={false}
+      role="tree"
+    />
   );
 }
 
@@ -120,7 +156,7 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
   const groups = React.useMemo(() => (load.t === "ready" ? groupPushesByDate(load.v.pushes) : []), [load]);
   const openCommit = React.useCallback((sha: string) => go({ repo, ref: state.ref, commit: sha }), [go, repo, state.ref]);
   const error = repoErr ?? (load.t === "error" ? load.err : null);
-  const key = (p: PushRow) => `${p.before}>${p.after}@${p.date.getTime()}`;
+  const key = React.useCallback((p: PushRow) => `${p.before}>${p.after}@${p.date.getTime()}`, []);
 
   return (
     <>
@@ -148,20 +184,17 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
               {groups.map((g) => (
                 <section key={g.day} aria-label={g.header}>
                   <h2 className="gh-push-day body-m font-weight-semibold">{g.header}</h2>
-                  <ul className="gh-push-list" role="list">
-                    {g.pushes.map((p) => (
-                      <PushItem
-                        key={key(p)}
-                        repo={repo}
-                        branch={state.ref}
-                        push={p}
-                        head={load.t === "ready" ? load.v.heads[p.after] : undefined}
-                        open={openCommit}
-                        expanded={expanded.has(key(p))}
-                        toggle={() => setExpanded((s) => { const n = new Set(s); n.has(key(p)) ? n.delete(key(p)) : n.add(key(p)); return n; })}
-                      />
-                    ))}
-                  </ul>
+                  <PushDay
+                    repo={repo}
+                    branch={state.ref}
+                    pushes={g.pushes}
+                    heads={load.t === "ready" ? load.v.heads : {}}
+                    open={openCommit}
+                    expanded={expanded}
+                    keyOf={key}
+                    day={g.header}
+                    toggle={(k) => setExpanded((x) => { const n = new Set(x); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+                  />
                 </section>
               ))}
             </div>

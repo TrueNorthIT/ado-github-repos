@@ -269,19 +269,14 @@
 .gh-diagram-old { fill: var(--background-color, #fff); stroke: currentColor; stroke-width: 2; }
 .gh-diagram-new { fill: var(--communication-background, #0078d4); }
 .gh-policies { width: 100%; }
-.gh-policy-list { list-style: none; margin: 0; padding: 0; }
-.gh-policy { gap: 12px; padding: 8px 20px; min-height: 40px; box-sizing: border-box; border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0,0,0,.08)); }
+.gh-policy { gap: 12px; padding: 4px 0; min-height: 40px; width: 100%; box-sizing: border-box; }
+.gh-policy-cell { flex: 1 1 0; min-width: 0; }
+.gh-policy-tree { padding: 0 8px; }
 .gh-policy-title { flex: 0 1 auto; min-width: 0; }
 .gh-policy-detail { flex: 1 1 0; min-width: 0; }
 .gh-policy-link { margin-left: auto; flex: none; }
 .gh-policy-annotations { flex: none; }
 .gh-policy-action { flex: none; }
-.gh-policy-group { border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0,0,0,.08)); }
-.gh-policy-group-head { all: unset; box-sizing: border-box; display: flex; width: 100%; gap: 12px; padding: 8px 20px; min-height: 40px; cursor: pointer; color: inherit; }
-.gh-policy-group-head:hover { background: var(--component-grid-row-hover-background-color, rgba(0,0,0,.04)); }
-.gh-policy-group-head:focus-visible { outline: 2px solid var(--communication-background, #0078d4); outline-offset: -2px; }
-.gh-policy-group-chevron { flex: none; }
-.gh-policy-group-rows .gh-policy { padding-left: 52px; }
 .gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
 .gh-complete { width: 100%; }
 /* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */
@@ -331,14 +326,12 @@
 /* Pushes: a card of day headers and rows (no azure-devops-ui grouped list exists). */
 .gh-pushes { padding: 0; flex: 1 1 auto; min-width: 0; } /* the card content is a flex row: without this the list shrinks to its widest row */
 .gh-push-day { margin: 0; padding: 12px 16px 8px; font-size: 14px; font-weight: 600; line-height: 20px; }
-.gh-push-list { list-style: none; margin: 0; padding: 0; }
-.gh-push { border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0, 0, 0, .08)); }
-.gh-push-row { min-height: 52px; padding: 8px 16px 8px 4px; gap: 8px; box-sizing: border-box; }
-.gh-push-text { min-width: 0; gap: 2px; }
+.gh-push-text { min-width: 0; gap: 2px; margin-left: 8px; }
 .gh-push-line1 { gap: 6px; min-width: 0; }
 .gh-push-title.bolt-link { padding: 0; font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-push-line2 { gap: 12px; white-space: nowrap; }
-.gh-push-commits { padding: 0 0 0 52px; border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0, 0, 0, .08)); }
+.gh-push-commits { width: 100%; }
+.gh-push-when { gap: 8px; }
 .gh-push-commits .bolt-table { width: 100%; }
 
 /* Branches and tags */
@@ -405,10 +398,6 @@
 .gh-pr-remove { opacity: 0; flex: none; }
 .gh-pr-remove-spacer { width: 32px; flex: none; } /* rows that cannot be removed (e.g. a review from a bot) keep the status column aligned */
 .gh-pr-row:hover .gh-pr-remove, .gh-pr-row:focus-within .gh-pr-remove, .gh-pr-remove:focus-visible, .gh-pr-remove[aria-disabled="true"]:focus-visible { opacity: 1; }
-.gh-pr-label-content { display: inline-flex; align-items: center; gap: 4px; }
-.gh-pr-pill-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; margin: 0 -4px 0 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; font-size: 10px; opacity: .75; }
-.gh-pr-pill-x:hover, .gh-pr-pill-x:focus-visible { opacity: 1; background: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
-.gh-pr-pill-x:focus-visible { outline: 1px solid currentColor; }
 .gh-pr-issue { gap: 8px; }
 .gh-pr-header .bolt-header-title:has(.gh-pr-title-form), .gh-pr-header .bolt-header-title-area:has(.gh-pr-title-form), .gh-pr-header .bolt-header-title-row:has(.gh-pr-title-form) { overflow: visible; }
 .gh-pr-title-form { position: relative; }

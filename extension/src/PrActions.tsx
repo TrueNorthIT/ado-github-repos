@@ -22,6 +22,8 @@ import { SplitButton } from "azure-devops-ui/SplitButton";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
 import { Toggle } from "azure-devops-ui/Toggle";
+import { ExpandableTreeCell, ITreeColumn, Tree } from "azure-devops-ui/TreeEx";
+import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { canRevert, revertTitle } from "./lib/revertPr";
 import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ActionStore } from "./actionStore";
@@ -407,7 +409,7 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
   const pr = store.view?.pr;
   const conflictUrl = r.kind === "conflicts" && pr ? conflictState({ mergeStateStatus: pr.mergeStateStatus, state: pr.state, viewerCanUpdate: pr.viewerCanUpdate }, store.repo, store.number).editorUrl : null;
   return (
-    <li className="gh-policy flex-row flex-center">
+    <div className="gh-policy flex-row flex-center">
       <Status {...STATUS_OF[r.state]} size={StatusSize.m} ariaLabel={{ success: "Passed", failure: "Failed", pending: "Waiting", neutral: "Skipped" }[r.state]} />
       <span className="gh-policy-title body-m text-ellipsis">{r.title}</span>
       {r.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
@@ -418,37 +420,61 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
       {info && r.state === "failure" && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
       {r.kind === "conflicts" && r.state === "failure" && conflictUrl && <Link className="gh-policy-link body-s" href={conflictUrl} target="_blank" rel="noopener noreferrer">Resolve conflicts on GitHub</Link>}
       {r.action?.kind === "updateBranch" && <UpdateBranchButton store={store} methods={r.action.methods} />}
-    </li>
+    </div>
   );
 }
 
 const STATE_LABEL: Record<PolicyState, string> = { success: "Passed", failure: "Failed", pending: "Waiting", neutral: "Skipped" };
 
-/** The rows of the policies list: the non-check rows as they are, then one collapsible section per workflow or app. Open state lives here, for the life of the card. */
+type PolicyNode = { kind: "group"; g: CheckGroup<ActionablePolicyRow> } | { kind: "row"; r: ActionablePolicyRow };
+
+/** The policies list as a Tree: the non-check rows as leaves, then one expandable node per workflow or app. Open state lives here, for the life of the card. */
 function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: ActionStore }) {
   const { top, groups } = groupChecks(rows);
   const memo = React.useRef({ open: {} as Record<string, boolean>, seen: {} as Record<string, PolicyState> });
   const [, bump] = React.useState(0);
   memo.current = reconcileOpen(memo.current.open, memo.current.seen, groups); // idempotent for unchanged input, so safe to run in render
   const toggle = (name: string) => { memo.current = { ...memo.current, open: { ...memo.current.open, [name]: !memo.current.open[name] } }; bump((n) => n + 1); };
-  const item = (r: ActionablePolicyRow, i: number) => <PolicyItem key={`${r.kind}-${r.title}-${i}`} r={r} store={store} />;
-  const section = (g: CheckGroup<ActionablePolicyRow>, i: number) => {
-    const open = memo.current.open[g.name];
-    const id = `gh-policy-group-${i}`;
-    return (
-      <li key={g.name} className="gh-policy-group">
-        <button type="button" className="gh-policy-group-head flex-row flex-center" aria-expanded={open} aria-controls={id} onClick={() => toggle(g.name)}>
-          <Icon iconName={open ? "ChevronDown" : "ChevronRight"} className="gh-policy-group-chevron" />
-          <Status {...STATUS_OF[g.state]} size={StatusSize.m} ariaLabel={STATE_LABEL[g.state]} />
-          <span className="gh-policy-title body-m font-weight-semibold text-ellipsis">{g.name}</span>
-          {g.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
-          <span className="gh-policy-detail secondary-text body-s text-ellipsis">{g.summary}</span>
-        </button>
-        {open && <ul id={id} className="gh-policy-list gh-policy-group-rows" aria-label={g.name}>{g.rows.map(item)}</ul>}
-      </li>
-    );
-  };
-  return <>{top.map(item)}{groups.map(section)}</>;
+  const leaf = (r: ActionablePolicyRow, i: number): ITreeItem<PolicyNode> => ({ id: `r-${r.kind}-${r.title}-${i}`, data: { kind: "row", r } });
+  const open = memo.current.open;
+  const sig = JSON.stringify([rows.map((r) => [r.kind, r.title, r.state, r.detail, r.required, r.group]), open]);
+  // Rebuilt only when the rows or the open groups change: a fresh provider every render makes the Tree re-render without end.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const provider = React.useMemo(() => new TreeItemProvider<PolicyNode>([
+    ...top.map(leaf),
+    ...groups.map((g): ITreeItem<PolicyNode> => ({ id: `g-${g.name}`, data: { kind: "group", g }, expanded: !!open[g.name], childItems: g.rows.map(leaf) })),
+  ]), [sig]);
+  const columns = React.useMemo<ITreeColumn<PolicyNode>[]>(() => [{
+    id: "policy",
+    width: -1,
+    renderCell: (_r, columnIndex, treeColumn, treeItem) => {
+      const n = treeItem.underlyingItem.data;
+      return (
+        <ExpandableTreeCell key="policy" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem} contentClassName="gh-policy-cell">
+          {n.kind === "row" ? <PolicyItem r={n.r} store={store} /> : (
+            <div className="gh-policy flex-row flex-center">
+              <Status {...STATUS_OF[n.g.state]} size={StatusSize.m} ariaLabel={STATE_LABEL[n.g.state]} />
+              <span className="gh-policy-title body-m font-weight-semibold text-ellipsis">{n.g.name}</span>
+              {n.g.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
+              <span className="gh-policy-detail secondary-text body-s text-ellipsis">{n.g.summary}</span>
+            </div>
+          )}
+        </ExpandableTreeCell>
+      );
+    },
+  }], [store]);
+  return (
+    <Tree<PolicyNode>
+      ariaLabel="Policies"
+      className="gh-policy-tree"
+      columns={columns}
+      itemProvider={provider as any}
+      onToggle={(_e, ex) => { const n = (ex.underlyingItem as ITreeItem<PolicyNode>).data; if (n.kind === "group") toggle(n.g.name); }}
+      showHeader={false}
+      showLines={false}
+      role="tree"
+    />
+  );
 }
 
 /** The Overview's top card for an open pull request: one row per policy. Returns null when the page should show its fallback card instead. */
@@ -471,9 +497,7 @@ export function PoliciesCard({ store }: { store: ActionStore }) {
           </div>
         </div>
         {v.rows.length > 0 && (
-          <ul className="gh-policy-list" aria-label="Policies">
-            <PolicyRows rows={v.rows} store={store} />
-          </ul>
+          <PolicyRows rows={v.rows} store={store} />
         )}
       </div>
     </Card>

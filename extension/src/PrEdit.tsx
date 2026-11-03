@@ -140,7 +140,7 @@ export function EditableTitle({ title, canEdit, store, edit }: { title: string; 
   if (!editing)
     return (
       <span className="gh-pr-title-edit flex-row flex-center">
-        <span role="button" tabIndex={0} className="gh-pr-title-text text-ellipsis" aria-label={`${title}. Edit title`} onClick={start} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), start())}>{title}</span>
+        <Button subtle className="gh-pr-title-text" text={title} ariaLabel={`${title}. Edit title`} onClick={start} />
         <Icon iconName="Edit" className="gh-pr-title-pencil secondary-text" ariaHidden />
       </span>
     );
@@ -283,14 +283,8 @@ export function sameReviewer(r: RequestedReviewer, login: string) {
 export function LabelPill({ l, onRemove, disabled }: { l: LabelOption; onRemove?: () => void; disabled?: boolean }) {
   const color = parseColor(`#${l.color}`);
   return (
-    <Pill className="gh-pr-pill gh-pr-label" size={PillSize.regular} variant={color ? PillVariant.colored : PillVariant.standard} color={color} contentClassName="gh-pr-label-content">
+    <Pill className="gh-pr-pill gh-pr-label" size={PillSize.regular} variant={color ? PillVariant.colored : PillVariant.standard} color={color} ariaLabel={l.name} onRemoveClick={onRemove ? () => !disabled && onRemove() : undefined}>
       <span style={{ color: l.textColor }} title={l.description || undefined}>{l.name}</span>
-      {onRemove && (
-        // hand-rolled: azure-devops-ui's Pill has no remove affordance, and its text colour is not ours to set
-        <button type="button" className="gh-pr-pill-x" style={{ color: l.textColor }} aria-label={`Remove tag ${l.name}`} disabled={disabled} onClick={onRemove}>
-          <Icon iconName="Cancel" ariaHidden />
-        </button>
-      )}
     </Pill>
   );
 }
