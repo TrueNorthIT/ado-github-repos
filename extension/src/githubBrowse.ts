@@ -24,6 +24,8 @@ import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, typ
 import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
 import { deleteRefMutation } from "./lib/actionsQuery";
 import { mapRestCommit, type RestCommit } from "./lib/restCommit";
+import { blameQuery, mapBlame, type BlameRange } from "./lib/blame";
+import { mergeCompare, type BranchCompare, type RestComparePage } from "./lib/branchCompare";
 import { annotationsQuery, type AnnotatedContext } from "./lib/annotations";
 import { deploymentsQuery, type DeploymentNode } from "./lib/deployments";
 import type { RestRequest } from "./lib/restRequest";
@@ -697,6 +699,29 @@ export const listAllBranches = (repo: string): Promise<BranchesData> =>
 /** Ahead and behind of a branch against the default branch (one REST compare; commits are not listed). */
 export const getAheadBehind = (repo: string, base: string, branch: string): Promise<AheadBehind> =>
   refTtl(`compare|${repo}|${base}|${branch}`, async () => mapCompare(await json(`${comparePath(repo, base, branch)}?per_page=1`)));
+
+/** The blame ranges of a file at a ref (GraphQL Commit.blame). [] when GitHub has none. Cached 30 s. */
+export const getBlame = (repo: string, ref: string, path: string): Promise<BlameRange[]> =>
+  refTtl(`blame|${repo}|${ref}|${path}`, async () => {
+    const [owner, name] = split(repo);
+    return mapBlame(await graphql(blameQuery({ owner, name, ref, path })));
+  });
+
+const COMPARE_PAGE = 100;
+const MAX_COMPARE_COMMITS = 250; // GitHub's compare endpoint lists at most 250 commits
+
+/** Ahead, behind and the commits of `base...head` (REST compare, 100 a page up to 250). Cached 30 s; invalidateRefs() drops it. */
+export const getBranchCompare = (repo: string, base: string, head: string): Promise<BranchCompare> =>
+  refTtl(`compare|${repo}|${base}|${head}`, async () => {
+    const pages: RestComparePage[] = [];
+    for (let page = 1; ; page++) {
+      const j = await json<RestComparePage>(`${comparePath(repo, base, head)}?per_page=${COMPARE_PAGE}&page=${page}`);
+      pages.push(j);
+      const got = pages.reduce((n, p) => n + (p.commits?.length ?? 0), 0);
+      if (!j.commits?.length || got >= Math.min(j.total_commits ?? 0, MAX_COMPARE_COMMITS)) break;
+    }
+    return mergeCompare(pages);
+  });
 
 export interface TagsData {
   repoId: string;
