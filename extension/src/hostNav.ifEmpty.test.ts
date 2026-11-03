@@ -22,7 +22,7 @@ describe("connectNav go(…, 'ifEmpty')", () => {
     go({ repo: "d/default", view: "prs" }, "ifEmpty");
     await tick();
     expect(svc.replaced).toEqual([]);
-    expect(seen.at(-1)).toMatchObject({ repo: "o/r", pr: 234 });
+    expect(seen[seen.length - 1]).toMatchObject({ repo: "o/r", pr: 234 });
   });
   it("writes the default when the hash is still empty", async () => {
     svc.hashes = ["", ""]; svc.replaced = [];
