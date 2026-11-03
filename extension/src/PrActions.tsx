@@ -407,7 +407,8 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
       {!!info?.annotations && <span className="gh-policy-annotations secondary-text body-s">{info.annotations} {info.annotations === 1 ? "annotation" : "annotations"}</span>}
       {r.detail && <span className="gh-policy-detail secondary-text body-s text-ellipsis">{r.detail}</span>}
       {href && <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>}
-      {info && (info.rerun.canRerun || r.state === "failure") && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
+      {/* Only on the rows that failed: skipped and passing jobs of the same failed run offered it too (seen live on TrueTunes #234). */}
+      {info && r.state === "failure" && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
       {r.kind === "conflicts" && r.state === "failure" && conflictUrl && <Link className="gh-policy-link body-s" href={conflictUrl} target="_blank" rel="noopener noreferrer">Resolve conflicts on GitHub</Link>}
       {r.action?.kind === "updateBranch" && <UpdateBranchButton store={store} methods={r.action.methods} />}
     </li>
