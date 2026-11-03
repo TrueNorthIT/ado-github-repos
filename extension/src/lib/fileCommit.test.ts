@@ -170,7 +170,7 @@ describe("checkUploads", () => {
   it("accepts files under the cap and rejects bigger ones with a message that names the cap", () => {
     const r = checkUploads([f("ok.bin", 10), f("big.bin", MAX_UPLOAD_BYTES + 1), f("edge.bin", MAX_UPLOAD_BYTES)], "", () => false);
     expect(r.accepted.map((x) => x.name)).toEqual(["ok.bin", "edge.bin"]);
-    expect(r.rejected).toEqual([{ name: "big.bin", reason: expect.stringMatching(/25 MB/) }]);
+    expect(r.rejected).toEqual([{ name: "big.bin", reason: expect.stringMatching(/10 MB/) }]);
   });
   it("rejects what would take the total past the total cap", () => {
     const r = checkUploads([f("a", MAX_UPLOAD_BYTES), f("b", MAX_UPLOAD_BYTES), f("c", 10)], "", () => false);

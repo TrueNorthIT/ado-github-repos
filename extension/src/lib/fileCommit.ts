@@ -10,9 +10,9 @@ import type { GraphQlRequest } from "./prQuery";
 import { validateRefName } from "./refName";
 
 /** Per file through createCommitOnBranch. GitHub's own limit is about 100 MB, but the whole request travels as one base64 JSON body, so a sane cap keeps it reliable. */
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // ponytail: GitHub documents no request-size limit for this path; 10 MB (about 13.4 MB of base64) is a guess that real use can raise
 /** All the files of one upload together. */
-export const MAX_UPLOAD_TOTAL_BYTES = 50 * 1024 * 1024;
+export const MAX_UPLOAD_TOTAL_BYTES = 20 * 1024 * 1024;
 
 /** Repository.viewerPermission values that can push to a branch. */
 export const canWrite = (permission: string | null | undefined): boolean => ["WRITE", "MAINTAIN", "ADMIN"].includes(permission ?? "");

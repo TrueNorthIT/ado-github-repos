@@ -207,7 +207,7 @@ export function UploadPicker({ onPick, files, rejected, replaces }: { onPick: (f
     <div className="gh-upload flex-column">
       <label className="gh-upload-label body-m font-weight-semibold" htmlFor="gh-upload-input">Files to upload</label>
       <input id="gh-upload-input" className="gh-upload-input" type="file" multiple onChange={(e) => { onPick(Array.from(e.target.files ?? [])); }} />
-      <div className="secondary-text body-s">Up to 25 MB for each file and 50 MB in all.</div>
+      <div className="secondary-text body-s">Up to 10 MB for each file and 20 MB in all.</div>
       {rejected.map((r) => <MessageCard key={r.name + r.reason} severity={MessageCardSeverity.Warning}>{r.reason}</MessageCard>)}
       {files.length > 0 && (
         <ul className="gh-upload-list" aria-label="Files to upload">
