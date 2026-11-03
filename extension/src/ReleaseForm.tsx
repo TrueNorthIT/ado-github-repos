@@ -8,6 +8,8 @@ import { Dropdown } from "azure-devops-ui/Dropdown";
 import { FormItem } from "azure-devops-ui/FormItem";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
+import { SimpleTableCell, Table } from "azure-devops-ui/Table";
+import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
@@ -254,17 +256,27 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
       </div>
       <FormItem label="Files" message={mode === "new" ? "Save the draft, then edit it to attach files on GitHub." : undefined}>
         {assets.length > 0 && (
-          <ul className="gh-rf-assets" aria-label="Files attached to this release">
-            {assets.map((a) => (
-              <li key={a.name} className="gh-rf-asset">
-                <span className="gh-rf-grow">{a.name} <span className="secondary-text">({formatBytes(a.size)})</span></span>
-                {loaded.assetIds[a.name] !== undefined && (
-                  <Button subtle iconProps={{ iconName: "Delete" }} ariaLabel={`Delete ${a.name}`} tooltipProps={{ text: `Delete ${a.name}` }} disabled={working}
-                    onClick={() => setAsk({ title: "Delete this file?", text: `${a.name} will be removed from the release on GitHub. This cannot be undone.`, confirm: "Delete file", run: () => void removeAsset(a) })} />
-                )}
-              </li>
-            ))}
-          </ul>
+          <Table<ReleaseAsset>
+            className="gh-rf-asset-table"
+            ariaLabel="Files attached to this release"
+            role="table"
+            itemProvider={new ArrayItemProvider(assets)}
+            columns={[
+              { id: "name", name: "Name", width: -100, renderCell: (_r, i, c, a) => <SimpleTableCell key="name" columnIndex={i} tableColumn={c}><span className="text-ellipsis">{a.name}</span></SimpleTableCell> },
+              { id: "size", name: "Size", width: 120, renderCell: (_r, i, c, a) => <SimpleTableCell key="size" columnIndex={i} tableColumn={c}><span className="secondary-text">{formatBytes(a.size)}</span></SimpleTableCell> },
+              {
+                id: "delete", width: 48,
+                renderCell: (_r, i, c, a) => (
+                  <SimpleTableCell key="delete" columnIndex={i} tableColumn={c}>
+                    {loaded.assetIds[a.name] !== undefined && (
+                      <Button subtle iconProps={{ iconName: "Delete" }} ariaLabel={`Delete ${a.name}`} tooltipProps={{ text: `Delete ${a.name}` }} disabled={working}
+                        onClick={() => setAsk({ title: "Delete this file?", text: `${a.name} will be removed from the release on GitHub. This cannot be undone.`, confirm: "Delete file", run: () => void removeAsset(a) })} />
+                    )}
+                  </SimpleTableCell>
+                ),
+              },
+            ]}
+          />
         )}
         {loaded.assetError && <MessageCard severity={MessageCardSeverity.Warning}>{loaded.assetError}</MessageCard>}
         {mode === "edit" && release && <Link href={releaseEditUrl(repo, release.tagName)} target="_blank" rel="noopener noreferrer">Attach files on GitHub</Link>}

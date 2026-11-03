@@ -618,12 +618,9 @@
 .gh-rel-pill.bolt-pill { flex: none; }
 .gh-rel-pill-latest.bolt-pill { background: rgba(var(--palette-success, 0, 122, 80), 1); color: rgba(var(--palette-white, 255, 255, 255), 1); }
 .gh-rel-pill-pre.bolt-pill { background: rgba(var(--palette-warning, 255, 185, 0), 1); color: rgba(var(--palette-black, 0, 0, 0), 1); }
-.gh-rel-assets summary { cursor: pointer; padding: 4px 0; }
-.gh-rel-count { margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); font-size: 12px; }
-.gh-rel-asset-list { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); border-radius: 4px; }
-.gh-rel-asset-list li { gap: 8px; padding: 6px 12px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
-.gh-rel-asset-list li:first-child { border-top: 0; }
-.gh-rel-asset-meta { margin-left: auto; }
+.gh-rel-count { margin-left: 8px; }
+.gh-rel-asset-table { margin-top: 4px; border: 1px solid rgba(var(--palette-neutral-10, 218, 218, 218), 1); border-radius: 4px; }
+.gh-rel-asset-icon { margin-right: 8px; }
 .gh-rel-pager { gap: 16px; justify-content: center; padding: 8px 0 16px; }
 .gh-rel-error { color: rgba(var(--palette-error, 205, 74, 69), 1); font-size: 12px; }
 .gh-rel-detail .gh-rel-row { gap: 32px; }

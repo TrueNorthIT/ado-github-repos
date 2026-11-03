@@ -7,7 +7,5 @@
 .gh-rf-notes-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
 .gh-rf-preview { min-height: 160px; border: 1px solid rgba(var(--palette-neutral-20, 234, 234, 234), 1); }
 .gh-rf-checks { display: flex; flex-direction: column; gap: 8px; }
-.gh-rf-assets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.gh-rf-asset { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.gh-rf-asset .gh-rf-grow { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-rf-asset-table { border: 1px solid rgba(var(--palette-neutral-10, 218, 218, 218), 1); border-radius: 4px; }
 .gh-rf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

@@ -4,6 +4,8 @@ import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
+import { ITableColumn, SimpleTableCell, Table } from "azure-devops-ui/Table";
+import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { Link } from "azure-devops-ui/Link";
 import { MenuButton, MoreButton } from "azure-devops-ui/Menu";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -84,28 +86,38 @@ function ReleaseReactions({ release }: { release: Release }) {
   );
 }
 
+type AssetRow = { name: string; url: string; icon: string; size?: number; downloads?: number };
+
+const ASSET_COLUMNS: ITableColumn<AssetRow>[] = [
+  {
+    id: "name", name: "Name", width: -100,
+    renderCell: (_r, i, c, a) => (
+      <SimpleTableCell key="name" columnIndex={i} tableColumn={c}>
+        <Icon iconName={a.icon} size={IconSize.small} className="gh-rel-asset-icon" />
+        <Link href={a.url} rel="noopener noreferrer">{a.name}</Link>
+      </SimpleTableCell>
+    ),
+  },
+  { id: "size", name: "Size", width: 120, renderCell: (_r, i, c, a) => <SimpleTableCell key="size" columnIndex={i} tableColumn={c}><span className="secondary-text">{a.size === undefined ? "" : formatBytes(a.size)}</span></SimpleTableCell> },
+  { id: "downloads", name: "Downloads", width: 120, renderCell: (_r, i, c, a) => <SimpleTableCell key="downloads" columnIndex={i} tableColumn={c}><span className="secondary-text">{a.downloads === undefined ? "" : a.downloads}</span></SimpleTableCell> },
+];
+
+/** A release's downloads: a collapsed "Assets N" toggle over an azure-devops-ui Table (files, then the two source archives). */
 function Assets({ repo, release }: { repo: string; release: Release }) {
-  const archives = sourceArchives(repo, release.tagName);
-  const n = release.assets.length + archives.length;
+  const [open, setOpen] = React.useState(false);
+  const rows = React.useMemo<AssetRow[]>(() => [
+    ...release.assets.map((a) => ({ name: a.name, url: a.downloadUrl, icon: "Package", size: a.size, downloads: a.downloadCount })),
+    ...sourceArchives(repo, release.tagName).map((a) => ({ name: a.name, url: a.url, icon: "ZipFolder" })),
+  ], [repo, release]);
+  const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
   return (
-    <details className="gh-rel-assets">
-      <summary className="font-weight-semibold">Assets <span className="gh-rel-count">{n}</span></summary>
-      <ul className="gh-rel-asset-list">
-        {release.assets.map((a) => (
-          <li key={a.name} className="flex-row flex-center">
-            <Icon iconName="Package" size={IconSize.small} />
-            <a className="bolt-link" href={a.downloadUrl} rel="noopener noreferrer">{a.name}</a>
-            <span className="secondary-text body-s gh-rel-asset-meta">{formatBytes(a.size)} · {a.downloadCount} {a.downloadCount === 1 ? "download" : "downloads"}</span>
-          </li>
-        ))}
-        {archives.map((a) => (
-          <li key={a.name} className="flex-row flex-center">
-            <Icon iconName="ZipFolder" size={IconSize.small} />
-            <a className="bolt-link" href={a.url} rel="noopener noreferrer">{a.name}</a>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <div className="gh-rel-assets">
+      <Button subtle ariaExpanded={open} iconProps={{ iconName: open ? "ChevronDown" : "ChevronRight" }} onClick={() => setOpen((o) => !o)}>
+        <span className="font-weight-semibold">Assets</span>
+        <Pill className="gh-rel-count" size={PillSize.compact} variant={PillVariant.standard}>{String(rows.length)}</Pill>
+      </Button>
+      {open && <Table<AssetRow> className="gh-rel-asset-table" ariaLabel={`Assets of ${release.name}`} role="table" columns={ASSET_COLUMNS} itemProvider={provider} containerClassName="h-scroll-hidden" />}
+    </div>
   );
 }
 
