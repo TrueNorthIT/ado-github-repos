@@ -153,3 +153,47 @@ export const rerunJob = (repo: string, jobId: number) => rest(rerunRequest(repo,
 export const cancelRun = (repo: string, runId: number) => rest(cancelRequest(repo, runId));
 export const reviewDeployments = (repo: string, runId: number, ids: number[], state: "approved" | "rejected", comment: string) =>
   rest(reviewDeploymentsRequest(repo, runId, ids, state, comment));
+
+// ---------- workflow and run housekeeping, schedules, environments ----------
+
+import { deleteRunRequest, parseScheduleCrons, setWorkflowEnabledRequest } from "./lib/workflows";
+import { latestStatusRequest, listDeploymentsRequest, listEnvironmentsRequest, toDeployment, toDeploymentStatus, toEnvironment, type Deployment, type Environment } from "./lib/environments";
+
+export const setWorkflowEnabled = (repo: string, workflowId: number, enabled: boolean) => rest(setWorkflowEnabledRequest(repo, workflowId, enabled));
+export const deleteRun = (repo: string, runId: number) => rest(deleteRunRequest(repo, runId));
+export const deleteRunLogs = (repo: string, runId: number) => rest(deleteRunRequest(repo, runId, true));
+
+/** The workflow file's schedules at `ref` (scheduled runs use the default branch's file). Throws when the file cannot be read or parsed. */
+export async function getScheduleCrons(repo: string, ref: string, path: string): Promise<string[]> {
+  return parseScheduleCrons(new TextDecoder().decode(await getRaw(repo, ref, path)));
+}
+
+/** The repository's environments with their protection rules. Throws on failure (the Environments tab shows the error). */
+export async function listEnvironmentDetails(repo: string): Promise<Environment[]> {
+  return ((await restJson(listEnvironmentsRequest(repo))).body.environments ?? []).map(toEnvironment);
+}
+
+async function withLatestStatus(repo: string, raw: unknown): Promise<Deployment> {
+  try {
+    const statuses = (await restJson(latestStatusRequest(repo, (raw as { id: number }).id))).body;
+    return toDeployment(raw, Array.isArray(statuses) && statuses.length ? toDeploymentStatus(statuses[0]) : undefined);
+  } catch {
+    return toDeployment(raw);
+  }
+}
+
+/** One page of an environment's deployments, newest first, each with its latest status. */
+export async function listDeployments(repo: string, environment: string, page = 1, perPage = 30): Promise<{ deployments: Deployment[]; next?: number }> {
+  const { body, link } = await restJson(listDeploymentsRequest(repo, environment, { page, perPage }));
+  const deployments = await Promise.all((Array.isArray(body) ? body : []).map((d: unknown) => withLatestStatus(repo, d)));
+  return { deployments, next: nextPage(link) };
+}
+
+/** The latest deployment of an environment, with its status; undefined when there is none or it cannot be read. */
+export async function latestDeployment(repo: string, environment: string): Promise<Deployment | undefined> {
+  try {
+    return (await listDeployments(repo, environment, 1, 1)).deployments[0];
+  } catch {
+    return undefined;
+  }
+}

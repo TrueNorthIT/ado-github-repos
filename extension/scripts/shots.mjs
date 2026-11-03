@@ -32,6 +32,9 @@ const MOCK_PAGES = {
   actions: `?hub=actions${REPO}&view=actions`,
   "run-9001": `?hub=actions${REPO}&view=actions&actRun=9001`,
   "log-900151": `?hub=actions${REPO}&view=actions&actRun=9001&actJob=900151`,
+  "actions-wf-disabled": `?hub=actions${REPO}&view=actions&actWorkflow=103`,
+  "actions-envs": `?hub=actions${REPO}&view=actions&actTab=environments`,
+  "actions-env-staging": `?hub=actions${REPO}&view=actions&actTab=environments&actEnv=staging`,
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
 };
 

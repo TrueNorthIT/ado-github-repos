@@ -8,7 +8,7 @@
 // Runs 5001-5032 (the lists mock) get jobs from the same templates, following their status.
 // Scenarios: `actionsFail` answers 403 to re-run/cancel; `reviewFails` answers 422 to a review; `readOnly` is handled in mockFetch.
 import { avatar } from "./fixtures/refs";
-import { actionsRest } from "./actionsMock";
+import { actionsRest, deletedLogs, deletedRuns } from "./actionsMock";
 
 const REPO = "truenorthit/github-repos";
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -259,6 +259,11 @@ export async function actionsRunRest(u: URL, init: RequestInit | undefined, sc: 
   if (!m || m[1].toLowerCase() !== REPO) return undefined;
   const method = init?.method ?? "GET";
   const now = Date.now();
+  // Deleted runs and logs (actionsMock.ts answers the DELETE itself).
+  if (method === "DELETE") return undefined;
+  const runOf = m[3] ? Number(m[3]) : m[6] ? Math.floor(Number(m[6]) / 100) : undefined;
+  if (runOf && deletedRuns.has(runOf)) return json({ message: "Not Found" }, 404);
+  if (runOf && m[7] === "logs" && deletedLogs.has(runOf)) return json({ message: "The logs for this run have been deleted" }, 410);
   const sim = async (runId: number) => {
     const s = sims.get(runId);
     if (s) return s;

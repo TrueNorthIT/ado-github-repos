@@ -8,12 +8,14 @@ import { Dropdown, DropdownFilterBarItem } from "azure-devops-ui/Dropdown";
 import { FilterBar } from "azure-devops-ui/FilterBar";
 import { FormItem } from "azure-devops-ui/FormItem";
 import { Header, TitleSize } from "azure-devops-ui/Header";
+import { Icon } from "azure-devops-ui/Icon";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Panel } from "azure-devops-ui/Panel";
 import { ContentSize } from "azure-devops-ui/Callout";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
-import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
+import { ColumnMore, Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
+import type { IMenuProps } from "azure-devops-ui/Menu";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { TextField } from "azure-devops-ui/TextField";
@@ -25,11 +27,15 @@ import type { HubProps } from "./RepoHub";
 import { PersonLine, RepoHubPage, skeletonRows, titleSwitcher } from "./RepoHub";
 import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
-import { RunStatusIcon } from "./ActionsUi";
+import { DeleteRunDialog, RunStatusIcon, writeError, type DeleteTarget } from "./ActionsUi";
 import { RunPage } from "./ActionsRun";
+import { EnvironmentsTab, isEnvironmentPage } from "./ActionsEnvironments";
 import { gotoHash, patchHash, useHashExtras } from "./hostNav";
 import { GhError, listBranches } from "./githubBrowse";
-import { dispatchWorkflow, getDispatchInputs, getRepoAccess, listEnvironments, listRuns, listWorkflows } from "./actionsApi";
+import { dispatchWorkflow, getDispatchInputs, getRepoAccess, getScheduleCrons, listEnvironments, listRuns, listWorkflows, setWorkflowEnabled, useCanWriteActions } from "./actionsApi";
+import { nextScheduledRuns, timeUntil, type ScheduledRun } from "./lib/cron";
+import { fullDateTime } from "./lib/dateFormat";
+import { MenuItemType } from "azure-devops-ui/Menu";
 import { applyActions, RUN_STATUS_FILTERS, serializeActions, type ActTab, type ActionsHashState, type RunStatusFilter } from "./lib/actionsHash";
 import {
   elapsedMs,
@@ -49,6 +55,7 @@ const TABS: { id: ActTab; name: string }[] = [
   { id: "recent", name: "Recent" },
   { id: "all", name: "All" },
   { id: "runs", name: "Runs" },
+  { id: "environments", name: "Environments" },
 ];
 const DEBOUNCE_MS = 300;
 const POLL_MS = 10_000;
@@ -100,7 +107,23 @@ function runDuration(run: WorkflowRun, now: Date): number | undefined {
   return elapsedMs(start, run.state === "inProgress" ? null : run.updatedAt.toISOString(), now);
 }
 
-function runColumns(repo: string, open: (id: number) => void, now: Date, showWorkflow: boolean): ITableColumn<WorkflowRun>[] {
+/** The row's "..." menu (native Pipelines' run menu): open on GitHub, and Delete logs / Delete run for writers. */
+function runMenu(run: WorkflowRun, onDelete: ((t: DeleteTarget) => void) | undefined): IMenuProps {
+  const target = (logsOnly: boolean): DeleteTarget => ({ id: run.id, runNumber: run.runNumber, title: run.title || run.name, logsOnly });
+  return {
+    id: `gh-act-run-menu-${run.id}`,
+    items: [
+      { id: "github", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: run.htmlUrl, target: "_blank" },
+      ...(onDelete ? [
+        { id: "sep", itemType: MenuItemType.Divider },
+        { id: "deleteLogs", text: "Delete logs", iconProps: { iconName: "Delete" }, disabled: isActive(run), onActivate: () => onDelete(target(true)) },
+        { id: "delete", text: "Delete run", iconProps: { iconName: "Delete" }, disabled: isActive(run), onActivate: () => onDelete(target(false)) },
+      ] : []),
+    ],
+  };
+}
+
+function runColumns(repo: string, open: (id: number) => void, now: Date, showWorkflow: boolean, onDelete?: (t: DeleteTarget) => void): ITableColumn<WorkflowRun>[] {
   return [
     {
       name: "", id: "status",
@@ -165,11 +188,12 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
         </SimpleTableCell>
       ),
     },
+    new ColumnMore<WorkflowRun>((run) => runMenu(run, onDelete)),
   ];
 }
 
-function RunTable({ repo, runs, open, now, showWorkflow, label }: { repo: string; runs: WorkflowRun[] | undefined; /* undefined while loading: shimmer rows */ open: (id: number) => void; now: Date; showWorkflow: boolean; label: string }) {
-  const cols = React.useMemo(() => runColumns(repo, open, now, showWorkflow), [repo, open, now, showWorkflow]);
+function RunTable({ repo, runs, open, now, showWorkflow, label, onDelete }: { repo: string; runs: WorkflowRun[] | undefined; /* undefined while loading: shimmer rows */ open: (id: number) => void; now: Date; showWorkflow: boolean; label: string; onDelete?: (t: DeleteTarget) => void }) {
+  const cols = React.useMemo(() => runColumns(repo, open, now, showWorkflow, onDelete), [repo, open, now, showWorkflow, onDelete]);
   const provider = React.useMemo(() => runs ? new ArrayItemProvider(runs) : skeletonRows<WorkflowRun>(), [runs]);
   return <Table<WorkflowRun> ariaLabel={label} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} singleClickActivation onActivate={(_e, r) => open(r.data.id)} />;
 }
@@ -366,6 +390,15 @@ function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }
   }, [live, pages, key]); // eslint-disable-line react-hooks/exhaustive-deps
   const now = useNow(runs.some((r) => r.state === "inProgress"));
   const open = React.useCallback((id: number) => goto({ run: id }), [goto]);
+  const canWrite = useCanWriteActions(repo);
+  const [deleting, setDeleting] = React.useState<DeleteTarget>();
+  const onDelete = React.useMemo(() => (canWrite ? (t: DeleteTarget) => setDeleting(t) : undefined), [canWrite]);
+  const onDeleted = () => {
+    const t = deleting!;
+    setDeleting(undefined);
+    if (!t.logsOnly) setS((o) => (o.t === "ready" ? { ...o, runs: o.runs.filter((r) => r.id !== t.id) } : o));
+  };
+  const dialog = deleting && <DeleteRunDialog repo={repo} target={deleting} onClose={() => setDeleting(undefined)} onDeleted={onDeleted} />;
   const loadMore = async () => {
     if (s.t !== "ready" || !s.next) return;
     const page = s.next;
@@ -395,8 +428,9 @@ function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }
   return (
     <>
       <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
-        <RunTable repo={repo} runs={s.runs} open={open} now={now} showWorkflow={showWorkflow} label="Workflow runs" />
+        <RunTable repo={repo} runs={s.runs} open={open} now={now} showWorkflow={showWorkflow} label="Workflow runs" onDelete={onDelete} />
       </Card>
+      {dialog}
       {s.next && (
         <div className="gh-act-more flex-row justify-center">
           <Button text={more ? "Loading" : "Load more"} disabled={more} onClick={() => void loadMore()} />
@@ -427,7 +461,7 @@ function useDispatchInfo(repo: string, wf: Workflow | undefined): DispatchInfo |
       if (!dead) setInfo({ ...a, inputs });
     })().catch(() => !dead && setInfo({ defaultBranch: "main", canWrite: false, inputs: null }));
     return () => { dead = true; };
-  }, [repo, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [repo, id, wf?.disabled]); // eslint-disable-line react-hooks/exhaustive-deps
   return info;
 }
 
@@ -507,10 +541,97 @@ function RunWorkflowPanel({ repo, wf, info, onClose, onQueued }: { repo: string;
 
 // ---------- the pages ----------
 
+// ---------- Scheduled runs (native: the pipeline's "Scheduled runs") ----------
+
+type ScheduleLoad = { t: "loading" } | { t: "error"; message: string } | { t: "ready"; crons: string[]; runs: ScheduledRun[]; errors: { cron: string; message: string }[] };
+
+const scheduleColumns: ITableColumn<ScheduledRun>[] = [
+  {
+    name: "Scheduled time", id: "at",
+    width: -42,
+    renderCell: (_r, i, c, run) => (
+      <SimpleTableCell key="at" columnIndex={i} tableColumn={c}>
+        <span className="flex-row flex-center"><Icon iconName="Clock" className="gh-act-sched-icon" />{run.at.toLocaleDateString(undefined, { weekday: "short" })} {fullDateTime(run.at)}</span>
+      </SimpleTableCell>
+    ),
+  },
+  {
+    name: "", id: "in",
+    width: -18,
+    renderCell: (_r, i, c, run) => (
+      <SimpleTableCell key="in" columnIndex={i} tableColumn={c}>
+        <span className="secondary-text">{timeUntil(run.at, new Date())}</span>
+      </SimpleTableCell>
+    ),
+  },
+  {
+    name: "Schedule", id: "cron",
+    width: -40,
+    renderCell: (_r, i, c, run) => (
+      <SimpleTableCell key="cron" columnIndex={i} tableColumn={c}>
+        <span className="monospaced-xs text-ellipsis" title={`${run.cron} (UTC)`}>{run.cron}</span>
+      </SimpleTableCell>
+    ),
+  },
+];
+
+/** The next ten runs from the workflow's `on.schedule` crons (UTC on GitHub, shown in local time). Scheduled runs use the default branch's file. */
+function ScheduledRunsPanel({ repo, wf, branch, onClose }: { repo: string; wf: Workflow; branch: string; onClose: () => void }) {
+  const [load, setLoad] = React.useState<ScheduleLoad>({ t: "loading" });
+  React.useEffect(() => {
+    let dead = false;
+    getScheduleCrons(repo, branch, wf.path).then(
+      (crons) => !dead && setLoad({ t: "ready", crons, ...nextScheduledRuns(crons, new Date(), 10) }),
+      (e) => !dead && setLoad({ t: "error", message: e instanceof GhError ? `The workflow file could not be read (${e.status}).` : "The workflow file could not be read or is not valid YAML." })
+    );
+    return () => { dead = true; };
+  }, [repo, branch, wf.path]);
+  const provider = React.useMemo(() => (load.t === "ready" ? new ArrayItemProvider(load.runs) : skeletonRows<ScheduledRun>(5)), [load]);
+  return (
+    <Panel titleProps={{ text: "Scheduled runs" }} description={`${wf.name} · ${branch}`} size={ContentSize.Medium} onDismiss={onClose} showSeparator footerButtonProps={[{ text: "Close", onClick: onClose }]}>
+      <div className="gh-act-dispatch flex-column">
+        {wf.disabled && <MessageCard severity={MessageCardSeverity.Warning}>This workflow is disabled, so these runs will not happen until it is enabled.</MessageCard>}
+        {load.t === "error" && <MessageCard severity={MessageCardSeverity.Error}>{load.message}</MessageCard>}
+        {load.t === "ready" && load.errors.map((e) => <MessageCard key={e.cron} severity={MessageCardSeverity.Warning}>The schedule "{e.cron}" is not valid: {e.message}.</MessageCard>)}
+        {load.t === "ready" && !load.crons.length ? (
+          <ZeroData iconProps={{ iconName: "Clock" }} imageAltText="" primaryText="No scheduled runs" secondaryText="This workflow has no schedule trigger (on: schedule) on its default branch." />
+        ) : load.t !== "error" && (load.t === "loading" || load.runs.length > 0) ? (
+          <>
+            <span className="secondary-text body-s">Times are in your local time zone. GitHub runs schedules in UTC and may start them a few minutes late when it is busy.</span>
+            <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
+              <Table<ScheduledRun> ariaLabel="Upcoming scheduled runs" role="table" columns={scheduleColumns} itemProvider={provider} showHeader spacerWidth={8} />
+            </Card>
+          </>
+        ) : load.t === "ready" && !load.errors.length ? (
+          <ZeroData iconProps={{ iconName: "Clock" }} imageAltText="" primaryText="No upcoming runs" secondaryText="The schedule names a date that never comes." />
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
 function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHashState; goto: Goto; props: HubProps }) {
   const [wfs] = useAsync(() => listWorkflows(repo), [repo, props.signedIn]);
-  const wf = wfs.t === "ready" ? wfs.v.find((w) => w.id === st.workflow) : undefined;
+  const loaded = wfs.t === "ready" ? wfs.v.find((w) => w.id === st.workflow) : undefined;
+  // Enable/disable flips the workflow in place rather than reloading the list (and the header) from scratch.
+  const [enabled, setEnabled] = React.useState<boolean>();
+  const wf = React.useMemo(() => (loaded && enabled !== undefined ? { ...loaded, disabled: !enabled, state: enabled ? "active" : "disabled_manually" } : loaded), [loaded, enabled]);
   const info = useDispatchInfo(repo, wf);
+  const [toggling, setToggling] = React.useState(false);
+  const [failure, setFailure] = React.useState<string>();
+  const [schedules, setSchedules] = React.useState(false);
+  const toggle = async (on: boolean) => {
+    if (!wf) return;
+    setToggling(true);
+    setFailure(undefined);
+    try {
+      await setWorkflowEnabled(repo, wf.id, on);
+      setEnabled(on);
+    } catch (e) {
+      setFailure(writeError(e, on ? "enable the workflow" : "disable the workflow"));
+    }
+    setToggling(false);
+  };
   const [panel, setPanel] = React.useState(false);
   const [queued, setQueued] = React.useState(false);
   const [refresh, setRefresh] = React.useState(0);
@@ -534,14 +655,38 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       commandBarItems={[
         ...(info?.inputs && !wf?.disabled ? [{ id: "run", text: "Run workflow", isPrimary: true, important: true, iconProps: { iconName: "Play" }, onActivate: () => setPanel(true) }] : []),
         ...(wf ? [{ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: wf.htmlUrl, target: "_blank", important: true }] : []),
+        // Native Pipelines keeps Disable/Enable and Scheduled runs in the pipeline's "..." menu.
+        ...(wf ? [{
+          id: "more", ariaLabel: "More actions", important: true, iconProps: { iconName: "More" },
+          subMenuProps: {
+            id: "gh-act-wf-more",
+            items: [
+              { id: "schedules", text: "Scheduled runs", iconProps: { iconName: "Clock" }, disabled: !info, onActivate: () => setSchedules(true) },
+              ...(info?.canWrite ? [
+                { id: "sep", itemType: MenuItemType.Divider },
+                wf.disabled
+                  ? { id: "enable", text: "Enable", iconProps: { iconName: "Play" }, disabled: toggling, onActivate: () => void toggle(true) }
+                  : { id: "disable", text: "Disable", iconProps: { iconName: "Blocked" }, disabled: toggling, onActivate: () => void toggle(false) },
+              ] : []),
+            ],
+          },
+        }] : []),
       ]}
     />
     <div className="page-content page-content-top gh-pr-body flex-column">
-      {wf?.disabled && <MessageCard severity={MessageCardSeverity.Info}>This workflow is disabled, so it cannot be started here. Enable it on GitHub to run it again.</MessageCard>}
+      {failure && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailure(undefined)}>{failure}</MessageCard>}
+      {wf?.disabled && (info?.canWrite ? (
+        <MessageCard severity={MessageCardSeverity.Info} buttonProps={[{ text: toggling ? "Enabling" : "Enable", primary: true, disabled: toggling, onClick: () => void toggle(true) }]}>
+          This workflow is disabled, so it does not run on its triggers or schedule and cannot be started here.
+        </MessageCard>
+      ) : (
+        <MessageCard severity={MessageCardSeverity.Info}>This workflow is disabled, so it cannot be started here. Someone with write access can enable it.</MessageCard>
+      ))}
       {queued && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setQueued(false)}>Run queued. It will appear in the list in a moment.</MessageCard>}
       <FilterRow st={st} goto={goto} />
       <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} tick={refresh} showWorkflow={false} />
       {panel && wf && info?.inputs && <RunWorkflowPanel repo={repo} wf={wf} info={info} onClose={() => setPanel(false)} onQueued={onQueued} />}
+      {schedules && wf && info && <ScheduledRunsPanel repo={repo} wf={wf} branch={info.defaultBranch} onClose={() => setSchedules(false)} />}
     </div>
     </>
   );
@@ -556,6 +701,7 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
   }
   const tab: ActTab = st.tab ?? "recent";
   if (st.workflow) return <WorkflowPage key={`${repo}/${st.workflow}`} repo={repo} st={st} goto={goto} props={props} />;
+  if (isEnvironmentPage(st)) return <EnvironmentsTab repo={repo} env={st.env} go={goto} props={props} />;
   return (
     <>
       <Header
@@ -581,6 +727,8 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
                 <FilterRow st={st} goto={goto} />
                 <RunsList key={repo} repo={repo} filters={{ branch: st.branch, status: st.status, actor: st.actor, event: st.event }} goto={goto} props={props} tick={0} showWorkflow />
               </>
+            ) : tab === "environments" ? (
+              <EnvironmentsTab repo={repo} go={goto} props={props} />
             ) : (
               <Landing key={`${repo}/${tab}`} repo={repo} tab={tab} goto={goto} props={props} />
             )}
