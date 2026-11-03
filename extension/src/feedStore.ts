@@ -189,14 +189,24 @@ export class FeedStore {
   newThread(key: string, target: ThreadTarget, body: string, mode: "single" | "review"): Promise<boolean> {
     return this.run(key, async () => {
       try {
+        // GitHub has no "post one line comment now": addPullRequestReviewThread always lands in a pending review (seen live in
+        // 0.27.0, where "Add single comment" left a Pending comment). A single comment is its own review, submitted at once.
         let reviewId = mode === "review" ? this.pending?.id : undefined;
-        if (mode === "review" && !reviewId) {
+        if (!reviewId) {
           reviewId = (await mutate(startReviewMutation(this.prId))).addPullRequestReview.pullRequestReview.id as string;
-          this.pending = { id: reviewId, commentCount: 0, body: "" };
+          if (mode === "review") this.pending = { id: reviewId, commentCount: 0, body: "" };
         }
-        const d = await mutate(addThreadMutation({ pullRequestId: this.prId, reviewId, body, target }));
-        const thread = toThreadItem(d.addPullRequestReviewThread.thread, this.viewer.login);
+        let d: any;
+        try {
+          d = await mutate(addThreadMutation({ pullRequestId: this.prId, reviewId, body, target }));
+          if (mode === "single") await mutate(submitReviewMutation({ reviewId, event: "COMMENT" }));
+        } catch (e) {
+          if (mode === "single") await mutate(discardReviewMutation(reviewId)).catch(() => {}); // don't leave a stray pending review behind
+          throw e;
+        }
+        let thread = toThreadItem(d.addPullRequestReviewThread.thread, this.viewer.login);
         if (!thread) throw new Error("no thread came back");
+        if (mode === "single") thread = { ...thread, comments: thread.comments.map(({ pending: _p, ...c }: PendingFeedComment) => c) };
         this.set(applyNewThread(this.items, thread));
         await this.loadMeta(thread.comments.map((c) => c.id));
         this.emit();
