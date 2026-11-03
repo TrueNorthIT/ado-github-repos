@@ -196,7 +196,7 @@ export function Suggestions({ store, c, t }: { store: FeedStore; c: FeedComment;
 
 // ---------- reactions (CM-7) ----------
 
-const REACTION_LABEL: Record<ReactionContent, string> = { THUMBS_UP: "Thumbs up", THUMBS_DOWN: "Thumbs down", LAUGH: "Laugh", HOORAY: "Hooray", CONFUSED: "Confused", HEART: "Heart", ROCKET: "Rocket", EYES: "Eyes" };
+export const REACTION_LABEL: Record<ReactionContent, string> = { THUMBS_UP: "Thumbs up", THUMBS_DOWN: "Thumbs down", LAUGH: "Laugh", HOORAY: "Hooray", CONFUSED: "Confused", HEART: "Heart", ROCKET: "Rocket", EYES: "Eyes" };
 
 /** The reactions under a comment or the PR description: a pill per reaction with a count, and a picker with all eight. `id` is the node id. */
 export function ReactionBar({ store, id }: { store: FeedStore; id: string }) {

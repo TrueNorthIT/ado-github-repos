@@ -606,3 +606,27 @@
 .gh-commit-form { min-width: 0; }
 .gh-upload { gap: 8px; }
 .gh-upload-list { margin: 0; padding-left: 20px; max-height: 160px; overflow: auto; }
+
+/* ---------- Releases ---------- */
+.gh-rel-card { width: 100%; box-sizing: border-box; margin-bottom: 16px; }
+.gh-rel-row { gap: 24px; width: 100%; }
+.gh-rel-side { flex: 0 0 180px; width: 180px; gap: 6px; min-width: 0; }
+.gh-rel-tag { gap: 6px; font-weight: 600; min-width: 0; }
+.gh-rel-main { min-width: 0; gap: 8px; }
+.gh-rel-head { gap: 8px; min-height: 32px; }
+.gh-rel-title { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.gh-rel-pill.bolt-pill { flex: none; }
+.gh-rel-pill-latest.bolt-pill { background: rgba(var(--palette-success, 0, 122, 80), 1); color: rgba(var(--palette-white, 255, 255, 255), 1); }
+.gh-rel-pill-pre.bolt-pill { background: rgba(var(--palette-warning, 255, 185, 0), 1); color: rgba(var(--palette-black, 0, 0, 0), 1); }
+.gh-rel-assets summary { cursor: pointer; padding: 4px 0; }
+.gh-rel-count { margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); font-size: 12px; }
+.gh-rel-asset-list { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); border-radius: 4px; }
+.gh-rel-asset-list li { gap: 8px; padding: 6px 12px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-rel-asset-list li:first-child { border-top: 0; }
+.gh-rel-asset-meta { margin-left: auto; }
+.gh-rel-pager { gap: 16px; justify-content: center; padding: 8px 0 16px; }
+.gh-rel-error { color: rgba(var(--palette-error, 205, 74, 69), 1); font-size: 12px; }
+.gh-rel-detail .gh-rel-row { gap: 32px; }
+.gh-tag-release-link { margin-left: 8px; }
+.gh-latest-release { padding: 0 20px 8px; }
+@media (max-width: 700px) { .gh-rel-row { flex-direction: column; gap: 8px; } .gh-rel-side { flex-basis: auto; width: auto; } }

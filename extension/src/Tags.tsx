@@ -17,6 +17,9 @@ import { ConfirmDeleteDialog, NewBranchDialog, NewTagDialog } from "./RefDialogs
 import { RefColumn, RefTree } from "./RefTree";
 import { createTag, deleteRef, mutate, findCommit, invalidateRefs, listAllBranches, listAllTags, type BranchesData, type TagsData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
+import { ReleasesTab, TagTabs } from "./Releases";
+import { listAllReleases } from "./githubBrowse";
+import { releaseForTag, type Release } from "./lib/releases";
 import { RefWriteError, useRefWrites } from "./refWrites";
 import "./browser.css";
 
@@ -28,6 +31,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
   const writes = useRefWrites();
   const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: TagsData }>({ t: "loading" });
   const [branches, setBranches] = React.useState<BranchesData | undefined>();
+  const [releases, setReleases] = React.useState<Release[]>([]);
   const [reload, setReload] = React.useState(0);
   const [query, setQuery] = React.useState(state.q ?? "");
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
@@ -39,6 +43,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
     setData({ t: "loading" });
     listAllTags(repo).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
     listAllBranches(repo).then((v) => !dead && setBranches(v), () => {}); // only the New tag dialog needs these
+    listAllReleases(repo).then((v) => !dead && setReleases(v.releases), () => !dead && setReleases([])); // only the release links need these
     return () => { dead = true; };
   }, [repo, signedIn, reload]);
 
@@ -71,6 +76,9 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
             menuProps: {
               id: `gh-tag-menu-${t.name}`,
               items: [
+                releaseForTag(releases, t.name)
+                  ? { id: "release", text: "View release", iconProps: { iconName: "Rocket" }, onActivate: () => go({ repo, tagTab: "releases", release: t.name }) }
+                  : { id: "release", text: "Create release", iconProps: { iconName: "Rocket" }, onActivate: () => go({ repo, tagTab: "releases", releaseForm: "new", release: t.name }) },
                 { id: "delete", text: "Delete tag", iconProps: { iconName: "Delete" }, disabled: writes.busy, onActivate: () => setDialog({ kind: "delete", tag: t }) },
                 { id: "branch", text: "New branch from tag", iconProps: { iconName: "BranchFork2" }, disabled: writes.busy || !t.sha, onActivate: () => setDialog({ kind: "branch", tag: t }) },
                 { id: "browse", text: "Browse files", iconProps: { iconName: "OpenSource" }, href: href("files", { repo, ref: t.name }), onActivate: openInHub("files", { repo, ref: t.name }) as any },
@@ -82,15 +90,20 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
         />
       ),
     },
-  ], [href, repo, writes.busy]);
+  ], [href, repo, writes.busy, releases, go]);
 
   const nameCell = React.useCallback((leaf: RefLeaf<TagRow>) => (
     <>
       <span className="gh-entry-icon"><Icon iconName="Tag" size={IconSize.small} /></span>
       <Link className="bolt-table-link text-ellipsis" subtle removeUnderline href={href("files", { repo, ref: leaf.item.name })} onClick={openInHub("files", { repo, ref: leaf.item.name })}>{leaf.name}</Link>
       {leaf.item.annotated && <span className="gh-tag-kind secondary-text body-s">annotated</span>}
+      {releaseForTag(releases, leaf.item.name) && (
+        <Link className="gh-tag-release-link" subtle removeUnderline href={href("tags", { repo, tagTab: "releases", release: leaf.item.name })} onClick={openInHub("tags", { repo, tagTab: "releases", release: leaf.item.name })} ariaLabel={`View release for ${leaf.item.name}`} tooltipProps={{ text: "View release" }}>
+          <Icon iconName="Rocket" size={IconSize.small} />
+        </Link>
+      )}
     </>
-  ), [href, repo]);
+  ), [href, repo, releases]);
 
   const create = (p: { name: string; base: string; sha: string; message: string }) => {
     if (!v) return;
@@ -131,6 +144,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
       >
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
       </Header>
+      <TagTabs repo={repo} tab="tags" go={go} />
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
@@ -166,7 +180,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
 export function TagsHub(props: HubProps) {
   return (
     <RepoHubPage state={props.state} go={props.go}>
-      {(repo) => <TagList repo={repo} props={props} />}
+      {(repo) => (props.state.tagTab === "releases" ? <ReleasesTab repo={repo} props={props} /> : <TagList repo={repo} props={props} />)}
     </RepoHubPage>
   );
 }
