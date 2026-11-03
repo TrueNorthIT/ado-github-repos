@@ -1,6 +1,6 @@
 {
   "name": "github-repos-ado-extension",
-  "version": "0.27.2",
+  "version": "0.28.0",
   "private": true,
   "scripts": {
     "test": "vitest run",
