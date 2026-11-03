@@ -20,7 +20,7 @@ window.open = (url?: string | URL, ...rest: any[]) => {
   return popup as unknown as Window;
 };
 
-const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly", "refsFail", "queued", "copilotRefused", "readOnlyViewer", "editFails", "noProjectsAccess"];
+const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly", "refsFail", "queued", "copilotRefused", "readOnlyViewer", "editFails", "noProjectsAccess", "pendingReview", "suggestions", "editedComment", "minimisedComment", "reactions"];
 
 function toolbar() {
   const bar = document.createElement("div");

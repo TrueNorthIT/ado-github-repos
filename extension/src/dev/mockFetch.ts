@@ -4,6 +4,7 @@ import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
 import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
+import { commentsGraphql, overlayFeed } from "./fixtures/comments";
 import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, rerunRun } from "./fixtures/actions";
 import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from "./fixtures/edit";
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
@@ -38,6 +39,8 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  const cm = commentsGraphql(query, variables, sc); // batch 3: comment metadata, new threads, pending reviews, suggestions, reactions
+  if (cm) return "code" in cm ? status(cm.code as number) : json(cm);
   const refs = refsGraphql(query, variables, sc); // commits, branches, tags and their writes (before the PR mutations: both have a deleteRef)
   if (refs) return refs;
   const edit = editGraphql(query, variables, sc); // batch 2: the edit query, picker searches and edit writes (before the PR mutations: updatePullRequest is in both)
@@ -64,7 +67,7 @@ function graphql(init: RequestInit | undefined, sc: string): Response {
   }
   if (query.includes("viewerMergeHeadlineText")) return json({ data: { repository: { pullRequest: mergeMessages(variables.number) } } });
   if (query.includes('refPrefix: "refs/heads/"')) return json({ data: { repository: { refs: { nodes: branchNames().map((name) => ({ name })) } } } });
-  if (query.includes("timelineItems(")) return repoOf(`${variables.owner}/${variables.name}`) && `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === variables.number) ? json({ data: feedData(variables.number) }) : json({ data: { repository: { pullRequest: null } } });
+  if (query.includes("timelineItems(")) return repoOf(`${variables.owner}/${variables.name}`) && `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === variables.number) ? json({ data: overlayFeed(feedData(variables.number), variables.number, sc) }) : json({ data: { repository: { pullRequest: null } } });
   if (/search\(|pullRequests\(|pullRequest\(/.test(query)) return prGraphql(variables, query.includes("bodyHTML")); // the page's detail query asks for bodyHTML; the list's single-PR lookup does not
   if (!repoOf(`${variables?.owner}/${variables?.name}`)) return json({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository" }] });
   const object: Record<string, unknown> = {};

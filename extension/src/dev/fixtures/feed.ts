@@ -2,16 +2,17 @@
 // State is module-level, so replies, resolves and comments persist until the page is reloaded.
 import { ME, PR_REPO, PRS } from "./prs";
 
-const authorOf = (n: number) => PRS.find((p) => p.node.number === n)!.node.author;
+export const authorOf = (n: number) => PRS.find((p) => p.node.number === n)!.node.author;
 const avatarOf = (login: string) => (PRS.map((p) => p.node.author).find((a) => a?.login === login)?.avatarUrl as string | undefined) ?? "";
-const who = (login: string) => ({ login, avatarUrl: avatarOf(login) });
+export const who = (login: string) => ({ login, avatarUrl: avatarOf(login) });
 
 const HOUR = 3600e3;
-const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
-const url = (n: number, frag: string) => `https://github.com/${PR_REPO}/pull/${n}#${frag}`;
+export const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
+export const url = (n: number, frag: string) => `https://github.com/${PR_REPO}/pull/${n}#${frag}`;
 
-type Node = Record<string, any>;
+export type Node = Record<string, any>;
 let serial = 1000;
+export const nextSerial = () => ++serial;
 
 const issueComment = (pr: number, id: string, login: string, hours: number, html: string): Node => ({
   __typename: "IssueComment", id, databaseId: ++serial, author: who(login), bodyHTML: html, body: html.replace(/<[^>]+>/g, ""), createdAt: ago(hours), url: url(pr, `issuecomment-${id}`),
@@ -29,7 +30,7 @@ const tComment = (pr: number, id: string, login: string, hours: number, html: st
 });
 const sha = (n: number) => (0xabc00000 + n * 4096).toString(16).padEnd(40, "0");
 
-interface FixtureFeed {
+export interface FixtureFeed {
   prId: string;
   timeline: Node[];
   threads: Node[];
@@ -95,7 +96,7 @@ const FEED_170: FixtureFeed = {
   threads: [],
 };
 
-const feeds: Record<number, FixtureFeed> = { 200: FEED_200, 170: FEED_170 };
+export const feeds: Record<number, FixtureFeed> = { 200: FEED_200, 170: FEED_170 };
 const EMPTY: FixtureFeed = { prId: "PR_node_empty", timeline: [], threads: [] };
 
 /** The feedQuery response for a fixture PR; PRs without a fixture have an empty timeline. */

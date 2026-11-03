@@ -3,6 +3,7 @@ import { PRS, ME } from "./prs";
 import type { FixturePr } from "./prs";
 import { threadTotals } from "./feed";
 import { editedBodyHtml, reviewRequestNodes } from "./edit";
+import { makePatch } from "./patch";
 
 const avatarOf = (login: string) => (PRS.map((p) => p.node.author).find((a) => a?.login === login)?.avatarUrl as string | undefined) ?? "";
 const who = (login: string) => ({ login, avatarUrl: avatarOf(login) });
@@ -60,7 +61,7 @@ const diffStat = (a?: string, b?: string) => {
   const sx = new Set(x), sy = new Set(y);
   return { additions: y.filter((l) => !sx.has(l)).length, deletions: x.filter((l) => !sy.has(l)).length };
 };
-const f = (path: string, status: string, base?: string, head?: string, previous?: string): FixtureFile => ({ path, status, base, head, previous, patch: "@@ fixture @@", ...diffStat(base, head) });
+const f = (path: string, status: string, base?: string, head?: string, previous?: string): FixtureFile => ({ path, status, base, head, previous, patch: makePatch(base, head), ...diffStat(base, head) });
 
 const RICH: FixtureFile[] = [
   f("src/util/greet.ts", "modified", GREET_BASE, GREET_HEAD),
