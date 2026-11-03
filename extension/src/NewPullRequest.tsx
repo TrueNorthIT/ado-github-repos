@@ -31,7 +31,7 @@ import { newPrWorkItemIds, prefillWorkItems } from "./lib/branchWorkItems";
 import type { BrowseState } from "./lib/browseState";
 import { executeCreatePlan, planCreatePr } from "./lib/createPrPlan";
 import type { LabelOption } from "./lib/labels";
-import { CHECKING_MESSAGE, NO_TITLE_MESSAGE, VIEW_EXISTING_LABEL, createBlockers, defaultBranches, defaultTitle, initialDescription, type NewPrCompare } from "./lib/newPr";
+import { CHECKING_MESSAGE, NO_SOURCE_MESSAGE, NO_TARGET_MESSAGE, NO_TITLE_MESSAGE, VIEW_EXISTING_LABEL, createBlockers, defaultBranches, defaultTitle, initialDescription, type NewPrCompare } from "./lib/newPr";
 import { applyNewPr, existingPrHash, type NewPrHashState } from "./lib/newPrHash";
 import type { MergeMethod } from "./lib/actionsQuery";
 import type { MilestoneOption } from "./lib/milestones";
@@ -201,22 +201,25 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
         autoMergeAllowed: compare.autoMergeAllowed,
       });
       const out = await executeCreatePlan(plan, send);
-      if (!out.created) return void setFailed(out.message);
+      if (!out.created) {
+        setFailed(out.message);
+        return setRunning(false);
+      }
       invalidatePrs();
       // The new page shows the store's notice, so a failed follow-up is not lost with this page.
       if (out.failures.length) actionStore(repo, out.created.number).notice = out.message;
       go({ repo, view: "prs", prTab: "active", pr: out.created.number });
     } catch (e) {
       setFailed(`Could not create the pull request: ${e instanceof Error ? e.message : String(e)}`);
+      setRunning(false);
     }
-    setRunning(false);
   };
 
   const swap = () => { setSource(target); setTarget(source); };
   const back = () => go({ repo, view: "prs" });
   const reasons = blockers.join("\n");
   const [tab, setTab] = React.useState<"files" | "commits">("files");
-  const notes = blockers.filter((b) => b !== NO_TITLE_MESSAGE && b !== CHECKING_MESSAGE);
+  const notes = blockers.filter((b) => b !== NO_TITLE_MESSAGE && b !== CHECKING_MESSAGE && b !== NO_SOURCE_MESSAGE && b !== NO_TARGET_MESSAGE); // those two are plain: the empty picker says it
   const existing = compare?.existingPr;
   const canAuto = !!compare?.autoMergeAllowed;
 
