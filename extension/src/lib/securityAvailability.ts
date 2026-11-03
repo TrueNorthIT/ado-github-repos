@@ -75,3 +75,6 @@ export function availability(kind: AlertKind, error: SecurityApiError | null | u
   if (error.status === 404) return { state: "notFound", message: "GitHub could not find this repository, or you do not have access to its security alerts." };
   return { state: "error", message: `Could not load alerts from GitHub${error.status ? ` (status ${error.status})` : ""}. Try again.` };
 }
+
+/** The GitHub App repository permission that reading (and, at write level, changing) `kind`'s alerts needs. */
+export const alertPermission = (kind: AlertKind): string => FEATURE[kind].permission;

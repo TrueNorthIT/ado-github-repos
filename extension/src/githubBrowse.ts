@@ -843,3 +843,8 @@ export const getCompareFiles = (repo: string, base: string, head: string) =>
     }
     return { files: out, mergeBase };
   });
+
+/** GitHub-flavoured markdown rendered to HTML by GitHub (POST /markdown), for the Security page's advisory text. Run the result through prepareMarkdownHtml. */
+export async function renderMarkdown(repo: string, text: string): Promise<string> {
+  return (await request("/markdown", "text/html", true, JSON.stringify({ text, mode: "gfm", context: repo }))).text();
+}
