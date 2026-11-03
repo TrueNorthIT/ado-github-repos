@@ -228,8 +228,10 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
   } else if (!v.releases.length) {
     body = (
       <Card className="gh-pr-card gh-refs-card gh-tags-empty" contentProps={{ contentPadding: false }}>
-        <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="No releases yet" secondaryText="Releases package a tag with notes and downloads." />
-        {canWrite && <Button primary onClick={draft}>Draft a new release</Button>}
+        <div className="flex-column flex-center">
+          <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="No releases yet" secondaryText="Releases package a tag with notes and downloads." />
+          {canWrite && <Button primary onClick={draft}>Draft a new release</Button>}
+        </div>
       </Card>
     );
   } else if (!list.length) {

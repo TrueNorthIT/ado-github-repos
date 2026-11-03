@@ -160,7 +160,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
           <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="No tags match" />
         ) : (
           <Card className="gh-pr-card gh-refs-card bolt-table-card" contentProps={{ contentPadding: false }}>
-            <RefTree<TagRow> nodes={nodes} columns={columns} name="Tag" nameCell={nameCell} collapsed={collapsed} toggleFolder={toggleFolder} label="Tags" onOpen={() => {}} />
+            <RefTree<TagRow> key={releases.length} nodes={nodes} columns={columns} name="Tag" nameCell={nameCell} collapsed={collapsed} toggleFolder={toggleFolder} label="Tags" onOpen={() => {}} />
           </Card>
         )}
       </div>
