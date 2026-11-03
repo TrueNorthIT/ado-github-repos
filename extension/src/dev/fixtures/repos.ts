@@ -39,11 +39,14 @@ export const HTML: Record<string, string> = { "README.md": C.README_HTML, "docs/
 
 const textFiles = (...paths: string[]) => Object.fromEntries(paths.map((p) => [p, sz(TEXT[p])]));
 
+/** Branches the New pull request fixtures (fixtures/newPr.ts) compare. */
+export const NEWPR_BRANCHES = ["feature/add-login", "users/dev/1002-handle-empty-repos", "feature/no-changes", "feature/pr-199"];
+
 const branches = (n: number) => ["main", "develop", "feature/x", "feature/login", "release/1.0", "hotfix/typo", ...Array.from({ length: n }, (_, i) => `feature/ticket-${1000 + i}`)];
 
 export const REPOS: FixtureRepo[] = [
   {
-    fullName: "truenorthit/github-repos", description: "Browse GitHub repositories from Azure DevOps.", language: "TypeScript", private: false, branches: branches(130),
+    fullName: "truenorthit/github-repos", description: "Browse GitHub repositories from Azure DevOps.", language: "TypeScript", private: false, branches: [...branches(130), ...NEWPR_BRANCHES],
     files: {
       ...textFiles("README.md", "LICENSE", "package.json", "azure-pipelines.yml", "Demo.sln", ".github/workflows/ci.yml", "docs/guide.md", "docs/diagram.svg", "src/index.ts", "src/Program.cs", "src/util/greet.ts", "src/config.json"),
       "docs/img/logo.png": { size: 160 },
