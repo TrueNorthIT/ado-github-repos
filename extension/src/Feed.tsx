@@ -7,10 +7,8 @@ import { Card } from "azure-devops-ui/Card";
 import { Dropdown, DropdownExpandableButton } from "azure-devops-ui/Dropdown";
 import { Icon } from "azure-devops-ui/Icon";
 import { Link } from "azure-devops-ui/Link";
-import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
-import { TextField } from "azure-devops-ui/TextField";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { AgoFormat } from "azure-devops-ui/Utilities/Date";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
@@ -19,6 +17,9 @@ import { counts, filterFeed, type CommentItem, type EventItem, type EventType, t
 import { prepareMarkdownHtml } from "./lib/markdown";
 import { serialize, type BrowseState } from "./lib/browseState";
 import { COMMENT_KEY, useFeed, type FeedStore } from "./feedStore";
+import { CommentBox } from "./CommentBox";
+import { EditBox, EditedLabel, CommentMenu, Failure, HiddenGate, PendingPill, ReactionBar, Suggestions, isPending } from "./CommentParts";
+import { SuggestionBar, people } from "./ReviewUi";
 import { openRepoHub } from "./hostNav";
 import { ErrorView, Markdown, hubClick } from "./Browser";
 
@@ -49,32 +50,6 @@ async function copyLink(url: string) {
 
 // ---------- the text box (composer and reply) ----------
 
-/** A TextField that grows when focused (native's single line becomes multiline) and submits on Ctrl+Enter, never on Enter. */
-function Compose({ value, set, placeholder, label, disabled, submit }: { value: string; set: (v: string) => void; placeholder: string; label: string; disabled: boolean; submit: () => void }) {
-  const [focus, setFocus] = React.useState(false);
-  return (
-    <TextField
-      containerClassName="gh-feed-field flex-grow"
-      multiline
-      rows={focus || value ? 3 : 1}
-      resizable={false}
-      value={value}
-      placeholder={placeholder}
-      ariaLabel={label}
-      disabled={disabled}
-      onChange={(_e, v) => set(v)}
-      onFocus={() => setFocus(true)}
-      onBlur={() => setFocus(false)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          submit();
-        }
-      }}
-    />
-  );
-}
-
 /** Text state that is cleared only once the call succeeded; a failure keeps what was typed. */
 function useDraft(send: (text: string) => Promise<boolean>) {
   const [text, setText] = React.useState("");
@@ -86,19 +61,15 @@ function useDraft(send: (text: string) => Promise<boolean>) {
   return { text, setText, submit };
 }
 
-const Failure = ({ store, id }: { store: FeedStore; id: string }) => {
-  const text = store.errors.get(id);
-  return text ? <div className="gh-feed-error"><MessageCard severity={MessageCardSeverity.Error} role="alert">{text}</MessageCard></div> : null;
-};
-
-function Composer({ store }: { store: FeedStore }) {
+function Composer({ store, repo }: { store: FeedStore; repo: string }) {
   const busy = store.busy.has(COMMENT_KEY);
   const { text, setText, submit } = useDraft((t) => store.comment(t));
+  const who = React.useMemo(() => people(store), [store.items]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-composer" contentProps={{ contentPadding: false }}>
       <div className="gh-feed-compose-row">
         <Avatar url={store.viewer.avatarUrl ?? ""} name={store.viewer.login} size="small" />
-        <Compose value={text} set={setText} placeholder="Add a comment..." label="Add a comment" disabled={busy} submit={submit} />
+        <CommentBox value={text} set={setText} placeholder="Add a comment..." label="Add a comment" disabled={busy} submit={submit} repo={repo} participants={who} collapsible />
         {text.trim() && <Button primary text="Comment" disabled={busy} onClick={submit} />}
       </div>
       <Failure store={store} id={COMMENT_KEY} />
@@ -108,7 +79,7 @@ function Composer({ store }: { store: FeedStore }) {
 
 // ---------- cards ----------
 
-function CommentHead({ c, children }: { c: FeedComment; children?: React.ReactNode }) {
+function CommentHead({ c, store, children }: { c: FeedComment; store: FeedStore; children?: React.ReactNode }) {
   return (
     <div className="gh-feed-head">
       <Avatar url={c.avatarUrl} name={c.author} size="small" />
@@ -116,8 +87,27 @@ function CommentHead({ c, children }: { c: FeedComment; children?: React.ReactNo
         <span className="gh-feed-author font-weight-semibold">{c.author}</span>
         <When date={c.date} />
       </div>
-      {children}
+      {isPending(c) && <PendingPill />}
+      <EditedLabel store={store} c={c} />
+      <div className="gh-feed-head-actions flex-row flex-center">
+        {children}
+        <CommentMenu store={store} c={c} />
+      </div>
     </div>
+  );
+}
+
+/** A comment's text and what hangs off it: hidden behind a toggle, an edit box, the suggested changes and the reactions. */
+function CommentContent({ store, c, t, repo, baseRef }: { store: FeedStore; c: FeedComment; t?: ThreadItem; repo: string; baseRef: string }) {
+  const who = React.useMemo(() => people(store), [store.items]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (store.editing.has(c.id)) return <EditBox store={store} c={c} repo={repo} participants={who} />;
+  return (
+    <HiddenGate store={store} c={c}>
+      <Body html={c.html} repo={repo} baseRef={baseRef} />
+      <Suggestions store={store} c={c} t={t} />
+      {!isPending(c) && <ReactionBar store={store} id={c.id} />}
+      <Failure store={store} id={c.id} />
+    </HiddenGate>
   );
 }
 
@@ -140,24 +130,23 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
   const busy = store.busy.has(t.id);
   const resolved = t.status === "resolved";
   const { text, setText, submit } = useDraft((v) => store.reply(t.id, v));
+  const who = React.useMemo(() => people(store), [store.items]); // eslint-disable-line react-hooks/exhaustive-deps
   const [first, ...replies] = t.comments;
   if (!first) return null;
   return (
     <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-thread" contentProps={{ contentPadding: false }}>
       <div className="gh-feed-section">
-        <CommentHead c={first}>
-          <div className="gh-feed-head-actions flex-row flex-center">
-            <CopyLink url={first.url} />
-            <Dropdown
-              className="gh-feed-status"
-              ariaLabel={`Thread status: ${resolved ? "Resolved" : "Active"}`}
-              disabled={busy}
-              placeholder={resolved ? "Resolved" : "Active"}
-              items={STATUS}
-              onSelect={(_e, item) => item.id !== t.status && void store.resolve(t.id, item.id === "resolved")}
-              renderExpandable={(p) => <DropdownExpandableButton {...p} subtle />}
-            />
-          </div>
+        <CommentHead c={first} store={store}>
+          <CopyLink url={first.url} />
+          <Dropdown
+            className="gh-feed-status"
+            ariaLabel={`Thread status: ${resolved ? "Resolved" : "Active"}`}
+            disabled={busy}
+            placeholder={resolved ? "Resolved" : "Active"}
+            items={STATUS}
+            onSelect={(_e, item) => item.id !== t.status && void store.resolve(t.id, item.id === "resolved")}
+            renderExpandable={(p) => <DropdownExpandableButton {...p} subtle />}
+          />
         </CommentHead>
         <div className="gh-feed-indent">
           {(where || t.outdated) && (
@@ -168,22 +157,23 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
                 </Link>
               )}
               {t.outdated && <Pill size={PillSize.compact} variant={PillVariant.outlined}>Outdated</Pill>}
+              {t.subjectType === "FILE" && <Pill size={PillSize.compact} variant={PillVariant.outlined}>File comment</Pill>}
             </div>
           )}
-          <Body html={first.html} repo={repo} baseRef={baseRef} />
+          <CommentContent store={store} c={first} t={t} repo={repo} baseRef={baseRef} />
         </div>
       </div>
       {replies.map((c) => (
         <div key={c.id} className="gh-feed-section gh-feed-reply">
-          <CommentHead c={c} />
-          <div className="gh-feed-indent"><Body html={c.html} repo={repo} baseRef={baseRef} /></div>
+          <CommentHead c={c} store={store} />
+          <div className="gh-feed-indent"><CommentContent store={store} c={c} t={t} repo={repo} baseRef={baseRef} /></div>
         </div>
       ))}
       <div className="gh-feed-footer">
         <div className="gh-feed-compose-row">
           <Avatar url={store.viewer.avatarUrl ?? ""} name={store.viewer.login} size="small" />
-          <Compose value={text} set={setText} placeholder="Write a reply..." label="Write a reply" disabled={busy} submit={submit} />
-          {text.trim() && <Button primary text="Reply" disabled={busy} onClick={submit} />}
+          <CommentBox value={text} set={setText} placeholder="Write a reply..." label="Write a reply" disabled={busy} submit={submit} repo={repo} participants={who} collapsible />
+          {text.trim() && <Button primary text={store.pending ? "Add review comment" : "Reply"} disabled={busy} onClick={submit} />}
           <Button text={resolved ? "Reactivate" : "Resolve"} disabled={busy} onClick={() => void store.resolve(t.id, !resolved)} />
         </div>
         <Failure store={store} id={t.id} />
@@ -192,14 +182,12 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
   );
 }
 
-function CommentCard({ c, repo, baseRef }: { c: CommentItem; repo: string; baseRef: string }) {
+function CommentCard({ store, c, repo, baseRef }: { store: FeedStore; c: CommentItem; repo: string; baseRef: string }) {
   return (
     <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-thread" contentProps={{ contentPadding: false }}>
       <div className="gh-feed-section">
-        <CommentHead c={c}>
-          <div className="gh-feed-head-actions flex-row flex-center"><CopyLink url={c.url} /></div>
-        </CommentHead>
-        <div className="gh-feed-indent"><Body html={c.html} repo={repo} baseRef={baseRef} /></div>
+        <CommentHead c={c} store={store}><CopyLink url={c.url} /></CommentHead>
+        <div className="gh-feed-indent"><CommentContent store={store} c={c} repo={repo} baseRef={baseRef} /></div>
       </div>
     </Card>
   );
@@ -330,11 +318,12 @@ export function ActivityFeed({ repo, number, baseRef, prTab, openFile, signIn, b
           renderExpandable={(p) => <DropdownExpandableButton {...p} subtle />}
         />
       </div>
+      <SuggestionBar store={store} />
       <ul className="gh-feed-list" role="list">
         {filter === "all" && (
           <li className="gh-feed-row">
             <span className="gh-feed-rail secondary-text"><Icon iconName="Add" /></span>
-            <Composer store={store} />
+            <Composer store={store} repo={repo} />
           </li>
         )}
         {shown.map((item) => {
@@ -345,7 +334,7 @@ export function ActivityFeed({ repo, number, baseRef, prTab, openFile, signIn, b
               {item.kind === "thread" ? (
                 <ThreadCard store={store} thread={item} repo={repo} baseRef={baseRef} where={{ href: serialize({ repo, view: "prs", prTab, pr: number, prPage: "files", file: item.path }), open: () => openFile(item.path) }} />
               ) : item.kind === "comment" ? (
-                <CommentCard c={item} repo={repo} baseRef={baseRef} />
+                <CommentCard store={store} c={item} repo={repo} baseRef={baseRef} />
               ) : (
                 <EventRow e={item} repo={repo} baseRef={baseRef} />
               )}

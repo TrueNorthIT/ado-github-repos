@@ -8,7 +8,10 @@ import { toListRow, toPrPage, type PrListNode, type PrListRow, type PrPageData }
 import { fromRestFile, type PrFile } from "./lib/prFiles";
 import { actionsDetailQuery, branchesQuery, mergeMessageQuery, type PrActionsNode } from "./lib/actionsQuery";
 import { feedQuery, addCommentMutation, replyMutation, resolveMutation, unresolveMutation } from "./lib/feedQuery";
-import { toFeed, type FeedComment, type FeedItem, type ReviewThreadNode, type TimelineNode } from "./lib/feedModel";
+import type { FeedComment, FeedItem, ThreadItem, TimelineNode } from "./lib/feedModel";
+import { pendingReplyMutation, pendingReviewQuery, toFeedForViewer, toPendingReview, type PendingAwareThread, type PendingFeedComment, type PendingReview } from "./lib/pendingReview";
+import { commentMetaQueries, toCommentMeta, type CommentMeta } from "./lib/commentEdit";
+import type { RawReactionGroup } from "./lib/reactions";
 import type { GhActor } from "./lib/prModel";
 import { commitsQuery, commitSearchQuery, mapCommitSearch, mapCommitsPage, type CommitRow, type CommitsPage } from "./lib/commitsQuery";
 import { commitDetailQuery, comparePath, diffPath, mapCommitDetail, type CommitDetail, type ParentOption } from "./lib/commitDetail";
@@ -304,6 +307,38 @@ export interface FeedData {
   /** The signed-in user, for the composer and reply avatars. */
   viewer: GhActor;
   items: FeedItem[];
+  /** Per comment id: raw body, permissions, edit info, minimised state, reactions. Empty when the lookup failed. */
+  meta: Record<string, CommentMeta>;
+  /** The viewer's unsubmitted review on this PR, if any. */
+  pending: PendingReview | null;
+  /** The PR's own reactions and what the viewer may do to it. */
+  pr: PrExtras;
+}
+
+export interface PrExtras {
+  viewerCanReact: boolean;
+  reactionGroups: RawReactionGroup[];
+  viewerCanApplySuggestion: boolean;
+}
+const NO_EXTRAS: PrExtras = { viewerCanReact: false, reactionGroups: [], viewerCanApplySuggestion: false };
+const PR_EXTRAS_QUERY = `query($id: ID!) { node(id: $id) { ... on PullRequest { viewerCanReact viewerCanApplySuggestion reactionGroups { content reactors { totalCount } viewerHasReacted } } } }`;
+
+/** Comment metadata by node id (edit rights, edit history marker, minimised state, reactions). */
+export async function loadCommentMeta(ids: string[]): Promise<Record<string, CommentMeta>> {
+  const out: Record<string, CommentMeta> = {};
+  const pages = await Promise.all(commentMetaQueries(ids).map((r) => graphql(r)));
+  for (const page of pages) for (const n of page.data?.nodes ?? []) {
+    const m = toCommentMeta(n);
+    if (m) out[m.id] = m;
+  }
+  return out;
+}
+
+const commentIds = (items: FeedItem[]) => items.flatMap((i) => (i.kind === "comment" ? [i.id] : i.kind === "thread" ? i.comments.map((c) => c.id) : []));
+
+/** A thread node as addPullRequestReviewThread returns it, as a feed item. */
+export function toThreadItem(node: PendingAwareThread, viewerLogin: string): ThreadItem | undefined {
+  return toFeedForViewer([], [node], { author: null, createdAt: new Date().toISOString() }, viewerLogin).find((i): i is ThreadItem => i.kind === "thread");
 }
 
 const feeds = new Map<string, { at: number; p: Promise<FeedData> }>();
@@ -314,7 +349,7 @@ export const getFeed = (repo: string, number: number) =>
   ttl(feeds, `${repo}#${number}`, async (): Promise<FeedData> => {
     const [owner, name] = repo.split("/");
     const nodes: (TimelineNode | null)[] = [];
-    let threads: (ReviewThreadNode | null)[] = [];
+    let threads: (PendingAwareThread | null)[] = [];
     let pr: any;
     let viewer: GhActor = { login: "" };
     for (let after: string | undefined; ; ) {
@@ -327,7 +362,14 @@ export const getFeed = (repo: string, number: number) =>
       if (!next?.hasNextPage || !next.endCursor || nodes.length >= MAX_FEED_ITEMS) break;
       after = next.endCursor;
     }
-    return { prId: pr.id, viewer, items: toFeed(nodes.slice(0, MAX_FEED_ITEMS), threads, { author: pr.author, createdAt: pr.createdAt }, Date.now()) };
+    const items = toFeedForViewer(nodes.slice(0, MAX_FEED_ITEMS), threads, { author: pr.author, createdAt: pr.createdAt }, viewer.login || null);
+    // Everything below is extra: if it can't be read (no permission, an older GitHub), the feed still shows and the controls it feeds stay off.
+    const [meta, pending, extras] = await Promise.all([
+      loadCommentMeta(commentIds(items)).catch(() => ({}) as Record<string, CommentMeta>),
+      viewer.login ? graphql(pendingReviewQuery({ owner, name, number, author: viewer.login })).then((b) => toPendingReview(b.data, viewer.login), () => null) : null,
+      graphql({ query: PR_EXTRAS_QUERY, variables: { id: pr.id } }).then((b): PrExtras => ({ ...NO_EXTRAS, ...b.data?.node }), () => NO_EXTRAS),
+    ]);
+    return { prId: pr.id, viewer, items, meta, pending, pr: extras };
   });
 
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
@@ -357,6 +399,12 @@ export async function postComment(prId: string, body: string): Promise<FeedComme
 /** Replies to a review thread; returns the new comment. */
 export async function postReply(threadId: string, body: string): Promise<FeedComment> {
   return toFeedComment((await mutate(replyMutation(threadId, body))).addPullRequestReviewThreadReply.comment);
+}
+
+/** Replies inside the viewer's pending review; the comment comes back PENDING. */
+export async function postPendingReply(threadId: string, reviewId: string, body: string): Promise<PendingFeedComment> {
+  const n = (await mutate(pendingReplyMutation(threadId, reviewId, body))).addPullRequestReviewThreadReply.comment;
+  return { ...toFeedComment(n), ...(n.state === "PENDING" ? { pending: true } : {}) };
 }
 
 /** Resolves or reactivates a thread; returns the thread's isResolved as GitHub now has it. */

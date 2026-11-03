@@ -16,6 +16,8 @@ export interface ReviewThreadCommentNode {
   createdAt: string;
   url: string;
   replyTo?: { id: string } | null;
+  /** The diff hunk the comment sits on: how a suggestion's original lines are recovered. */
+  diffHunk?: string;
 }
 
 export interface ReviewThreadNode {
@@ -27,6 +29,8 @@ export interface ReviewThreadNode {
   originalLine: number | null;
   startLine: number | null;
   diffSide: "LEFT" | "RIGHT";
+  /** FILE for a whole-file comment (no line or side). Absent means LINE. */
+  subjectType?: "LINE" | "FILE";
   comments: { nodes: (ReviewThreadCommentNode | null)[] };
 }
 
@@ -42,6 +46,8 @@ export interface FeedComment {
   html: string;
   date: Date;
   url: string;
+  /** Review-thread comments only: the diff hunk it was written on. */
+  diffHunk?: string;
 }
 
 export interface CommentItem extends FeedComment {
@@ -58,6 +64,8 @@ export interface ThreadItem {
   line: number | null;
   startLine: number | null;
   side: "LEFT" | "RIGHT";
+  /** Only set for a whole-file thread, which has no line and is not outdated. */
+  subjectType?: "FILE";
   /** First comment then replies, chronological. */
   comments: FeedComment[];
   /** Date of the first comment; this is what orders the thread in the feed. */
@@ -128,9 +136,9 @@ const PUSH_WINDOW_MS = 10 * 60 * 1000;
 
 const toComment = (n: ReviewThreadCommentNode | IssueNode): FeedComment => {
   const a = who(n.author);
-  return { id: n.id, author: a.login, avatarUrl: a.avatarUrl, html: n.bodyHTML, date: new Date(n.createdAt), url: n.url };
+  return { id: n.id, author: a.login, avatarUrl: a.avatarUrl, html: n.bodyHTML, date: new Date(n.createdAt), url: n.url, ...("diffHunk" in n && n.diffHunk ? { diffHunk: n.diffHunk } : {}) };
 };
-type IssueNode = Omit<ReviewThreadCommentNode, "replyTo" | "databaseId" | "body"> & { body?: string };
+type IssueNode = Omit<ReviewThreadCommentNode, "replyTo" | "databaseId" | "body" | "diffHunk"> & { body?: string };
 
 const REVIEW_TYPE: Record<string, EventType> = { APPROVED: "review_approved", CHANGES_REQUESTED: "review_changes_requested", COMMENTED: "review_commented", DISMISSED: "review_commented" };
 const SIMPLE: Record<string, EventType> = { ReadyForReviewEvent: "ready_for_review", ConvertToDraftEvent: "converted_to_draft", MergedEvent: "merged", ClosedEvent: "closed", ReopenedEvent: "reopened" };
@@ -202,7 +210,7 @@ export function toFeed(timeline: (TimelineNode | null)[], threads: (ReviewThread
     const comments = t.comments.nodes.filter((c): c is ReviewThreadCommentNode => !!c).map(toComment).sort((a, b) => ms(a.date) - ms(b.date));
     if (!comments.length) continue;
     items.push({
-      kind: "thread", id: t.id, status: t.isResolved ? "resolved" : "active", outdated: t.isOutdated || t.line == null,
+      kind: "thread", id: t.id, status: t.isResolved ? "resolved" : "active", outdated: t.isOutdated || (t.line == null && t.subjectType !== "FILE"), ...(t.subjectType === "FILE" ? { subjectType: "FILE" as const } : {}),
       path: t.path, line: t.line, startLine: t.startLine, side: t.diffSide, comments, date: comments[0].date, lastActivity: comments[comments.length - 1].date,
     });
   }

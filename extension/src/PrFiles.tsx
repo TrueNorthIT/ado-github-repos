@@ -18,18 +18,22 @@ import { FileIcon } from "./fileIcons";
 import { getAnnotations, getPrFiles, getRaw, invalidatePr } from "./githubBrowse";
 import { openInRepos, useRepoHref } from "./repoHref";
 import { InlineThreads } from "./Feed";
+import { ComposerRoot, SuggestionBar } from "./ReviewUi";
+import { fileTarget, isCommentable, toThreadTarget, type LineTarget } from "./lib/newThread";
 import { AnnotationZone } from "./AnnotationZone";
 import { mapAnnotations, type AnnotationAnchor } from "./lib/annotations";
 import { useFeed } from "./feedStore";
 import { threadsByFile, type InlineAnchor } from "./lib/inlineThreads";
 import type { ThreadItem } from "./lib/feedModel";
-import type { ZoneTarget } from "./monacoChunk";
+import type { LineSpan, ZoneTarget } from "./monacoChunk";
 import "./browser.css";
 
 /** Cards past this many start collapsed (their diffs are only fetched when opened). */
 const OPEN_CARDS = 20;
 const MAX_BYTES = 1048576;
 const NO_ANCHORS: InlineAnchor[] = [];
+const NO_IDS: string[] = [];
+const NO_FILE_THREADS = new Map<string, string[]>();
 const NO_COUNTS = new Map<string, number>();
 const NO_THREADS = new Map<string, InlineAnchor[]>();
 
@@ -92,7 +96,7 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
 
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -105,6 +109,9 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
   sideRef.current = sideBySide;
   const handle = React.useRef<{ dispose(): void; setTheme?: never } | null>(null);
   const [target, setTarget] = React.useState<ZoneTarget | null>(null);
+  // CM-1: the comment being written under a line or range (one at a time per file), and the gutter that opens it.
+  const [composer, setComposer] = React.useState<LineTarget | null>(null);
+  const gutter = React.useRef<{ highlight(span: LineSpan | null): void } | null>(null);
 
   // Fetch both sides once the card is near the screen. Contents are fetched here, on the main thread; the Monaco worker gets text only.
   React.useEffect(() => {
@@ -142,7 +149,7 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
         ed.onDidContentSizeChange(sync);
         sync();
         handle.current = d;
-        setTarget(body.whole ? { kind: "whole", editor: d.editor as any } : { kind: "diff", editor: d.editor as any });
+        setTarget(body.whole ? { kind: "whole", editor: d.editor as any, side: body.whole === "removed" ? "LEFT" : "RIGHT" } : { kind: "diff", editor: d.editor as any });
       },
       () => !dead && setBody({ t: "error" })
     );
@@ -190,6 +197,51 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     return () => { dead = true; undo?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey and annotationKey stand for anchors and annotations
   }, [target, anchorKey, annotationKey, repo, pr.number, pr.baseRef]);
+  // The gutter "+": plain click, drag or Shift-click pick lines the patch allows, and open a composer under them.
+  const commentable = commenting && !!file.patch && pr.number !== undefined;
+  React.useEffect(() => {
+    if (!target || !commentable) return;
+    let dead = false;
+    let off: (() => void) | undefined;
+    void loadMonaco().then((m) => {
+      if (dead) return;
+      const line = (side: "LEFT" | "RIGHT", n: number): LineTarget => ({ subjectType: "LINE", path: file.path, line: n, side });
+      const g = m.enableLineComments(target, {
+        allow: (side, n) => isCommentable(file.patch, line(side, n)),
+        onSelect: (span) => {
+          const editor = span.side === "LEFT" ? ("original" as const) : ("modified" as const);
+          const t = toThreadTarget(file.path, { start: { line: span.startLine, editor }, end: { line: span.endLine, editor } });
+          if (isCommentable(file.patch, t)) setComposer(t);
+          else g.highlight(null);
+        },
+      });
+      gutter.current = g;
+      off = g.dispose;
+    });
+    return () => { dead = true; gutter.current = null; off?.(); };
+  }, [target, commentable, file.patch, file.path]);
+  React.useEffect(() => {
+    gutter.current?.highlight(composer ? { side: composer.side, startLine: composer.startLine ?? composer.line, endLine: composer.line } : null);
+  }, [composer, target, commentable]);
+  // The composer is a view zone like the threads, so it grows with its content and scrolls with the code.
+  const composerKey = composer && `${composer.side}:${composer.startLine ?? composer.line}-${composer.line}`;
+  React.useEffect(() => {
+    if (!target || !composer) return;
+    let dead = false;
+    let undo: (() => void) | undefined;
+    const node = document.createElement("div");
+    node.className = "gh-zone";
+    const text = body.t === "diff" ? body.modified.split(String.fromCharCode(10)) : [];
+    const original = composer.side === "RIGHT" && text.length ? text.slice((composer.startLine ?? composer.line) - 1, composer.line) : undefined;
+    ReactDOM.render(<ComposerRoot repo={repo} number={pr.number!} target={composer} originalLines={original?.length ? original : undefined} onClose={() => setComposer(null)} />, node);
+    void loadMonaco().then((m) => {
+      if (dead) return;
+      const remove = m.placeZones(target, [{ side: composer.side, line: composer.line, node }]);
+      undo = () => { ReactDOM.unmountComponentAtNode(node); remove(); };
+    });
+    return () => { dead = true; if (undo) undo(); else ReactDOM.unmountComponentAtNode(node); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- composerKey stands for composer
+  }, [target, composerKey, repo, pr.number]);
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
   // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
   React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
@@ -212,8 +264,9 @@ function AnnotationBadge({ count }: { count: number }) {
   return count ? <Pill className="gh-annotation-count" size={PillSize.compact} ariaLabel={annotationLabel(count)}>{annotationLabel(count)}</Pill> : null;
 }
 
-export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean }) {
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[] }) {
   const href = useRepoHref();
+  const [fileComment, setFileComment] = React.useState(false);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const view = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
   return (
@@ -235,11 +288,18 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
             </div>
             <span className="secondary-text body-s text-ellipsis">/{file.path}{file.previousPath ? ` (renamed from /${file.previousPath})` : ""}</span>
           </div>
+          {commenting && pr.number !== undefined && <Button subtle iconProps={{ iconName: "CommentAdd" }} text="Comment on file" ariaLabel={`Comment on ${file.path}`} ariaExpanded={fileComment} onClick={() => setFileComment(true)} />}
           <Button text="View" ariaLabel={`View ${file.path}`} href={href(view)} onClick={openInRepos(view)} />
         </div>
       )}
     >
-      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} />
+      {(fileThreadIds.length > 0 || fileComment) && pr.number !== undefined && (
+        <div className="gh-pr-file-comments">
+          {fileThreadIds.length > 0 && <InlineThreads repo={repo} number={pr.number} baseRef={pr.baseRef!} ids={fileThreadIds} />}
+          {fileComment && <ComposerRoot repo={repo} number={pr.number} target={fileTarget(file.path)} onClose={() => setFileComment(false)} />}
+        </div>
+      )}
+      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} />
     </Card>
   );
 }
@@ -307,7 +367,7 @@ export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS, an
 // ---------- the tab ----------
 
 /** The tree and the cards, with `bar` above them. Shared by the PR Files tab and commit detail. `treeHeader` sits above the tree (native's repo name row). */
-export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode; treeHeader?: React.ReactNode }) {
+export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode; treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]> }) {
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
   const [collapsed, setCollapsed] = React.useState(() => new Set(files.slice(OPEN_CARDS).map((f) => f.path)));
   const els = React.useRef(new Map<string, HTMLElement>());
@@ -352,6 +412,8 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
                     pr={ctx}
                     dark={dark}
                     sideBySide={sideBySide}
+                    commenting={commenting}
+                    fileThreadIds={fileThreads.get(f.path)}
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
                     annotations={annotations?.byFile.get(f.path)}
                     annotationUrls={annotations?.urls}
@@ -377,6 +439,11 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
     for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
     return m;
   }, [threads]);
+  const fileThreads = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const t of threads) if (t.subjectType === "FILE") m.set(t.path, [...(m.get(t.path) ?? []), t.id]);
+    return m;
+  }, [threads]);
   // CI-1: the annotations arrive after the diff; if they can't be read (no Checks permission, say) the diff simply has none.
   const [contexts, setContexts] = React.useState<Awaited<ReturnType<typeof getAnnotations>>>([]);
   React.useEffect(() => {
@@ -392,7 +459,8 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
   return (
     <FilesView
       files={files} repo={repo} ctx={pr} selected={selected} select={select} dark={dark} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
-      bar={<div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div>}
+      commenting={feed.status === "ready" && !!feed.viewer.login} fileThreads={fileThreads}
+      bar={<><div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div><SuggestionBar store={feed} /></>}
     />
   );
 }

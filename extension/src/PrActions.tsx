@@ -29,6 +29,7 @@ import type { StateActionId } from "./lib/stateActions";
 import type { VoteId } from "./lib/votes";
 import type { WorkItemRef } from "./lib/workItems";
 import { fetchWorkItems } from "./workItemsApi";
+import { FinishReview } from "./ReviewUi";
 
 /** Which panel or dialog is open. */
 export interface Ui {
@@ -126,6 +127,7 @@ export function prCommandItems(store: ActionStore, url: string, open: any, rest:
   const v = store.view;
   return [
     { id: "copy", important: true, text: "Copy pull request link", renderButton: () => <ClipboardButton key="copy" className="gh-pr-copylink" getContent={() => url} ariaLabel="Copy pull request link" showCopiedTooltip subtle /> },
+    { id: "finishReview", important: true, text: "Finish review", renderButton: () => <FinishReview key="finishReview" repo={store.repo} number={store.number} /> },
     { id: "approve", important: true, text: "Approve", renderButton: () => <Approve key="approve" store={store} setUi={setUi} /> },
     { id: "complete", important: true, text: "Complete", renderButton: () => <Complete key="complete" store={store} setUi={setUi} /> },
     { ...open, important: false },

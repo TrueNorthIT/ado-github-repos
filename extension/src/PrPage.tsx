@@ -30,7 +30,8 @@ import { watchTheme } from "./theme";
 import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
 import { ActivityFeed } from "./Feed";
-import { feedStore } from "./feedStore";
+import { feedStore, useFeed } from "./feedStore";
+import { ReactionBar } from "./CommentParts";
 import { actionStore, useActions, type ActionStore } from "./actionStore";
 import { PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
 import { SignaturePill } from "./Signature";
@@ -119,10 +120,12 @@ function Description({ pr, repo, edit, store }: { pr: PrPageData; repo: string; 
   // GitHub's bodyHTML goes through the same sanitiser as the README; repo-relative images are fetched with the token by Markdown.
   const prepared = React.useMemo(() => (pr.bodyHtml.trim() ? prepareMarkdownHtml(pr.bodyHtml, { owner, name, ref: pr.baseRef, dir: "" }) : null), [pr.bodyHtml, owner, name, pr.baseRef]);
   const go = React.useCallback((s: BrowseState) => void openRepoHub(s), []);
+  const feed = useFeed(repo, pr.number);
   return (
     <Card className="gh-pr-card gh-pr-desc" headerClassName="gh-pr-desc-header" contentProps={{ className: "gh-pr-desc-content", contentPadding: false }} titleProps={{ text: "Description", size: TitleSize.Medium, ariaLevel: 2 }} headerCommandBarItems={items}>
       {editing && edit ? <DescriptionEditor body={edit.node.body ?? ""} edit={edit} store={store} onDone={() => setEditing(false)} />
         : prepared ? <Markdown prepared={prepared} repo={repo} refName={pr.baseRef} go={go} /> : <span className="secondary-text">No description</span>}
+      {!editing && feed.prId && <div className="gh-pr-desc-reactions"><ReactionBar store={feed} id={feed.prId} /></div>}
     </Card>
   );
 }

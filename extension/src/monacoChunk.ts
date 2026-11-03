@@ -152,7 +152,7 @@ function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLEle
 }
 
 export interface ZonePlan { side: "LEFT" | "RIGHT"; line: number; node: HTMLElement }
-export type ZoneTarget = { kind: "diff"; editor: monaco.editor.IStandaloneDiffEditor } | { kind: "whole"; editor: monaco.editor.IStandaloneCodeEditor };
+export type ZoneTarget = { kind: "diff"; editor: monaco.editor.IStandaloneDiffEditor } | { kind: "whole"; editor: monaco.editor.IStandaloneCodeEditor; /** Which side the one editor shows: an added file is RIGHT, a deleted one LEFT. */ side?: "LEFT" | "RIGHT" };
 
 /**
  * Puts each plan's node under its line. In the inline diff the modified editor hosts every zone: RIGHT lines are its own,
@@ -176,4 +176,141 @@ export function placeZones(target: ZoneTarget, plans: ZonePlan[]): () => void {
     }
   }
   return () => { off?.dispose(); removers.forEach((r) => r()); };
+}
+
+// ---------- commenting on lines (CM-1): the gutter "+", drag and shift-click ranges, and a keyboard shortcut ----------
+
+export interface LineSpan {
+  side: "LEFT" | "RIGHT";
+  startLine: number;
+  endLine: number;
+}
+export interface LineCommentOptions {
+  /** Whether a single line of that side can take a comment (it lies in a diff hunk). */
+  allow: (side: "LEFT" | "RIGHT", line: number) => boolean;
+  /** The user picked a line or a range (by click, drag, shift-click or the keyboard). */
+  onSelect: (span: LineSpan) => void;
+}
+
+const BUTTON = 18;
+
+/** One editor: a real <button> that follows the pointer along the gutter. Plain click is one line, drag or shift-click a range, Ctrl+Alt+M uses the editor's own selection. */
+function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "RIGHT", o: LineCommentOptions): { dispose(): void; highlight(span: LineSpan | null): void } {
+  ed.updateOptions({ lineDecorationsWidth: BUTTON + 4 });
+  const host = ed.getDomNode();
+  const noop = { dispose() {}, highlight() {} };
+  if (!host) return noop;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "gh-add-comment";
+  btn.textContent = "+";
+  btn.title = "Add a comment (drag or Shift-click for several lines)";
+  btn.setAttribute("aria-label", "Add a comment on this line");
+  btn.tabIndex = -1; // hover affordance for the mouse: the keyboard path is Ctrl+Alt+M in the editor
+  btn.style.display = "none";
+  host.appendChild(btn);
+  const marker = ed.createDecorationsCollection([]);
+  let line = 0;
+  let anchor = 0;
+  let last = 0;
+  let dragging = false;
+  let overButton = false;
+
+  const show = (l: number) => {
+    line = l;
+    const lh = ed.getOption(monaco.editor.EditorOption.lineHeight);
+    btn.style.top = `${ed.getTopForLineNumber(l) - ed.getScrollTop() + Math.max(0, (lh - BUTTON) / 2)}px`;
+    btn.style.left = `${ed.getLayoutInfo().decorationsLeft + 1}px`;
+    btn.style.display = "";
+  };
+  const hide = () => { if (!dragging && !overButton) btn.style.display = "none"; };
+  const mark = (span: LineSpan | null) => marker.set(span ? [{ range: new monaco.Range(Math.min(span.startLine, span.endLine), 1, Math.max(span.startLine, span.endLine), 1), options: { isWholeLine: true, className: "gh-comment-range" } }] : []);
+  const lineAt = (e: { clientX: number; clientY: number }) => ed.getTargetAtClientPoint(e.clientX, e.clientY)?.position?.lineNumber ?? 0;
+  const gutter = (t: monaco.editor.IMouseTarget) => t.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS || t.type === monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS || t.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
+
+  const subs = [
+    ed.onMouseMove((e) => {
+      if (dragging) return;
+      const l = e.target.position?.lineNumber;
+      if (l && gutter(e.target) && o.allow(side, l)) show(l);
+      else hide();
+    }),
+    ed.onMouseLeave(() => hide()),
+    ed.onDidScrollChange(() => { if (!dragging) btn.style.display = "none"; }),
+    // a click on the line number itself is a click on the button; with Shift it extends from the last line
+    ed.onMouseDown((e) => {
+      const l = e.target.position?.lineNumber;
+      if (!l || !gutter(e.target) || !o.allow(side, l)) return;
+      if (e.event.shiftKey && last) {
+        const span = { side, startLine: Math.min(last, l), endLine: Math.max(last, l) };
+        mark(span);
+        o.onSelect(span);
+      } else {
+        last = l;
+        const span = { side, startLine: l, endLine: l };
+        mark(span);
+        o.onSelect(span);
+      }
+    }),
+  ];
+  const action = ed.addAction({
+    id: "gh.addComment",
+    label: "Add a comment on the selected lines",
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyM],
+    run: (editor) => {
+      const s = editor.getSelection();
+      if (!s) return;
+      const end = s.endLineNumber > s.startLineNumber && s.endColumn === 1 ? s.endLineNumber - 1 : s.endLineNumber;
+      if (o.allow(side, s.startLineNumber) && o.allow(side, end)) o.onSelect({ side, startLine: s.startLineNumber, endLine: end });
+    },
+  });
+
+  btn.addEventListener("mouseenter", () => { overButton = true; });
+  btn.addEventListener("mouseleave", () => { overButton = false; hide(); });
+  // Native listeners on purpose: this button lives inside Monaco's DOM, outside React.
+  btn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    anchor = e.shiftKey && last ? last : line;
+    dragging = true;
+    const move = (m: MouseEvent) => {
+      const l = lineAt(m);
+      if (l) mark({ side, startLine: anchor, endLine: l });
+    };
+    const up = (m: MouseEvent) => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      dragging = false;
+      const l = lineAt(m) || line;
+      const span = { side, startLine: Math.min(anchor, l), endLine: Math.max(anchor, l) };
+      last = l;
+      // a drag across a gap in the diff cannot be one comment: keep what is allowed at both ends and let the caller check the range
+      mark(span);
+      o.onSelect(span);
+      hide();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+  return {
+    highlight: mark,
+    dispose() {
+      subs.forEach((s) => s.dispose());
+      action.dispose();
+      marker.clear();
+      btn.remove();
+    },
+  };
+}
+
+/** Wires the gutter "+" into every editor of a diff (the original side only shows in side-by-side). Returns a way to mark the commented range and to undo it all. */
+export function enableLineComments(target: ZoneTarget, o: LineCommentOptions): { dispose(): void; highlight(span: LineSpan | null): void } {
+  const parts =
+    target.kind === "whole"
+      ? [lineComments(target.editor, target.side ?? "RIGHT", o)]
+      : [lineComments(target.editor.getModifiedEditor() as monaco.editor.IStandaloneCodeEditor, "RIGHT", o), lineComments(target.editor.getOriginalEditor() as monaco.editor.IStandaloneCodeEditor, "LEFT", o)];
+  return {
+    highlight: (span) => parts.forEach((p, i) => p.highlight(span && (target.kind === "whole" ? true : span.side === (i === 0 ? "RIGHT" : "LEFT")) ? span : null)),
+    dispose: () => parts.forEach((p) => p.dispose()),
+  };
 }
