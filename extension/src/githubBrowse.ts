@@ -17,9 +17,9 @@ import { pendingReplyMutation, pendingReviewQuery, toFeedForViewer, toPendingRev
 import { commentMetaQueries, toCommentMeta, type CommentMeta } from "./lib/commentEdit";
 import type { RawReactionGroup } from "./lib/reactions";
 import type { GhActor } from "./lib/prModel";
-import { commitsQuery, commitSearchQuery, mapCommitSearch, mapCommitsPage, type CommitRow, type CommitsPage } from "./lib/commitsQuery";
+import { commitsByPathQuery, commitsQuery, commitSearchQuery, mapCommitSearch, mapCommitsPage, type CommitRow, type CommitsPage } from "./lib/commitsQuery";
 import { commitDetailQuery, comparePath, diffPath, mapCommitDetail, type CommitDetail, type ParentOption } from "./lib/commitDetail";
-import { isPushActivity, mapActivity, mapPushHeads, pushExpansion, pushHeadsQuery, pushesPath, type PushHead, type PushRow, type RestActivity } from "./lib/pushes";
+import { isPushActivity, mapActivity, nextActivityCursor, mapPushHeads, pushExpansion, pushHeadsQuery, pushesPath, type PushHead, type PushRow, type RestActivity } from "./lib/pushes";
 import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, type AheadBehind, type Branch } from "./lib/branches";
 import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
 import { deleteRefMutation } from "./lib/actionsQuery";
@@ -594,10 +594,10 @@ export const invalidateRefs = () => refCaches.forEach((m) => m.clear());
 const split = (repo: string) => repo.split("/") as [string, string];
 
 /** One page of history for a ref (50 commits), with PR and check status. `after` is the previous page's endCursor. */
-export const listCommits = (repo: string, ref: string, after?: string): Promise<CommitsPage> =>
-  refTtl(`commits|${repo}|${ref}|${after ?? ""}`, async () => {
+export const listCommits = (repo: string, ref: string, after?: string, path?: string): Promise<CommitsPage> =>
+  refTtl(`commits|${repo}|${ref}|${after ?? ""}|${path ?? ""}`, async () => {
     const [owner, name] = split(repo);
-    return mapCommitsPage(await graphql(commitsQuery({ owner, name, ref, after })));
+    return mapCommitsPage(await graphql(path?.trim() ? commitsByPathQuery({ owner, name, ref, after, path }) : commitsQuery({ owner, name, ref, after })));
   });
 
 /** One commit by SHA prefix for the Commit ID box; null when there is none. */
@@ -635,12 +635,16 @@ export interface PushesData {
   pushes: PushRow[];
   /** Keyed by the push's `after` oid. */
   heads: Record<string, PushHead>;
+  /** Cursor for the next page; undefined on the last. */
+  next?: string;
 }
 
-/** The latest pushes to a branch (30), with the commit each one ended at (headline and merged PR) for its title. */
-export const listPushes = (repo: string, branch: string): Promise<PushesData> =>
-  refTtl(`pushes|${repo}|${branch}`, async () => {
-    const acts = await json<RestActivity[]>(pushesPath(repo, branch));
+/** Pushes to a branch, 30 a page, with the commit each one ended at (headline and merged PR) for its title. `next` is the cursor for the following page. */
+export const listPushes = (repo: string, branch: string, opts: { after?: string; actor?: string } = {}): Promise<PushesData> =>
+  refTtl(`pushes|${repo}|${branch}|${opts.after ?? ""}|${opts.actor ?? ""}`, async () => {
+    const res = await request(pushesPath(repo, branch, 30, opts), "application/vnd.github+json");
+    const next = nextActivityCursor(res.headers.get("link"));
+    const acts: RestActivity[] = await res.json();
     const pushes = acts.filter((a) => isPushActivity(a.activity_type)).map(mapActivity);
     const shas = [...new Set(pushes.map((p) => p.after))];
     const [owner, name] = split(repo);
@@ -653,7 +657,7 @@ export const listPushes = (repo: string, branch: string): Promise<PushesData> =>
         /* titles fall back to the short SHA; the list itself still works */
       }
     }
-    return { pushes, heads };
+    return { pushes, heads, next };
   });
 
 /** The commits an expanded push lists: before...after, or just the after commit for a new branch. */

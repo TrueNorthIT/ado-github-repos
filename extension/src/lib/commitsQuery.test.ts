@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   commitsQuery,
+  commitsByPathQuery,
+  normalizeHistoryPath,
   commitSearchQuery,
   isShaPrefix,
   mapCheckState,
@@ -246,5 +248,26 @@ describe("C-1: mapCommitSearch maps the SHA-prefix lookup", () => {
 
   it("returns null when no commit matches the prefix", () => {
     expect(mapCommitSearch({ data: { repository: { object: null } } }), "Expected null for an unknown prefix").toBeNull();
+  });
+});
+
+describe("commitsByPathQuery: history(path:) for the Commits path filter", () => {
+  const base = { owner: "acme", name: "web", ref: "refs/heads/main" };
+  it("passes the path as a variable and asks history for it, never inlining it", () => {
+    const q = commitsByPathQuery({ ...base, path: "src/app.ts", after: "c1" });
+    expect(q.variables, "Expected owner, name, ref, after and path variables").toEqual({ ...base, after: "c1", path: "src/app.ts" });
+    expect(q.query).toMatch(/history\(first: 50, after: \$after, path: \$path\)/);
+    expect(q.query).toContain("$path: String");
+    expect(q.query).not.toContain("src/app.ts");
+  });
+  it("selects the same fields as the plain history query", () => {
+    const plain = commitsQuery(base).query.replace(/history\([^)]*\)/, "");
+    expect(commitsByPathQuery({ ...base, path: "a" }).query.replace(/history\([^)]*\)/, "").replace(/, \$path: String/, "")).toBe(plain);
+  });
+  it.each([["  /src/lib/ ", "src/lib"], ["README.md", "README.md"], ["./a/b", "a/b"]])("normalises %j to %j", (raw, want) => {
+    expect(normalizeHistoryPath(raw)).toBe(want);
+  });
+  it.each(["", "   ", "/", "./"])("sends null for the blank path %j (GitHub rejects an empty string)", (raw) => {
+    expect(commitsByPathQuery({ ...base, path: raw }).variables.path).toBeNull();
   });
 });

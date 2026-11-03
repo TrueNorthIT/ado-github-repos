@@ -7,7 +7,7 @@ import {
   type FCommit, type RepoRefs,
 } from "./fixtures/refs";
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 const status = (code: number) => new Response("{}", { status: code });
 const PAGE = 50;
 const REPO_ID = (fullName: string) => `REPO_${fullName.toLowerCase()}`;
@@ -59,7 +59,7 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
     if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
     const tip = resolve(rr, String(v.ref));
     if (!tip) return json({ data: { repository: { ref: null } } });
-    const all = historyOf(rr, tip);
+    const all = historyOf(rr, tip).filter((c) => !v.path || filesOf(rr, [c]).some((f: any) => f.filename === v.path || f.filename.startsWith(`${v.path}/`)));
     const start = v.after ? Number(atob(v.after).split(":")[1]) || 0 : 0;
     const end = Math.min(start + PAGE, all.length);
     return json({ data: { repository: { ref: { target: { history: { pageInfo: { hasNextPage: end < all.length, endCursor: btoa(`c:${end}`) }, nodes: all.slice(start, end).map(commitNode) } } } } } });
@@ -103,7 +103,13 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
   const rr: RepoRefs = refsOf(fullName);
   if (rest === "/activity") {
     const ref = (u.searchParams.get("ref") ?? "").replace(/^refs\/heads\//, "");
-    return json(activities(rr, ref).slice(0, Number(u.searchParams.get("per_page") || 30)));
+    // Pages of 8 (not per_page) so "Load more" shows with these short fixture histories; the cursor is the offset, as an opaque string.
+    const actor = u.searchParams.get("actor");
+    const all = activities(rr, ref).filter((a) => !actor || a.actor?.login === actor);
+    const from = Number(u.searchParams.get("after")?.replace(/^cur/, "") || 0);
+    const more = all.length > from + 8;
+    const link = more ? `<https://api.github.com${u.pathname}?ref=${encodeURIComponent(u.searchParams.get("ref") ?? "")}&per_page=30&after=cur${from + 8}>; rel="next"` : undefined;
+    return json(all.slice(from, from + 8), 200, link ? { link } : {});
   }
   const cmp = /^\/compare\/(.+)\.\.\.(.+)$/.exec(rest);
   if (cmp) {

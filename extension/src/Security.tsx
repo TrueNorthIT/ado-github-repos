@@ -143,7 +143,11 @@ function columns(kind: AlertKind, repo: string, open: (n: number) => void): ITab
         />
       ),
     },
-    { id: "location", name: locName, width: -30, renderCell: (_r, c, col, row) => <SimpleTableCell key="loc" columnIndex={c} tableColumn={col}><span className="text-ellipsis monospaced-xs" title={row.location}>{row.location}</span></SimpleTableCell> },
+    { id: "location", name: locName, width: -30, renderCell: (_r, c, col, row) => row.manifestPath ? (
+      <TwoLineTableCell key="loc" columnIndex={c} tableColumn={col}
+        line1={<span className="text-ellipsis monospaced-xs" title={row.location}>{row.location}</span>}
+        line2={<span className="text-ellipsis secondary-text body-s monospaced-xs" title={row.manifestPath}>{row.manifestPath}</span>} />
+    ) : <SimpleTableCell key="loc" columnIndex={c} tableColumn={col}><span className="text-ellipsis monospaced-xs" title={row.location}>{row.location}</span></SimpleTableCell> },
     { id: "detected", name: "First detected", width: 130, renderCell: (_r, c, col, row) => <SimpleTableCell key="det" columnIndex={c} tableColumn={col}><RelDate date={row.firstDetected} /></SimpleTableCell> },
     { id: "state", name: "State", width: 110, renderCell: (_r, c, col, row) => <SimpleTableCell key="st" columnIndex={c} tableColumn={col}>{STATE_TEXT[row.state]}</SimpleTableCell> },
   ];

@@ -84,6 +84,19 @@ export function commitsQuery(p: CommitsParams): GraphQlRequest {
   };
 }
 
+/** A file or folder path as `history(path:)` wants it: trimmed, no leading `./` or `/`, no trailing `/`. "" when nothing is left. */
+export function normalizeHistoryPath(raw: string): string {
+  return raw.trim().replace(/^(\.?\/)+/, "").replace(/\/+$/, "");
+}
+
+/** commitsQuery with `history(first: 50, after: $after, path: $path)`: only commits that touched a file or folder. A blank path is sent as null (live: "" is an ARGUMENT_ERROR). Variables { owner, name, ref, after, path }. */
+export function commitsByPathQuery(p: CommitsParams & { path: string }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $ref: String!, $after: String, $path: String) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { target { ... on Commit { history(first: 50, after: $after, path: $path) { pageInfo { hasNextPage endCursor } nodes { ${COMMIT_FIELDS} } } } } } } }`,
+    variables: { owner: p.owner, name: p.name, ref: p.ref, after: p.after ?? null, path: normalizeHistoryPath(p.path) || null },
+  };
+}
+
 /** True for 4 to 40 hexadecimal characters (either case), nothing else. */
 export function isShaPrefix(text: string): boolean {
   return /^[0-9a-fA-F]{4,40}$/.test(text);

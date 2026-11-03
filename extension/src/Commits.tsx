@@ -9,12 +9,12 @@ import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell } from "azure-devops-ui/Table";
 import { TextField } from "azure-devops-ui/TextField";
-import { KeywordFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
+import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { computeGraph, type GraphLayout, type GraphRow } from "./lib/commitGraph";
-import { isShaPrefix, type CommitRow } from "./lib/commitsQuery";
+import { isShaPrefix, normalizeHistoryPath, type CommitRow } from "./lib/commitsQuery";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
 import { GraphCell, graphWidth } from "./CommitGraph";
@@ -140,14 +140,21 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const [reload, setReload] = React.useState(0);
   const [filterOpen, setFilterOpen] = React.useState(false);
   const [keyword, setKeyword] = React.useState("");
+  const [path, setPath] = React.useState("");
   const [idText, setIdText] = React.useState("");
   const [notice, setNotice] = React.useState<string | null>(null);
   const filter = React.useMemo(() => new Filter(), []);
 
   React.useEffect(() => {
-    const onChange = () => setKeyword((filter.getFilterItemValue<string>("keyword") ?? "").trim().toLowerCase());
+    // The keyword narrows the loaded rows at once; the path is asked of GitHub (history(path:)), so it waits for typing to pause.
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onChange = () => {
+      setKeyword((filter.getFilterItemValue<string>("keyword") ?? "").trim().toLowerCase());
+      clearTimeout(t);
+      t = setTimeout(() => setPath(normalizeHistoryPath(filter.getFilterItemValue<string>("path") ?? "")), 400);
+    };
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
-    return () => filter.unsubscribe(onChange, FILTER_CHANGE_EVENT);
+    return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]);
 
   // First page, again whenever the repo, branch or sign-in changes.
@@ -156,17 +163,17 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
     let dead = false;
     setLoad({ t: "loading" });
     setRows([]);
-    listCommits(repo, ref).then(
+    listCommits(repo, ref, undefined, path).then(
       (p) => { if (dead) return; setRows(p.rows); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setLoad({ t: "ready" }); },
       (err) => !dead && setLoad({ t: "error", err })
     );
     return () => { dead = true; };
-  }, [repo, ref, signedIn, reload]);
+  }, [repo, ref, signedIn, reload, path]);
 
   const loadMore = () => {
     if (!ref || !next.cursor) return;
     setMore(true);
-    listCommits(repo, ref, next.cursor).then(
+    listCommits(repo, ref, next.cursor, path).then(
       (p) => { setRows((r) => [...r, ...p.rows]); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setMore(false); },
       (err) => { setMore(false); setLoad({ t: "error", err }); }
     );
@@ -178,8 +185,8 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const prHref = React.useCallback((n: number) => href("prs", { repo, view: "prs", pr: n }), [href, repo]);
 
   const filtered = keyword ? rows.filter((r) => `${r.title} ${r.author.name} ${r.author.login ?? ""}`.toLowerCase().includes(keyword)) : rows;
-  // The graph needs every row in order, so it hides while a filter drops some.
-  const graph = React.useMemo(() => (prefs.graph && !keyword ? computeGraph(rows) : undefined), [prefs.graph, keyword, rows]);
+  // The graph needs every row in order, so it hides while a filter drops some (a path filter skips commits too).
+  const graph = React.useMemo(() => (prefs.graph && !keyword && !path ? computeGraph(rows) : undefined), [prefs.graph, keyword, path, rows]);
 
   const search = async () => {
     const t = idText.trim();
@@ -232,8 +239,9 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {filterOpen && (
-          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("keyword", { value: "" }); }} searchRoleAriaLabel="Filter commits">
+          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("keyword", { value: "" }); filter.setFilterItemState("path", { value: "" }); }} searchRoleAriaLabel="Filter commits">
             <KeywordFilterBarItem filterItemKey="keyword" placeholder="Author or message (loaded commits)" />
+            <TextFilterBarItem filterItemKey="path" placeholder="Path (file or folder)" ariaLabel="Path" />
           </FilterBar>
         )}
         {error ? (
@@ -241,7 +249,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         ) : load.t === "loading" || !ref ? (
           <Loading label="Loading commits" />
         ) : !filtered.length ? (
-          <ZeroData iconProps={{ iconName: "BranchCommit" }} imageAltText="" primaryText={keyword ? "No commits match" : "No commits"} />
+          <ZeroData iconProps={{ iconName: "BranchCommit" }} imageAltText="" primaryText={keyword || path ? "No commits match" : "No commits"} secondaryText={path ? `No commits on ${ref} touched ${path}.` : undefined} />
         ) : (
           <>
             <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
