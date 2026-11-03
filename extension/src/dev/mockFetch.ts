@@ -14,6 +14,7 @@ import { securityFile, securityMarkdown, securityRest } from "./fixtures/securit
 import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
 import { releasesGraphql, releasesRest } from "./releasesMock";
 import { releaseFormRest } from "./releaseFormMock";
+import { actionsRest } from "./actionsMock";
 import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -146,7 +147,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const repo = m && repoOf(`${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}`);
   if (!m || !repo || repo.missing) return status(404);
   const rest = m[3] ?? "";
-  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString() });
+  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" } });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);
     const names = repo.branches.slice((page - 1) * BRANCH_PAGE, page * BRANCH_PAGE);
@@ -159,6 +160,9 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;
+  // Actions lists (actions-lists): workflows, runs, dispatch, environments and the workflow files (before the generic /contents route)
+  const actAnswer = actionsRest(repo.fullName, rest, u, init, sc);
+  if (actAnswer) return actAnswer;
   const relFormAnswer = releaseFormRest(repo.fullName, rest, init, sc);
   if (relFormAnswer) return relFormAnswer;
   const relAnswer = releasesRest(repo.fullName, rest, init);
