@@ -241,7 +241,7 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
             <Tab id="write" name="Write" />
             <Tab id="preview" name="Preview" />
           </TabBar>
-          <Button text="Generate release notes" iconProps={{ iconName: "Sparkle" }} onClick={onGenerate} disabled={working || !form.tagName.trim() || (fresh && !form.target)} />
+          <Button text="Generate release notes" iconProps={{ iconName: "Lightbulb" }} onClick={onGenerate} disabled={working || !form.tagName.trim() || (fresh && !form.target)} />
           {busy === "generate" && <Spinner size={SpinnerSize.small} label="Generating…" />}
         </div>
         {tab === "write"
