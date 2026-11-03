@@ -4,7 +4,7 @@
 .gh-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* summary card: native padding 20px 0, content 0 20px */
-.gh-act-summary.bolt-card .bolt-card-content, .gh-act-summary .bolt-card-content { padding: 20px 20px; flex-direction: column; align-items: stretch; }
+.gh-act-summary.bolt-card .bolt-card-content, .gh-act-summary .bolt-card-content { padding: 0 20px; flex-direction: column; align-items: stretch; }
 .gh-act-sum-top { gap: 8px; min-width: 0; }
 .gh-act-sum-title { margin: 0; font-size: 17px; font-weight: 400; line-height: 24px; gap: 6px; min-width: 0; }
 .gh-act-sum-title .bolt-persona, .gh-act-sum-title .vss-Persona { flex: none; }
