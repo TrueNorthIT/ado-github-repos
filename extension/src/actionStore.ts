@@ -129,7 +129,11 @@ export class ActionStore {
     await this.ensureLoaded(true);
     const now = this.raw?.pullRequest;
     // The header refetches when mergeability settled, or when the queue merged the pull request.
-    if ((was?.mergeStateStatus === "UNKNOWN" && now?.mergeStateStatus !== "UNKNOWN") || was?.state !== now?.state || !!was?.isInMergeQueue !== !!now?.isInMergeQueue) (this.version++, this.emit());
+    if ((was?.mergeStateStatus === "UNKNOWN" && now?.mergeStateStatus !== "UNKNOWN") || was?.state !== now?.state || !!was?.isInMergeQueue !== !!now?.isInMergeQueue) {
+      if (was?.state !== now?.state) (invalidatePrPage(this.repo, this.number), invalidatePrs()); // the header and list must show the new state, not their cached one
+      this.version++;
+      this.emit();
+    }
   }
 
   dismiss() {

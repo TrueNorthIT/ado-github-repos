@@ -341,7 +341,7 @@
 .gh-annotation { margin: 4px 0; }
 .gh-annotation-body { gap: 2px; min-width: 0; }
 .gh-annotation-message { white-space: pre-wrap; overflow-wrap: anywhere; }
-.gh-annotation-details summary { cursor: pointer; width: fit-content; color: var(--communication-foreground, #0078d4); }
+.gh-annotation-toggle { margin-left: -8px; width: fit-content; }
 .gh-annotation-details pre { margin: 4px 0 0; padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--palette-black-alpha-4, rgba(0,0,0,.04)); border-radius: 2px; }
 .gh-annotation-count { margin-left: 8px; flex: none; }
 .gh-deployment { padding: 0; }

@@ -76,7 +76,7 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
     for (const k of Object.keys(v)) if (/^o\d+$/.test(k)) repository["c" + k.slice(1)] = rr?.bySha.get(v[k]) ? commitNode(rr.bySha.get(v[k])!) : null;
     return json({ data: { repository } });
   }
-  if (query.includes("defaultBranchRef")) {
+  if (query.includes("defaultBranchRef") && !query.includes("mergeStateStatus")) {
     const rr = known(v);
     if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
     const nodes = [...rr.branches].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((b) => branchNode(rr, b));

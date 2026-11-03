@@ -47,7 +47,7 @@ function graphql(init: RequestInit | undefined, sc: string): Response {
     return data ? json({ data }) : json({ data: null, errors: [{ message: "Unknown mutation" }] });
   }
   // Batch 1b: annotations, deployments and commit signatures of a pull request (their queries also ask about pullRequest( and timelineItems(, so they go first).
-  if (query.includes("annotations(first: 50)") || query.includes("DEPLOYED_EVENT") || query.includes("commits(first: 100")) {
+  if (query.includes("annotations(first: 50)") || query.includes("DEPLOYED_EVENT") || query.includes("commits(first: 100, after")) {
     const mine = `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO;
     const pullRequest = !mine ? null : query.includes("annotations(first: 50)") ? annotationContexts(variables.number)
       : query.includes("DEPLOYED_EVENT") ? { timelineItems: { nodes: deploymentNodes(variables.number) } }
