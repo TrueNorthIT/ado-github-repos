@@ -21,4 +21,13 @@ describe("decideNav", () => {
     expect(decideNav(true, { repo: "o/r", path: "" }, { repo: "o/r" })).toBe("allow");
     expect(decideNav(true, { repo: "o/r", tab: "contents" }, { repo: "o/r" })).toBe("allow");
   });
+
+  it("asks when leaving a dirty release form for the list or a release, and allows staying on it", () => {
+    const form = { repo: "acme/web", tagTab: "releases", releaseForm: "edit", release: "v1.0" };
+    expect(decideNav(true, form, { repo: "acme/web", tagTab: "releases" })).toBe("ask");
+    expect(decideNav(true, form, { repo: "acme/web", tagTab: "releases", release: "v1.0" })).toBe("ask");
+    expect(decideNav(true, form, { repo: "acme/web" })).toBe("ask");
+    expect(decideNav(true, form, { ...form })).toBe("allow");
+    expect(decideNav(false, form, { repo: "acme/web", tagTab: "releases" })).toBe("allow");
+  });
 });
