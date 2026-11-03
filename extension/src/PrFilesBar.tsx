@@ -53,7 +53,7 @@ export function TreeFilter({ files, filter, onChange }: { files: { path: string 
   return (
     <div className="gh-tree-filter flex-row flex-center">
       <TextField
-        className="gh-tree-filter-box flex-grow"
+        containerClassName="gh-tree-filter-box" /* TextField wraps the box in a flex-column; size that, or the box stretches tall */
         width={TextFieldWidth.auto}
         value={filter.query}
         onChange={(_e, v) => onChange({ ...filter, query: v })}
@@ -72,7 +72,7 @@ export function TreeFilter({ files, filter, onChange }: { files: { path: string 
         showFilterBox={false}
         minCalloutWidth={200}
         dismissOnSelect={false}
-        renderExpandable={(p) => <DropdownExpandableButton {...p} iconProps={{ iconName: "FilterSolid", size: IconSize.medium }} text={count ? String(count) : undefined} />}
+        renderExpandable={(p) => <DropdownExpandableButton {...p} subtle iconProps={{ iconName: "FilterSolid", size: IconSize.medium }} text={count ? String(count) : undefined} />}
       />
       {isFilterActive(filter) && <Button subtle iconProps={{ iconName: "Cancel" }} ariaLabel="Clear file filters" tooltipProps={{ text: "Clear file filters" }} onClick={() => { selection.clear(); onChange(EMPTY_FILE_FILTER); }} />}
     </div>
