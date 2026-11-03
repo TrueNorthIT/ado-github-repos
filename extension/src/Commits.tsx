@@ -227,7 +227,6 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
 
   return (
     <>
-      {defaultBranch && ref && <BranchBar repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
       <Header
         className="repos-files-header"
         title="Commits"
@@ -254,6 +253,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         ]}
       >
         {titleSwitcher(repo, openSwitch, pick)}
+        {defaultBranch && ref && <BranchBar inTitle repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
       </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}

@@ -89,13 +89,14 @@ export function useDefaultBranch(repo: string): { defaultBranch?: string; err?: 
 }
 
 /** The branch picker, as on Files: loads the branch names when first opened. `onPick` gets the branch. */
-export function BranchBar({ repo, current, defaultBranch, onPick }: { repo: string; current: string; defaultBranch?: string; onPick: (branch: string) => void }) {
+/** `inTitle`: the page-header form, on the title row after the repo switcher (Commits, Pushes), instead of its own row above the header. */
+export function BranchBar({ repo, current, defaultBranch, onPick, inTitle }: { repo: string; current: string; defaultBranch?: string; onPick: (branch: string) => void; inTitle?: boolean }) {
   const [branches, setBranches] = React.useState<string[] | undefined>();
   const [query, setQuery] = React.useState("");
   React.useEffect(() => setBranches(undefined), [repo]);
   const items = filterBranches(branches ?? [], query, defaultBranch).map((b) => ({ id: b, text: b }));
   return (
-    <div className="gh-topbar flex-row flex-center flex-noshrink">
+    <div className={inTitle ? "gh-title-branch flex-row flex-center flex-noshrink" : "gh-topbar flex-row flex-center flex-noshrink"}>
       <BranchPicker
         refName={current}
         items={items}

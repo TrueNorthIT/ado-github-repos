@@ -160,11 +160,11 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
 
   return (
     <>
-      {defaultBranch && ref && <BranchBar repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
       <Header className="repos-files-header" title="Pushes" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[
         { id: "filter", text: "Filter", important: true, renderButton: () => <Button key="filter" className="gh-cmd-icon" subtle iconProps={{ iconName: "Filter" }} ariaLabel="Filter pushes" ariaPressed={filterOpen} tooltipProps={{ text: "Filter" }} onClick={() => setFilterOpen((o) => !o)} /> },
       ]}>
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
+        {defaultBranch && ref && <BranchBar inTitle repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
       </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {filterOpen && (

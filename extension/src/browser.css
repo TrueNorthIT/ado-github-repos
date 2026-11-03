@@ -645,3 +645,5 @@
 
 .gh-act-header .bolt-header-title-area > .gh-repo-switch { margin-top: -5px; margin-bottom: -5px; } /* the switcher sits in native's 28px title row, so the header stays 52px */
 .gh-act-header .bolt-header-commandbar { margin-top: -5px; margin-bottom: -5px; } /* native lets its 38px command bar overhang the 28px title row */
+/* The branch picker on the title row, after the repo switcher (Commits, Pushes). */
+.bolt-header-title-area > .gh-title-branch { flex: 0 1 auto; min-width: 0; margin-left: -4px; }
