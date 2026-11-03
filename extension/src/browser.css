@@ -645,3 +645,16 @@
 .gh-act-more { margin: 16px 0; }
 .gh-act-dispatch { gap: 16px; }
 .gh-act-line2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Actions: ADO Pipelines' spacing (measured on dev.azure.com/dnceng-public, 2026-11-03).
+   Page header 52px (24px top padding, no bottom) with the tabs straight under it; 16px less on the left with a back button;
+   a run or job header sits on the page edge like the hub header, 16px above the first card; a card title is 46px (no bottom padding). */
+.gh-act-header.bolt-header { height: auto; min-height: 52px; padding: 24px 20px 0; }
+.gh-act-header.bolt-header-with-back-button { padding-left: 16px; }
+.gh-act-header .bolt-header-title { line-height: 28px; }
+.gh-act-subheader.bolt-header { margin: 0 -20px 16px; }
+.gh-act-header .gh-act-pill { margin-left: 8px; vertical-align: middle; }
+.gh-act-card > .bolt-card-header, .gh-act-listcard > .bolt-card-header { padding-bottom: 0; }
+
+.gh-act-header .bolt-header-title-area > .gh-repo-switch { margin-top: -5px; margin-bottom: -5px; } /* the switcher sits in native's 28px title row, so the header stays 52px */
+.gh-act-header .bolt-header-commandbar { margin-top: -5px; margin-bottom: -5px; } /* native lets its 38px command bar overhang the 28px title row */

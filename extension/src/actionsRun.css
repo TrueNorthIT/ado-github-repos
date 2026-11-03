@@ -1,5 +1,5 @@
 /* Actions run page and log view. Colours come from the ADO palette variables (RGB triples) so both themes work. */
-.gh-act-body { padding: 0 20px 24px; gap: 16px; }
+.gh-act-body { padding: 0 0 24px; gap: 16px; } /* cards 32px in from the page edge, 16px apart, as native Pipelines */
 .gh-act-card { margin: 0; }
 .gh-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .gh-act-facts-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; padding: 4px 4px 8px; }
@@ -43,13 +43,13 @@
 
 /* log view */
 .gh-act-logpage { display: flex; flex-direction: column; }
-.gh-act-log { display: flex; margin: 0 20px 20px; height: calc(100vh - 190px); min-height: 420px; border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-radius: 4px; overflow: hidden; background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
-.gh-act-steps { flex: 0 0 300px; overflow: auto; border-right: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); padding: 4px 0; }
-.gh-act-stepbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.gh-act-log { display: flex; margin: 0 0 20px; height: calc(100vh - 190px); min-height: 420px; border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-radius: 4px; overflow: hidden; background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
+.gh-act-steps { flex: 0 0 380px; overflow: auto; border-right: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); padding: 4px 0; }
+.gh-act-stepbtn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
 .gh-act-stepbtn:hover:not(:disabled) { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
 .gh-act-stepbtn:disabled { cursor: default; opacity: .6; }
 .gh-act-stepbtn.selected { background: rgba(var(--palette-primary, 0, 120, 212), .12); }
-.gh-act-jobbtn { font-weight: 600; padding-top: 6px; padding-bottom: 6px; }
+.gh-act-jobbtn { font-weight: 600; }
 .gh-act-steplist { list-style: none; margin: 0; padding: 0 0 4px 16px; }
 .gh-act-logpane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
 .gh-act-logbar { gap: 4px; padding: 4px 8px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); flex: 0 0 auto; }

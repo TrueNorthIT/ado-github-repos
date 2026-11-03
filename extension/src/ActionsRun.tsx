@@ -211,7 +211,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   return (
     <div className="page-content gh-act-run">
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header gh-act-subheader"
         title={`#${run.runNumber} · ${run.title}`}
         titleSize={TitleSize.Large}
         titleAriaLevel={1}

@@ -103,7 +103,7 @@ function runDuration(run: WorkflowRun, now: Date): number | undefined {
 function runColumns(repo: string, open: (id: number) => void, now: Date, showWorkflow: boolean): ITableColumn<WorkflowRun>[] {
   return [
     {
-      id: "status",
+      name: "", id: "status",
       width: 40,
       renderCell: (_r, i, c, run) => (
         <SimpleTableCell key="status" columnIndex={i} tableColumn={c}>
@@ -112,7 +112,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
       ),
     },
     {
-      id: "title",
+      name: "Run", id: "title",
       width: -100,
       renderCell: (_r, i, c, run) => (
         <TwoLineTableCell
@@ -133,7 +133,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
       ),
     },
     {
-      id: "actor",
+      name: "Triggered by", id: "actor",
       width: 170,
       renderCell: (_r, i, c, run) => (
         <SimpleTableCell key="actor" columnIndex={i} tableColumn={c}>
@@ -142,7 +142,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
       ),
     },
     {
-      id: "duration",
+      name: "Duration", id: "duration",
       width: 90,
       renderCell: (_r, i, c, run) => {
         const ms = runDuration(run, now);
@@ -154,7 +154,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
       },
     },
     {
-      id: "time",
+      name: "", id: "time",
       width: 150,
       renderCell: (_r, i, c, run) => (
         <SimpleTableCell key="time" columnIndex={i} tableColumn={c}>
@@ -168,7 +168,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
 function RunTable({ repo, runs, open, now, showWorkflow, label }: { repo: string; runs: WorkflowRun[]; open: (id: number) => void; now: Date; showWorkflow: boolean; label: string }) {
   const cols = React.useMemo(() => runColumns(repo, open, now, showWorkflow), [repo, open, now, showWorkflow]);
   const provider = React.useMemo(() => new ArrayItemProvider(runs), [runs]);
-  return <Table<WorkflowRun> ariaLabel={label} role="table" columns={cols} itemProvider={provider} showHeader={false} spacerWidth={8} singleClickActivation onActivate={(_e, r) => open(r.data.id)} />;
+  return <Table<WorkflowRun> ariaLabel={label} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} singleClickActivation onActivate={(_e, r) => open(r.data.id)} />;
 }
 
 interface WorkflowRow {
@@ -179,7 +179,7 @@ interface WorkflowRow {
 function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: number) => void, recent: boolean): ITableColumn<WorkflowRow>[] {
   return [
     {
-      id: "status",
+      name: "", id: "status",
       width: 40,
       renderCell: (_r, i, c, row) => (
         <SimpleTableCell key="status" columnIndex={i} tableColumn={c}>
@@ -188,7 +188,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
       ),
     },
     {
-      id: "name",
+      name: "Workflow", id: "name",
       width: -40,
       renderCell: (_r, i, c, row) => (
         <TwoLineTableCell
@@ -208,7 +208,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
       ),
     },
     {
-      id: "latest",
+      name: "Last run", id: "latest",
       width: -60,
       renderCell: (_r, i, c, row) =>
         recent && row.latest ? (
@@ -232,7 +232,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
         ),
     },
     {
-      id: "time",
+      name: "", id: "time",
       width: 150,
       renderCell: (_r, i, c, row) => (
         <SimpleTableCell key="time" columnIndex={i} tableColumn={c}>
@@ -246,7 +246,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
 function WorkflowTable({ repo, rows, openWf, open, recent }: { repo: string; rows: WorkflowRow[]; openWf: (id: number) => void; open: (id: number) => void; recent: boolean }) {
   const cols = React.useMemo(() => workflowColumns(repo, openWf, open, recent), [repo, openWf, open, recent]);
   const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
-  return <Table<WorkflowRow> ariaLabel={recent ? "Recent workflows" : "All workflows"} role="table" columns={cols} itemProvider={provider} showHeader={false} spacerWidth={8} singleClickActivation onActivate={(_e, r) => openWf(r.data.wf.id)} />;
+  return <Table<WorkflowRow> ariaLabel={recent ? "Recent workflows" : "All workflows"} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} singleClickActivation onActivate={(_e, r) => openWf(r.data.wf.id)} />;
 }
 
 // ---------- Recent and All ----------
@@ -274,7 +274,7 @@ function Landing({ repo, tab, goto, props }: { repo: string; tab: "recent" | "al
     );
   }
   return (
-    <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
+    <Card className="gh-pr-card bolt-table-card gh-act-listcard" contentProps={{ contentPadding: false }} titleProps={tab === "recent" ? { text: "Recently run workflows", ariaLevel: 2 } : undefined}>
       <WorkflowTable repo={repo} rows={rows} openWf={openWf} open={open} recent={tab === "recent"} />
     </Card>
   );
@@ -506,23 +506,26 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
   };
   const filters: RunFilters = { branch: st.branch, status: st.status, actor: st.actor, event: st.event };
   return (
+    <>
+    <Header
+      className="gh-hub-header gh-act-header"
+      title={<>{wf?.name ?? (wfs.t === "ready" ? `Workflow ${st.workflow}` : "")}{wf?.disabled && <Pill className="gh-pr-pill gh-act-pill" size={PillSize.compact} variant={PillVariant.standard}>Disabled</Pill>}</>}
+      titleSize={TitleSize.Large}
+      titleAriaLevel={1}
+      backButtonProps={{ ariaLabel: "All workflows", onClick: () => goto({}) }}
+      commandBarItems={[
+        ...(info?.inputs && !wf?.disabled ? [{ id: "run", text: "Run workflow", isPrimary: true, important: true, iconProps: { iconName: "Play" }, onActivate: () => setPanel(true) }] : []),
+        ...(wf ? [{ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: wf.htmlUrl, target: "_blank", important: true }] : []),
+      ]}
+    />
     <div className="page-content page-content-top gh-pr-body flex-column">
-      <div className="gh-act-crumb flex-row flex-center">
-        <Link href={serializeActions({ repo })} onClick={(e) => plainClick(e, () => goto({}))}>All workflows</Link>
-      </div>
-      <div className="gh-act-wf-head flex-row flex-center justify-space-between">
-        <div className="title-m flex-row flex-center">
-          {wf?.name ?? (wfs.t === "ready" ? `Workflow ${st.workflow}` : "")}
-          {wf?.disabled && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Disabled</Pill>}
-        </div>
-        {info?.inputs && !wf?.disabled && <Button primary text="Run workflow" iconProps={{ iconName: "Play" }} onClick={() => setPanel(true)} />}
-      </div>
       {wf?.disabled && <MessageCard severity={MessageCardSeverity.Info}>This workflow is disabled, so it cannot be started here. Enable it on GitHub to run it again.</MessageCard>}
       {queued && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setQueued(false)}>Run queued. It will appear in the list in a moment.</MessageCard>}
       <FilterRow st={st} goto={goto} />
       <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} tick={refresh} showWorkflow={false} />
       {panel && wf && info?.inputs && <RunWorkflowPanel repo={repo} wf={wf} info={info} onClose={() => setPanel(false)} onQueued={onQueued} />}
     </div>
+    </>
   );
 }
 
@@ -534,10 +537,11 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
     return <RunPage repo={repo} state={st} go={goto} signedIn={props.signedIn} signIn={() => void props.signIn()} busy={props.busy} />;
   }
   const tab: ActTab = st.tab ?? "recent";
+  if (st.workflow) return <WorkflowPage key={`${repo}/${st.workflow}`} repo={repo} st={st} goto={goto} props={props} />;
   return (
     <>
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header"
         title="Actions"
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
@@ -548,9 +552,7 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
       >
         {titleSwitcher(repo, props.openSwitch, (r) => gotoHash(serializeActions({ repo: r, tab: st.workflow ? undefined : tab })))}
       </Header>
-      {st.workflow ? (
-        <WorkflowPage key={`${repo}/${st.workflow}`} repo={repo} st={st} goto={goto} props={props} />
-      ) : (
+      {(
         <>
           <TabBar ariaLabel="Actions" selectedTabId={tab} onSelectedTabChanged={(id) => goto({ tab: id as ActTab })} tabSize={TabSize.Tall} disableSticky>
             {TABS.map((t) => <Tab key={t.id} id={t.id} name={t.name} />)}

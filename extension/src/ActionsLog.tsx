@@ -130,7 +130,7 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
   return (
     <div className="page-content gh-act-logpage">
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header gh-act-subheader"
         title={job.name}
         titleSize={TitleSize.Large}
         titleAriaLevel={1}

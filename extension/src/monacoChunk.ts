@@ -392,8 +392,8 @@ export function createLogViewer(el: HTMLElement, dark: boolean, label: string, o
     wordWrap: "off",
     ariaLabel: label,
     fontSize: 12,
-    lineHeight: 16,
-    fontFamily: 'Consolas, "Courier New", monospace',
+    lineHeight: 20, // native Pipelines' log: 12px Cascadia Mono on 20px lines
+    fontFamily: '"Cascadia Mono", Menlo, Consolas, "Courier New", monospace',
   });
   const styled = editor.createDecorationsCollection([]);
   const hl = editor.createDecorationsCollection([]);
