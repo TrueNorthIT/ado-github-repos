@@ -42,9 +42,6 @@ for (const i of inst.installations ?? []) {
   console.log(`  ${i.account.login}: ${i.repository_selection} -> ${(repos.repositories ?? []).map((r) => r.full_name).join(", ") || "(none)"}`);
 }
 if ((inst.installations ?? []).some((i) => i.repository_selection === "all")) console.log("\n  WARNING: installed on ALL repositories. Limit it to the sandbox before using this token.");
-if (token.startsWith("ghu_") && !process.argv.includes("--no-expiry-check")) {
-  console.log(`  Expires: ${user && "see the app's 'Expire user authorization tokens' setting (off = never)"}`);
-}
 
 const copied = [["clip"], ["pbcopy"], ["xclip", "-selection", "clipboard"]].some(([cmd, ...args]) => spawnSync(cmd, args, { input: token, shell: process.platform === "win32" }).status === 0);
 console.log(`\nToken${copied ? " (also copied to the clipboard)" : ""}:\n${token}\n\nPut it in the cloud environment as GH_SANDBOX_TOKEN. Don't paste it into chat.`);
