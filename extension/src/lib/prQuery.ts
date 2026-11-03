@@ -27,7 +27,7 @@ export interface ListParams {
   after?: string;
 }
 
-const STATES: Record<Exclude<PrTab, "mine">, { states: string[]; tokens: string }> = {
+export const STATES: Record<Exclude<PrTab, "mine">, { states: string[]; tokens: string }> = {
   active: { states: ["OPEN"], tokens: "is:open" },
   completed: { states: ["MERGED"], tokens: "is:merged" },
   abandoned: { states: ["CLOSED"], tokens: "is:closed is:unmerged" },
@@ -46,7 +46,7 @@ const Q_PULLS = `query($owner: String!, $name: String!, $states: [PullRequestSta
     pullRequests(states: $states, orderBy: {field: UPDATED_AT, direction: DESC}, first: ${PAGE_SIZE}, after: $after) { nodes { ${NODE} } ${PAGE} }
   }
 }`;
-const Q_SEARCH = `query($q: String!, $after: String) {
+export const Q_SEARCH = `query($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: ${PAGE_SIZE}, after: $after) { nodes { ... on PullRequest { ${NODE} } } ${PAGE} }
 }`;
 const Q_ONE = `query($owner: String!, $name: String!, $number: Int!) {

@@ -1,4 +1,4 @@
-// Batch 4, "updated since you viewed" on the pull request list (VW-9). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, "updated since you viewed" on the pull request list (VW-9).
 //
 // Facts: PrListNode.updatedAt is an ISO 8601 string (prModel.ts). The map is kept per user in extension data (the same User scope as prefs.ts), so it must stay small:
 // MAX_LAST_VIEWED entries. Pull request numbers repeat across repositories, so the keys are `${owner}/${name}#${number}` (viewedKey); the functions treat keys as opaque strings.
@@ -16,17 +16,26 @@ export type LastViewedMap = Record<string, string>;
 
 /** `${repo}#${number}`, repo being "owner/name". */
 export function viewedKey(repo: string, number: number): string {
-  throw new Error("Not implemented");
+  return `${repo}#${number}`;
 }
 
 /** `local` and `incoming` merged (later time wins per key, invalid times dropped), then pruned to `max` entries (default MAX_LAST_VIEWED) by evicting the oldest. */
-export function mergeLastViewed(local: LastViewedMap, incoming: LastViewedMap, max?: number): LastViewedMap {
-  throw new Error("Not implemented");
+export function mergeLastViewed(local: LastViewedMap, incoming: LastViewedMap, max: number = MAX_LAST_VIEWED): LastViewedMap {
+  const out: Record<string, string> = {};
+  for (const m of [local, incoming])
+    for (const [k, v] of Object.entries(m)) {
+      const t = Date.parse(v);
+      if (!isNaN(t) && !(k in out && Date.parse(out[k]) >= t)) out[k] = v;
+    }
+  const keep = Object.entries(out)
+    .sort((a, b) => Date.parse(b[1]) - Date.parse(a[1]) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .slice(0, max);
+  return Object.fromEntries(keep);
 }
 
 /** mergeLastViewed(map, { [key]: viewedAtIso }): records one view. An earlier time than the stored one changes nothing. */
 export function recordViewed(map: LastViewedMap, key: string, viewedAtIso: string, max?: number): LastViewedMap {
-  throw new Error("Not implemented");
+  return mergeLastViewed(map, { [key]: viewedAtIso }, max);
 }
 
 /**
@@ -34,5 +43,8 @@ export function recordViewed(map: LastViewedMap, key: string, viewedAtIso: strin
  * `opts.newWhenNeverViewed` (default false). An invalid updatedAt is false.
  */
 export function isUpdatedSinceViewed(updatedAt: string, lastViewed: string | undefined, opts?: { newWhenNeverViewed?: boolean }): boolean {
-  throw new Error("Not implemented");
+  const u = Date.parse(updatedAt);
+  if (isNaN(u)) return false;
+  const v = lastViewed === undefined ? NaN : Date.parse(lastViewed);
+  return isNaN(v) ? !!opts?.newWhenNeverViewed : u > v;
 }

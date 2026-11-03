@@ -1,4 +1,4 @@
-// Batch 4, viewed files (VW-3). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, viewed files (VW-3).
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with a bogus pull request id and answered NOT_FOUND "Could not resolve to a node with the global id of 'PR_bogus'", so they passed validation and wrote nothing):
 //  - mutation markFileAsViewed(input: MarkFileAsViewedInput!) and unmarkFileAsViewed(input: UnmarkFileAsViewedInput!). Both inputs are { pullRequestId: ID!, path: String!, clientMutationId }.
@@ -31,17 +31,36 @@ export interface ViewedFilesParams {
  * Variables { owner, name, number, after } with after null on the first page.
  */
 export function viewedFilesQuery(p: ViewedFilesParams): GraphQlRequest {
-  throw new Error("Not implemented");
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+      files(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { path viewerViewedState }
+      }
+    }
+  }
+}`,
+    variables: { owner: p.owner, name: p.name, number: p.number, after: p.after ?? null },
+  };
+}
+
+function viewedMutation(inputType: string, field: string, pullRequestId: string, path: string): GraphQlRequest {
+  if (!pullRequestId.trim()) throw new Error("pullRequestId is required");
+  if (!path.trim()) throw new Error("path is required");
+  return { query: `mutation($input: ${inputType}!) { ${field}(input: $input) { pullRequest { id } } }`, variables: { input: { pullRequestId, path } } };
 }
 
 /** `mutation($input: MarkFileAsViewedInput!) { markFileAsViewed(input: $input) { pullRequest { id } } }`, variables { input: { pullRequestId, path } }. Throws "pullRequestId is required" or "path is required" when blank. The path is sent exactly as given. */
 export function markViewedMutation(pullRequestId: string, path: string): GraphQlRequest {
-  throw new Error("Not implemented");
+  return viewedMutation("MarkFileAsViewedInput", "markFileAsViewed", pullRequestId, path);
 }
 
 /** The same with UnmarkFileAsViewedInput and unmarkFileAsViewed. */
 export function unmarkViewedMutation(pullRequestId: string, path: string): GraphQlRequest {
-  throw new Error("Not implemented");
+  return viewedMutation("UnmarkFileAsViewedInput", "unmarkFileAsViewed", pullRequestId, path);
 }
 
 export interface ViewedPage {
@@ -54,12 +73,17 @@ export interface ViewedPage {
 
 /** Maps a GraphQL response body of viewedFilesQuery. Null nodes are skipped; an unrecognised state counts as UNVIEWED. A missing pull request gives an empty page with pullRequestId "". Never throws. */
 export function toViewedPage(body: any): ViewedPage {
-  throw new Error("Not implemented");
+  const pr = body?.data?.repository?.pullRequest;
+  if (!pr) return { pullRequestId: "", states: {}, hasNextPage: false, cursor: null };
+  const states: Record<string, ViewedState> = {};
+  for (const n of pr.files?.nodes ?? []) if (n?.path) states[n.path] = n.viewerViewedState === "VIEWED" || n.viewerViewedState === "DISMISSED" ? n.viewerViewedState : "UNVIEWED";
+  const hasNextPage = !!pr.files?.pageInfo?.hasNextPage;
+  return { pullRequestId: pr.id ?? "", states, hasNextPage, cursor: hasNextPage ? pr.files.pageInfo.endCursor ?? null : null };
 }
 
 /** Pages in order into one path-to-state record (a later page wins on a repeated path). */
 export function mergeViewed(pages: ViewedPage[]): Record<string, ViewedState> {
-  throw new Error("Not implemented");
+  return Object.assign({}, ...pages.map((p) => p.states));
 }
 
 export interface ViewedProgress {
@@ -71,20 +95,21 @@ export interface ViewedProgress {
 
 /** Progress over `paths` (every changed file). Only VIEWED counts; states for paths not in `paths` are ignored. */
 export function viewedProgress(paths: string[], states: Record<string, ViewedState>): ViewedProgress {
-  throw new Error("Not implemented");
+  const viewed = paths.filter((p) => states[p] === "VIEWED").length;
+  return { viewed, total: paths.length, text: `${viewed} of ${paths.length} viewed` };
 }
 
 /** VIEWED files are collapsed when the Files tab opens; UNVIEWED, DISMISSED and unknown (undefined) are expanded. */
 export function isCollapsedByDefault(state: ViewedState | undefined): boolean {
-  throw new Error("Not implemented");
+  return state === "VIEWED";
 }
 
 /** True for DISMISSED only: shows the CHANGED_SINCE_VIEWED badge. */
 export function changedSinceViewed(state: ViewedState | undefined): boolean {
-  throw new Error("Not implemented");
+  return state === "DISMISSED";
 }
 
 /** Optimistic update after a toggle: a new record with `path` VIEWED (viewed true) or UNVIEWED (false). The input is not changed. */
 export function withViewed(states: Record<string, ViewedState>, path: string, viewed: boolean): Record<string, ViewedState> {
-  throw new Error("Not implemented");
+  return { ...states, [path]: viewed ? "VIEWED" : "UNVIEWED" };
 }

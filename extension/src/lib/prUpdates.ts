@@ -1,4 +1,4 @@
-// Batch 4, PR Updates tab (VW-1): iterations of a pull request, one per push to the head branch. STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, PR Updates tab (VW-1): iterations of a pull request, one per push to the head branch.
 //
 // Schema facts (checked live with `gh api graphql` against cli/cli public pull requests):
 //  - PullRequest.timelineItems(first, after, itemTypes: [PullRequestTimelineItemsItemType!]) accepts PULL_REQUEST_COMMIT and HEAD_REF_FORCE_PUSHED_EVENT together; nodes come back in timeline order.
@@ -19,6 +19,7 @@
 //  - beforeOid of an ordinary update is the previous update's headOid; for the first it is the `baseOid` argument (null when not given).
 import type { GraphQlRequest } from "./prQuery";
 import type { TimelineNode } from "./feedModel";
+import { comparePath } from "./commitDetail";
 
 /** Largest committedDate gap, in milliseconds, between two commits of one inferred push (the same window the activity feed uses). A gap of exactly this still counts as one push. */
 export const UPDATE_PUSH_WINDOW_MS = 10 * 60 * 1000;
@@ -39,7 +40,26 @@ export interface UpdatesParams {
  * Variables { owner, name, number, after } with after null on the first page. Nothing caller-supplied goes in the text.
  */
 export function updatesQuery(p: UpdatesParams): GraphQlRequest {
-  throw new Error("Not implemented");
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+      baseRefOid
+      headRefOid
+      timelineItems(first: 100, after: $after, itemTypes: [PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED_EVENT]) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          __typename
+          ... on PullRequestCommit { id commit { oid messageHeadline committedDate } }
+          ... on HeadRefForcePushedEvent { id createdAt beforeCommit { oid } afterCommit { oid } }
+        }
+      }
+    }
+  }
+}`,
+    variables: { owner: p.owner, name: p.name, number: p.number, after: p.after ?? null },
+  };
 }
 
 export interface UpdateCommit {
@@ -68,7 +88,37 @@ export interface PrUpdate {
  * afterCommit is skipped (the new head is unknown) and takes no index. `baseOid` is the PR's baseRefOid, the beforeOid of the first ordinary update. An empty timeline gives [].
  */
 export function toUpdates(timeline: (TimelineNode | null)[], baseOid?: string | null): PrUpdate[] {
-  throw new Error("Not implemented");
+  const updates: PrUpdate[] = [];
+  let pending: UpdateCommit[] = [];
+  const prevHead = () => (updates.length ? updates[updates.length - 1].headOid : baseOid ?? null);
+  const flush = () => {
+    if (!pending.length) return;
+    const last = updates[updates.length - 1];
+    if (last && last.forced && !last.commits.length && last.headOid === pending[pending.length - 1].oid) last.commits = pending;
+    else {
+      const head = pending[pending.length - 1];
+      updates.push({ index: updates.length + 1, commits: pending, headOid: head.oid, beforeOid: prevHead(), forced: false, at: head.date });
+    }
+    pending = [];
+  };
+  for (const n of timeline) {
+    if (!n) continue;
+    if (n.__typename === "PullRequestCommit" && n.commit?.oid) {
+      const c: UpdateCommit = { oid: n.commit.oid, title: n.commit.messageHeadline ?? "", date: new Date(n.commit.committedDate) };
+      if (pending.length && c.date.getTime() - pending[pending.length - 1].date.getTime() > UPDATE_PUSH_WINDOW_MS) flush();
+      pending.push(c);
+    } else if (n.__typename === "HeadRefForcePushedEvent" && n.afterCommit?.oid) {
+      const after: string = n.afterCommit.oid;
+      let commits: UpdateCommit[] = [];
+      if (pending.length && pending[pending.length - 1].oid === after) {
+        commits = pending;
+        pending = [];
+      } else flush();
+      updates.push({ index: updates.length + 1, commits, headOid: after, beforeOid: n.beforeCommit?.oid ?? prevHead(), forced: true, at: new Date(n.createdAt) });
+    }
+  }
+  flush();
+  return updates;
 }
 
 export interface UpdateComparison {
@@ -85,5 +135,11 @@ export interface UpdateComparison {
  * Throws "Choose two different updates" when a === b, `Unknown update ${n}` for an index outside 0..updates.length, and "The base of the pull request is unknown" for 0 when updates[0].beforeOid is null.
  */
 export function compareUpdates(repo: string, updates: PrUpdate[], a: number, b: number): UpdateComparison {
-  throw new Error("Not implemented");
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  if (a === b) throw new Error("Choose two different updates");
+  for (const n of [a, b]) if (!Number.isInteger(n) || n < 0 || n > updates.length) throw new Error(`Unknown update ${n}`);
+  const base = lo === 0 ? updates[0].beforeOid : updates[lo - 1].headOid;
+  if (!base) throw new Error("The base of the pull request is unknown");
+  const head = updates[hi - 1].headOid;
+  return { base, head, path: comparePath(repo, base, head) };
 }

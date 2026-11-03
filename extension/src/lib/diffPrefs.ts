@@ -1,4 +1,4 @@
-// Batch 4, PR Files diff display preferences: side-by-side (VW-2) and whitespace (VW-4). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, PR Files diff display preferences: side-by-side (VW-2) and whitespace (VW-4).
 //
 // Facts:
 //  - Monaco's `ignoreTrimWhitespace` (set today to false in monacoChunk.createDiff) does the display work for whitespace; this module only decides when to turn it on and when to say "Only whitespace changes".
@@ -24,7 +24,13 @@ export interface DiffHashState {
 
 /** Reads `sbs` and `ws` from a location hash (with or without leading "#" or several). Never throws; garbage gives {}. */
 export function parseDiffHash(hash: string): DiffHashState {
-  throw new Error("Not implemented");
+  const out: DiffHashState = {};
+  for (const seg of hash.replace(/^#+/, "").split("&")) {
+    if (seg === "sbs=1") out.sideBySide = true;
+    else if (seg === "sbs=0") out.sideBySide = false;
+    else if (seg === "ws=1") out.ignoreWhitespace = true;
+  }
+  return out;
 }
 
 /**
@@ -32,17 +38,20 @@ export function parseDiffHash(hash: string): DiffHashState {
  * Other segments are kept verbatim and in order; the new keys go last, sbs before ws.
  */
 export function applyDiffHash(hash: string, state: { sideBySide?: boolean; ignoreWhitespace?: boolean }): string {
-  throw new Error("Not implemented");
+  const kept = hash.replace(/^#+/, "").split("&").filter((s) => s && !/^(sbs|ws)=/.test(s));
+  if (typeof state.sideBySide === "boolean") kept.push(`sbs=${state.sideBySide ? 1 : 0}`);
+  if (state.ignoreWhitespace === true) kept.push("ws=1");
+  return "#" + kept.join("&");
 }
 
 /** The stored per-user default: `prSideBySide` when the stored prefs document has it as a real boolean, otherwise undefined (not set). Accepts null and undefined. */
 export function storedSideBySide(stored: { prSideBySide?: unknown } | null | undefined): boolean | undefined {
-  throw new Error("Not implemented");
+  return typeof stored?.prSideBySide === "boolean" ? stored.prSideBySide : undefined;
 }
 
 /** hash override, else per-user default, else BUILT_IN_SIDE_BY_SIDE. */
 export function resolveSideBySide(hashValue: boolean | undefined, userDefault: boolean | undefined): boolean {
-  throw new Error("Not implemented");
+  return hashValue ?? userDefault ?? BUILT_IN_SIDE_BY_SIDE;
 }
 
 /**
@@ -50,10 +59,29 @@ export function resolveSideBySide(hashValue: boolean | undefined, userDefault: b
  * and each pair is equal after removing ALL whitespace. A missing, null or empty patch, or one with no changed lines, is false (nothing to say).
  */
 export function isWhitespaceOnlyPatch(patch: string | null | undefined): boolean {
-  throw new Error("Not implemented");
+  if (!patch) return false;
+  const strip = (l: string) => l.slice(1).replace(/\s+/g, "");
+  let changed = false;
+  let del: string[] = [];
+  let add: string[] = [];
+  const close = () => {
+    const d = del.filter(Boolean), a = add.filter(Boolean);
+    changed = changed || del.length > 0 || add.length > 0;
+    const same = d.length === a.length && d.every((x, i) => x === a[i]);
+    del = [];
+    add = [];
+    return same;
+  };
+  for (const l of patch.split("\n")) {
+    if (l.startsWith("-")) del.push(strip(l));
+    else if (l.startsWith("+")) add.push(strip(l));
+    else if (l.startsWith("\\")) continue;
+    else if (!close()) return false;
+  }
+  return close() && changed;
 }
 
 /** WHITESPACE_ONLY_TEXT when `ignoreWhitespace` is on AND the patch is whitespace-only; null otherwise. */
 export function whitespaceNotice(patch: string | null | undefined, ignoreWhitespace: boolean): string | null {
-  throw new Error("Not implemented");
+  return ignoreWhitespace && isWhitespaceOnlyPatch(patch) ? WHITESPACE_ONLY_TEXT : null;
 }

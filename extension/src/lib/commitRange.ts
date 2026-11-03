@@ -1,4 +1,4 @@
-// Batch 4, "Show changes from" for pull request diffs (VW-6). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, "Show changes from" for pull request diffs (VW-6).
 //
 // Schema facts (checked live with `gh api graphql` against cli/cli#14570, a public pull request):
 //  - PullRequest.commits(first, after, before, last) { pageInfo nodes { commit { oid messageHeadline parents(first: 2) { nodes { oid } } } } } validates; the first commit's parent is baseRefOid (7d61f95...) and each
@@ -17,6 +17,7 @@
 //  - A commit that is not in `commits` throws `Commit ${oid} is not part of this pull request`.
 //  - No hash key is defined for this selection (VW-6 does not ask for one).
 import type { GraphQlRequest } from "./prQuery";
+import { comparePath, commitFilesPath } from "./commitDetail";
 
 export type ChangesFrom =
   | { kind: "all" }
@@ -63,7 +64,23 @@ export interface RangeQueryParams {
  * Variables { owner, name, number, after } with after null on the first page.
  */
 export function rangeQuery(p: RangeQueryParams): GraphQlRequest {
-  throw new Error("Not implemented");
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+      baseRefOid
+      headRefOid
+      viewerLatestReview { state submittedAt commit { oid } }
+      commits(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { commit { oid messageHeadline parents(first: 2) { nodes { oid } } } }
+      }
+    }
+  }
+}`,
+    variables: { owner: p.owner, name: p.name, number: p.number, after: p.after ?? null },
+  };
 }
 
 /** The `pullRequest` object of one rangeQuery response page. */
@@ -76,15 +93,36 @@ export interface RangePrNode {
 
 /** The context from every page of rangeQuery, in order: base, head and review from the first page, commits from all pages concatenated. Null commit nodes are skipped. Throws "No pages" for an empty array. */
 export function toRangeContext(pages: RangePrNode[]): RangeContext {
-  throw new Error("Not implemented");
+  if (!pages.length) throw new Error("No pages");
+  const commits: RangeCommit[] = [];
+  for (const pg of pages)
+    for (const n of pg.commits?.nodes ?? []) if (n) commits.push({ oid: n.commit.oid, title: n.commit.messageHeadline, parents: (n.commit.parents?.nodes ?? []).map((x) => x.oid) });
+  return { baseOid: pages[0].baseRefOid, headOid: pages[0].headRefOid, commits, lastReviewedOid: lastReviewedOid(pages[0].viewerLatestReview) };
 }
 
 /** The commit oid of the viewer's latest review, or null when there is no review, it is PENDING, or it has no commit. */
 export function lastReviewedOid(review: { state: string; commit?: { oid: string } | null } | null | undefined): string | null {
-  throw new Error("Not implemented");
+  return review && review.state !== "PENDING" ? review.commit?.oid ?? null : null;
 }
 
 /** The compare range for the "Show changes from" choice. See the header for each kind. */
 export function resolveRange(repo: string, sel: ChangesFrom, ctx: RangeContext): CompareRange | null {
-  throw new Error("Not implemented");
+  const make = (base: string | null, head: string): CompareRange => ({ base, head, path: base ? comparePath(repo, base, head) : commitFilesPath(repo, head) });
+  const at = (oid: string) => {
+    const i = ctx.commits.findIndex((c) => c.oid === oid);
+    if (i < 0) throw new Error(`Commit ${oid} is not part of this pull request`);
+    return i;
+  };
+  switch (sel.kind) {
+    case "all":
+      return make(ctx.baseOid, ctx.headOid);
+    case "commit":
+      return make(ctx.commits[at(sel.oid)].parents[0] ?? null, sel.oid);
+    case "range": {
+      const [a, b] = [at(sel.from), at(sel.to)].sort((x, y) => x - y);
+      return make(ctx.commits[a].parents[0] ?? null, ctx.commits[b].oid);
+    }
+    case "sinceReview":
+      return ctx.lastReviewedOid ? make(ctx.lastReviewedOid, ctx.headOid) : null;
+  }
 }

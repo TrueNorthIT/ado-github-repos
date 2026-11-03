@@ -1,4 +1,4 @@
-// Batch 4, merge conflicts (VW-7). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 4, merge conflicts (VW-7).
 //
 // Schema facts (checked live with `gh api graphql` against cli/cli#14570):
 //  - PullRequest.mergeable: MergeableState = MERGEABLE | CONFLICTING | UNKNOWN. PullRequest.mergeStateStatus: MergeStateStatus = DIRTY ("The merge commit cannot be cleanly created") | UNKNOWN | BLOCKED | BEHIND
@@ -33,10 +33,15 @@ export interface ConflictInfo {
 
 /** `https://github.com/${repo}/pull/${number}/conflicts`; repo is "owner/name". */
 export function conflictEditorUrl(repo: string, number: number): string {
-  throw new Error("Not implemented");
+  return `https://github.com/${repo}/pull/${number}/conflicts`;
 }
 
 /** The conflict state of a pull request. See the header. */
 export function conflictState(pr: ConflictInput, repo: string, number: number): ConflictInfo {
-  throw new Error("Not implemented");
+  const none: ConflictInfo = { hasConflicts: false, checking: false, message: null, editorUrl: null };
+  if (pr.state && pr.state !== "OPEN") return none;
+  if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY")
+    return { hasConflicts: true, checking: false, message: CONFLICT_MESSAGE, editorUrl: pr.viewerCanUpdate ? conflictEditorUrl(repo, number) : null };
+  if (pr.mergeable === "MERGEABLE") return none;
+  return { ...none, checking: true, message: CONFLICT_CHECKING_MESSAGE };
 }
