@@ -232,7 +232,8 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
     </li>
   );
   const close = () => setAdding("");
-  const addBtn = (what: typeof adding, text = "Add") => addItem(() => setAdding(what), false, text);
+  // Reviewers keeps a labelled "Add" as native does; the other panels get a bare "+" with the label as its tooltip.
+  const addBtn = (what: typeof adding, text = "Add") => addItem(() => setAdding(what), false, text, what === "reviewers");
 
   return (
     <>

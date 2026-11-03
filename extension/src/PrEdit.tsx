@@ -58,7 +58,10 @@ export function EditError({ store, field }: { store: ActionStore; field: EditFie
 }
 
 /** The panel header's Add action. */
-export const addItem = (onActivate: () => void, disabled: boolean, text = "Add") => [{ id: "add", important: true, text, iconProps: { iconName: "Add" }, disabled, onActivate }];
+/** A panel header action. Icon only by default (native ADO side panels use a bare "+"); `label` is then its tooltip and accessible name. */
+export const addItem = (onActivate: () => void, disabled: boolean, label = "Add", withText = false, iconName = "Add") => [
+  { id: "add", important: true, ...(withText ? { text: label } : { ariaLabel: label, tooltipProps: { text: label } }), iconProps: { iconName }, disabled, onActivate },
+];
 
 /** A remove button that shows on row hover or keyboard focus (see browser.css). */
 export function RemoveButton({ label, onClick, disabled, reason }: { label: string; onClick: () => void; disabled?: boolean; reason?: string }) {

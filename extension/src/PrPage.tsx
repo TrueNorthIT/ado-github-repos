@@ -157,7 +157,7 @@ function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: Act
   // CI-7: GitHub has no field that says whether Copilot code review is on, so it is offered and GitHub's own reason is shown if refused.
   const copilot = store.view?.copilot;
   const items = [
-    ...(canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : []),
+    ...(canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add", true) : []),
     ...(copilot?.offered ? [{ id: "copilot", important: false, text: "Request Copilot review", iconProps: { iconName: "Contact" }, disabled: store.busy, onActivate: () => void store.requestCopilotReview() }] : []),
   ];
   return (
@@ -180,7 +180,7 @@ function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: Act
                 {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
                 <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
                 {REVIEW[r.state].icon}
-                {canEdit && requested && <RemoveButton label={`Remove reviewer ${reviewerName(r.login)}`} disabled={store.busy} onClick={() => void store.removeReviewer(requested)} />}
+                {canEdit && (requested ? <RemoveButton label={`Remove reviewer ${reviewerName(r.login)}`} disabled={store.busy} onClick={() => void store.removeReviewer(requested)} /> : <span className="gh-pr-remove-spacer" aria-hidden="true" />)}
               </li>
             );
           })}
@@ -199,7 +199,7 @@ function Labels({ pr, store, edit, repo }: { pr: PrPageData; store: ActionStore;
   // The edit node knows the label ids; until it loads (or if it fails) the page's own labels show read-only.
   const labels = edit ? edit.node.labels.nodes.map(toLabelOption) : pr.labels.map((l) => toLabelOption({ id: l.name, name: l.name, color: l.color }));
   return (
-    <Section title="Tags" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+    <Section title="Tags" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add tag") : undefined}>
       <EditError store={store} field="labels" />
       {adding && edit && <LabelsAdd repo={repo} applied={labels.map((l) => l.id)} onClose={() => setAdding(false)} onPick={(l) => (setAdding(false), void store.addLabel(edit.node.id, l.id))} />}
       {labels.length ? (
@@ -272,7 +272,7 @@ function WorkItems({ ids, pinned, version, store, edit }: { ids: number[]; pinne
   else if (wi.t === "error") body = <span className="secondary-text">Work items could not be loaded.</span>;
   else body = <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={canEdit ? { removable: workItemInBody(edit!.node, w.id) && !pinned.includes(w.id), pinned: pinned.includes(w.id), busy: store.busy, onRemove: () => void store.removeWorkItem(edit!.node.id, w.id) } : undefined} />)}</ul>;
   return (
-    <Section title="Work items" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+    <Section title="Work items" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add work item") : undefined}>
       <EditError store={store} field="workItems" />
       {adding && edit && <WorkItemsAdd linked={ids} onClose={() => setAdding(false)} onPick={(w) => (setAdding(false), void store.addWorkItem(edit.node.id, w.id))} />}
       {body}
@@ -288,7 +288,7 @@ function Assignees({ store, edit, repo }: { store: ActionStore; edit: EditData; 
   const list = edit.node.assignees.nodes;
   if (!list.length && !canEdit) return null;
   return (
-    <Section title="Assignees" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+    <Section title="Assignees" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add assignee") : undefined}>
       <EditError store={store} field="assignees" />
       {adding && <PeopleAdd repo={repo} kind="assignees" current={list.map((a) => ({ kind: "user" as const, login: a.login }))} onClose={() => setAdding(false)} onPick={(c) => (setAdding(false), void store.addAssignee(edit.node.id, c))} />}
       {list.length ? (
@@ -312,7 +312,7 @@ function Milestone({ store, edit, repo }: { store: ActionStore; edit: EditData; 
   const m = edit.node.milestone;
   if (!m && !canEdit) return null;
   return (
-    <Section title="Milestone" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, m ? "Change" : "Add") : undefined}>
+    <Section title="Milestone" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, m ? "Change milestone" : "Add milestone", false, m ? "Edit" : "Add") : undefined}>
       <EditError store={store} field="milestone" />
       {adding && <MilestoneAdd repo={repo} onClose={() => setAdding(false)} onPick={(o) => (setAdding(false), void store.setMilestone(edit.node.id, o.id))} />}
       {m ? (
@@ -335,7 +335,7 @@ function Projects({ store, edit, repo }: { store: ActionStore; edit: EditData; r
   const rows = edit.projects;
   if (!rows || (!rows.length && !canEdit)) return null; // null: GitHub refuses Projects for this sign-in
   return (
-    <Section title="Projects" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+    <Section title="Projects" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add to a project") : undefined}>
       <EditError store={store} field="projects" />
       {adding && <ProjectsAdd repo={repo} attached={rows.map((r) => r.projectId)} onClose={() => setAdding(false)} onPick={(p) => (setAdding(false), void store.addProject(edit.node.id, p.id))} />}
       {rows.length ? (
