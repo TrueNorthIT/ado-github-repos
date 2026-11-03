@@ -507,3 +507,19 @@ describe("ED-9: editPermissions", () => {
     expect(editPermissions(n).assignees, "Expected no assignee edit when nothing allows it").toBe(false);
   });
 });
+
+describe("removeWorkItemFromBody: mentions the Boards app turned into links", () => {
+  // Live finding (0.26.0): the Azure Boards GitHub app rewrites `AB#123` in a PR body to `[AB#123](https://dev.azure.com/...)`,
+  // so removing only the mention left an empty `[](url)` link behind.
+  it("removes the whole link, not just its text", () => {
+    const b = "Intro.\n\nRelates to [AB#42](https://dev.azure.com/o/p/_workitems/edit/42).\n\nOutro.";
+    expect(removeWorkItemFromBody(b, 42)).toBe("Intro.\n\nRelates to.\n\nOutro.");
+  });
+  it("drops a line that held only the linked mention", () => {
+    expect(removeWorkItemFromBody("Intro.\n[AB#42](https://dev.azure.com/o/p/_workitems/edit/42)", 42)).toBe("Intro.");
+  });
+  it("leaves other links and ids alone", () => {
+    const b = "See [AB#43](https://dev.azure.com/o/p/_workitems/edit/43) and [AB#42](https://dev.azure.com/o/p/_workitems/edit/42).";
+    expect(removeWorkItemFromBody(b, 42)).toBe("See [AB#43](https://dev.azure.com/o/p/_workitems/edit/43) and.");
+  });
+});
