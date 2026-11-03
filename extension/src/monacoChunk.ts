@@ -131,7 +131,10 @@ function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLEle
   fit();
   const subs = [ed.onDidLayoutChange(fit), ed.onDidScrollChange((e) => { if (e.scrollLeftChanged) fit(); })];
   let id = "";
-  const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: true };
+  // suppressMouseDown must stay false: true makes Monaco preventDefault every mousedown in the zone, so the reply box
+  // never took focus and dropdowns never opened (seen live in 0.25.0). With false Monaco ignores the zone entirely.
+  // Don't stopPropagation on `wrap` either: React 16 handles events at document, so the card's own handlers would die.
+  const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: false };
   ed.changeViewZones((a) => { id = a.addZone(zone); });
   const ro = new ResizeObserver(() => {
     const h = Math.ceil(node.getBoundingClientRect().height);

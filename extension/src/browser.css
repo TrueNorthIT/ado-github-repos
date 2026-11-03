@@ -348,3 +348,8 @@
 .gh-pr-copilot-msg { margin-top: 8px; }
 .gh-signature { display: inline-flex; }
 .gh-signature:focus-visible { outline: 2px solid var(--communication-background, #0078d4); outline-offset: 1px; }
+
+/* Inline zones (threads, annotations) host real controls. Monaco stacks .view-lines above .view-zones and routes zone
+   clicks through its own hit testing, so without this a click in a zone lands on the code and inputs never focus
+   (seen live in 0.25.0). The layer itself is 0px tall, so only the zone cards take clicks. */
+.monaco-editor .lines-content > .view-zones { z-index: 1; }
