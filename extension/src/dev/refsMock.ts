@@ -59,7 +59,7 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
     if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
     const tip = resolve(rr, String(v.ref));
     if (!tip) return json({ data: { repository: { ref: null } } });
-    const all = historyOf(rr, tip);
+    const all = historyOf(rr, tip).filter((c) => !v.path || filesOf(rr, [c]).some((f: any) => f.filename === v.path || f.filename.startsWith(`${v.path}/`)));
     const start = v.after ? Number(atob(v.after).split(":")[1]) || 0 : 0;
     const end = Math.min(start + PAGE, all.length);
     return json({ data: { repository: { ref: { target: { history: { pageInfo: { hasNextPage: end < all.length, endCursor: btoa(`c:${end}`) }, nodes: all.slice(start, end).map(commitNode) } } } } } });
