@@ -9,7 +9,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
 const PORT = Number(process.env.SHOTS_PORT) || 3099;
 const BASE = `http://localhost:${PORT}/hub.html`;
@@ -71,7 +72,8 @@ try {
       const file = resolve(outDir, `${name}-${theme}.png`);
       const r = spawnSync(chrome, [
         "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
-        `--user-data-dir=${resolve("dist-dev/shots-profile")}`, "--window-size=1440,900", "--virtual-time-budget=8000",
+        // A throwaway profile outside the repo: Chrome can install managed extensions into it, whose *.test.js files vitest would pick up.
+        `--user-data-dir=${join(tmpdir(), "gh-repos-shots-profile")}`, "--window-size=1440,900", "--virtual-time-budget=8000",
         `--screenshot=${file}`, url,
       ], { stdio: "ignore", timeout: 60000 });
       console.log(`${r.status === 0 && existsSync(file) ? "ok  " : "FAIL"} ${name}-${theme}.png`);
