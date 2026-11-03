@@ -381,3 +381,10 @@
 .gh-pr-pill-x:hover, .gh-pr-pill-x:focus-visible { opacity: 1; background: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
 .gh-pr-pill-x:focus-visible { outline: 1px solid currentColor; }
 .gh-pr-issue { gap: 8px; }
+.gh-pr-header .bolt-header-title:has(.gh-pr-title-form), .gh-pr-header .bolt-header-title-area:has(.gh-pr-title-form), .gh-pr-header .bolt-header-title-row:has(.gh-pr-title-form) { overflow: visible; }
+.gh-pr-title-form { position: relative; }
+.gh-pr-title-form .gh-pr-field-error { position: absolute; top: 100%; left: 0; z-index: 5; padding: 2px 8px; border-radius: 2px; background: var(--callout-background-color, rgba(255, 255, 255, 1)); box-shadow: 0 2px 6px var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
+.gh-pr-desc-edit { padding: 0 16px 16px; }
+.gh-pr-desc-edit .bolt-textfield { width: 100%; }
+.gh-pr-desc-edit textarea { width: 100%; box-sizing: border-box; }
+.gh-pr-desc-edit { flex: 1 1 auto; min-width: 0; width: 100%; box-sizing: border-box; }

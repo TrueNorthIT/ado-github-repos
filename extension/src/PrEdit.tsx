@@ -92,6 +92,8 @@ export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeho
   const [items, setItems] = React.useState<T[]>([]);
   const [loading, setLoading] = React.useState(false);
   const seq = React.useRef(0);
+  const box = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => void setTimeout(() => box.current?.querySelector("input")?.focus(), 200), []); // after the menu button gives focus back
   const run = React.useCallback((q: string) => {
     const mine = ++seq.current;
     setLoading(true);
@@ -101,7 +103,7 @@ export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeho
     );
   }, [search]);
   return (
-    <div className="gh-pr-add flex-row flex-center" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+    <div ref={box} className="gh-pr-add flex-row flex-center" onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <TagPicker<T>
         className="gh-pr-add-picker flex-grow"
         ariaLabel={ariaLabel}

@@ -2,6 +2,7 @@
 import { PRS, ME } from "./prs";
 import type { FixturePr } from "./prs";
 import { threadTotals } from "./feed";
+import { editedBodyHtml, reviewRequestNodes } from "./edit";
 
 const avatarOf = (login: string) => (PRS.map((p) => p.node.author).find((a) => a?.login === login)?.avatarUrl as string | undefined) ?? "";
 const who = (login: string) => ({ login, avatarUrl: avatarOf(login) });
@@ -125,13 +126,13 @@ export function detailNode(p: FixturePr) {
       : n === 199 ? [{ author: who(ME), state: "APPROVED", submittedAt: "2026-10-30T10:00:00Z" }] : [];
   return {
     ...p.node,
-    body: n === 200 ? "Adds a retry helper. Relates to AB#1000 and AB#1001; AB#999999 is a typo." : n === 197 ? "" : p.node.body,
-    bodyHTML: n === 200 ? RICH_BODY : n === 197 ? "" : `<p>${p.node.body}</p>`,
+    body: p.node.body,
+    bodyHTML: editedBodyHtml(n) ?? (n === 200 ? RICH_BODY : n === 197 ? "" : `<p>${p.node.body}</p>`),
     headRefOid: headSha(known ? n : 1),
     baseRefOid: baseSha(known ? n : 1),
     mergeable: n === 199 ? "CONFLICTING" : n === 198 ? "UNKNOWN" : "MERGEABLE",
     statusCheckRollup: rollup ? { state: rollup } : null,
-    reviewRequests: { nodes: n === 200 || n === 312 ? [{ requestedReviewer: who("bob-dev") }] : [] },
+    reviewRequests: { nodes: reviewRequestNodes(n) },
     reviews: { nodes: reviews },
     // Review threads follow the feed fixtures, so resolving one in the feed moves the header's "x/y comments resolved".
     ...(threadTotals(n) && { reviewThreads: { totalCount: threadTotals(n)![1], nodes: [...Array(threadTotals(n)![0]).fill(true), ...Array(threadTotals(n)![1] - threadTotals(n)![0]).fill(false)].map((isResolved) => ({ isResolved })) } }),

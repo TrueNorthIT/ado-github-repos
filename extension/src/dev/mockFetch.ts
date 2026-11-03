@@ -5,6 +5,7 @@ import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
 import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, rerunRun } from "./fixtures/actions";
+import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from "./fixtures/edit";
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
@@ -39,6 +40,8 @@ function graphql(init: RequestInit | undefined, sc: string): Response {
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
   const refs = refsGraphql(query, variables, sc); // commits, branches, tags and their writes (before the PR mutations: both have a deleteRef)
   if (refs) return refs;
+  const edit = editGraphql(query, variables, sc); // batch 2: the edit query, picker searches and edit writes (before the PR mutations: updatePullRequest is in both)
+  if (edit) return "code" in edit ? status(edit.code) : json(edit);
   if (/^\s*mutation\b/.test(query)) {
     const act = actionsMutation(query, variables, sc);
     if (act) return "code" in act ? status(act.code) : json(act);
@@ -122,6 +125,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
   if (refsAnswer) return refsAnswer;
+  const reviewers = /^\/pulls\/(\d+)\/requested_reviewers$/.exec(rest);
+  if (reviewers && init?.method === "DELETE") return status(removeRequestedReviewers(Number(reviewers[1]), JSON.parse(String(init.body ?? "null")), sc));
   const files = /^\/pulls\/(\d+)\/files$/.exec(rest);
   if (files) return repo.fullName.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === Number(files[1])) ? json(restFiles(Number(files[1]))) : status(404);
   const rerun = /^\/actions\/runs\/(\d+)\/(rerun|rerun-failed-jobs)$/.exec(rest);
@@ -155,10 +160,11 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
     WI_OVERRIDE.set(Number(wiPatch[1]), JSON.parse(String(init.body))[0].value);
     return json({ id: Number(wiPatch[1]) });
   }
+  if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/wiql$/.test(u.pathname) && init?.method === "POST") return json(wiqlResult(JSON.parse(String(init.body)).query));
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitems$/.test(u.pathname)) {
     if (sc === "workItemsDenied") return status(403);
     const ids = (u.searchParams.get("ids") ?? "").split(",").map(Number);
-    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": id === 1000 ? "Retry failed sync jobs" : `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
+    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
   }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
