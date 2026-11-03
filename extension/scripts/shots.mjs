@@ -35,10 +35,10 @@ const MOCK_PAGES = {
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
 };
 
-/** Live pages: the sandbox's fixed PRs, plus a CI run on test/failing and one failed job, looked up through the API. */
+/** Live pages: the sandbox's fixed PRs, plus a CI run on test/failing and one failed job, looked up through the dev server's /__gh proxy (which holds the token and guards). */
 async function livePages() {
   const gh = async (path) => {
-    const r = await fetch(`https://api.github.com/repos/${SANDBOX}${path}`, { headers: { Authorization: `Bearer ${process.env.GH_SANDBOX_TOKEN}`, Accept: "application/vnd.github+json" } });
+    const r = await fetch(`http://localhost:${PORT}/__gh/repos/${SANDBOX}${path}`, { headers: { Accept: "application/vnd.github+json" } });
     if (!r.ok) throw new Error(`GitHub ${path}: HTTP ${r.status}`);
     return r.json();
   };
@@ -81,18 +81,18 @@ async function waitForServer(url, ms = 60000) {
 }
 
 if (LIVE && !process.env.GH_SANDBOX_TOKEN) { console.error("--live needs GH_SANDBOX_TOKEN (a GitHub App user token for the sandbox); it is not set."); process.exit(2); }
-const PAGES = LIVE ? await livePages() : MOCK_PAGES;
 const args = process.argv.slice(2).filter((a) => a !== "--live");
-const names = args.length ? args : Object.keys(PAGES);
-const unknown = names.filter((n) => !PAGES[n]);
-if (unknown.length) { console.error(`Unknown page(s): ${unknown.join(", ")}. Known: ${Object.keys(PAGES).join(", ")}`); process.exit(2); }
-
 const outDir = resolve("shots");
 mkdirSync(outDir, { recursive: true });
 const chrome = chromePath();
-const server = spawn(process.execPath, ["build.mjs", "--dev"], { env: { ...process.env, PORT: String(PORT), DEV_OUT: LIVE ? "dist-dev/shots-live" : "dist-dev/shots", LIVE: LIVE ? "1" : "" }, stdio: "ignore" });
+// stderr is kept so the dev server's [live guard] refusals and proxy errors show up here.
+const server = spawn(process.execPath, ["build.mjs", "--dev"], { env: { ...process.env, PORT: String(PORT), DEV_OUT: LIVE ? "dist-dev/shots-live" : "dist-dev/shots", LIVE: LIVE ? "1" : "" }, stdio: ["ignore", "ignore", "inherit"] });
 try {
   await waitForServer(`${BASE}?hub=files`);
+  const PAGES = LIVE ? await livePages() : MOCK_PAGES;
+  const names = args.length ? args : Object.keys(PAGES);
+  const unknown = names.filter((n) => !PAGES[n]);
+  if (unknown.length) { console.error(`Unknown page(s): ${unknown.join(", ")}. Known: ${Object.keys(PAGES).join(", ")}`); process.exitCode = 2; names.length = 0; }
   for (const name of names) {
     for (const theme of ["light", "dark"]) {
       const q = PAGES[name];

@@ -1,6 +1,6 @@
 // __TN_MOCK__ Stand-in for azure-devops-extension-sdk, aliased in by build.mjs --dev. Implements only what the app calls.
 import type { GitHubTokenSet } from "../../../shared/contract";
-import { LIVE, LIVE_TOKEN } from "./live";
+import { LIVE } from "./live";
 
 export const scenario = () => new URLSearchParams(location.search).get("scenario") || "ok";
 /** Which hub contribution the mock page pretends to be: `?hub=commits|pushes|branches|tags|prs|actions|security`; anything else is Files. Read only here. */
@@ -24,7 +24,7 @@ const persist = (key: string, v: any) => {
 };
 
 export const fakeTokens = (): GitHubTokenSet => ({
-  accessToken: LIVE ? LIVE_TOKEN : "mock-access-token",
+  accessToken: LIVE ? "live-token-held-by-dev-server" : "mock-access-token", // live: the dev server's /__gh proxy swaps in the real token
   expiresAt: new Date(Date.now() + 8 * 3600e3).toISOString(),
   refreshToken: "mock-refresh-token",
   refreshTokenExpiresAt: new Date(Date.now() + 180 * 86400e3).toISOString(),
@@ -34,7 +34,7 @@ export const fakeTokens = (): GitHubTokenSet => ({
 const TOKENS = "github-auth/tokens";
 try {
   if (LIVE) {
-    docs.set(TOKENS, { id: "tokens", ...fakeTokens() }); // signed in with the injected token; never written to localStorage
+    docs.set(TOKENS, { id: "tokens", ...fakeTokens() }); // signed in with a placeholder (the dev server holds the token); never written to localStorage
   } else if (scenario() === "signedOut") {
     docs.delete(TOKENS); persist(TOKENS, undefined);
     localStorage.removeItem(PREFIX + "seeded");
