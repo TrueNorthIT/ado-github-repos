@@ -187,6 +187,11 @@ export function removeWorkItemFromBody(body: string | null | undefined, id: numb
     for (const m of hits.reverse()) {
       let start = m.index!;
       let end = start + m[0].length;
+      // The Azure Boards app rewrites `AB#123` into `[AB#123](https://dev.azure.com/...)`: take the whole link.
+      if (line[start - 1] === "[" && line[end] === "]" && line[end + 1] === "(") {
+        const close = line.indexOf(")", end + 2);
+        if (close > 0) (start--, (end = close + 1));
+      }
       while (start > 0 && line[start - 1] === " ") start--;
       if (start === 0) while (line[end] === " ") end++;
       line = line.slice(0, start) + line.slice(end);
