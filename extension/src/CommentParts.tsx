@@ -206,14 +206,19 @@ export function ReactionBar({ store, id }: { store: FeedStore; id: string }) {
   const can = id === store.prId ? store.pr.viewerCanReact : !!store.meta[id]?.viewerCanReact;
   if (!shown.length && !can) return null;
   const busy = store.busy.has(`react:${id}`);
-  const items: IMenuItem[] = reactionDefs().map((d) => ({
-    id: d.content,
-    text: `${d.emoji}  ${REACTION_LABEL[d.content]}`,
-    ariaLabel: `${state.find((r) => r.content === d.content)?.viewerHasReacted ? "Remove" : "Add"} ${REACTION_LABEL[d.content]} reaction`,
-    checked: state.find((r) => r.content === d.content)?.viewerHasReacted,
-    disabled: busy,
-    onActivate: () => void store.react(id, d.content),
-  }));
+  // Plain items, not `checked` ones: azure-devops-ui keeps a menu open after a checkbox item is activated, and the reaction
+  // re-render then left it stuck open with no light dismiss (seen live in 0.27.0). Mine are marked with a check icon instead.
+  const items: IMenuItem[] = reactionDefs().map((d) => {
+    const mine = !!state.find((r) => r.content === d.content)?.viewerHasReacted;
+    return {
+      id: d.content,
+      text: `${d.emoji}  ${REACTION_LABEL[d.content]}`,
+      ariaLabel: `${mine ? "Remove" : "Add"} ${REACTION_LABEL[d.content]} reaction`,
+      secondaryText: mine ? "✓" : undefined,
+      disabled: busy,
+      onActivate: () => void store.react(id, d.content),
+    };
+  });
   return (
     <div className="gh-reactions flex-row flex-center" role="group" aria-label="Reactions">
       {shown.map((r) => (
