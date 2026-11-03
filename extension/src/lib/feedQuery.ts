@@ -10,6 +10,12 @@ export interface FeedParams {
   after?: string;
 }
 
+/** One review thread as the feed reads it; addPullRequestReviewThread selects the same shape so a new thread renders unchanged. */
+export const THREAD_FIELDS = `id isResolved isOutdated path line originalLine startLine diffSide subjectType
+          comments(first: 100) {
+            nodes { id databaseId author { login avatarUrl } bodyHTML body createdAt url replyTo { id } state }
+          }`;
+
 const ACTOR = "actor { login avatarUrl }";
 const FEED_QUERY = `query FeedQuery($owner: String!, $name: String!, $number: Int!, $after: String) {
   viewer { login avatarUrl }
@@ -35,12 +41,7 @@ const FEED_QUERY = `query FeedQuery($owner: String!, $name: String!, $number: In
         }
       }
       reviewThreads(first: 100) {
-        nodes {
-          id isResolved isOutdated path line originalLine startLine diffSide
-          comments(first: 100) {
-            nodes { id databaseId author { login avatarUrl } bodyHTML body createdAt url replyTo { id } }
-          }
-        }
+        nodes { ${THREAD_FIELDS} }
       }
     }
   }

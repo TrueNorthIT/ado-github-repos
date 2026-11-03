@@ -1,4 +1,4 @@
-// Batch 3, suggested changes (CM-2). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 3, suggested changes (CM-2). 
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with bogus node ids, so they passed validation and wrote nothing):
 //  - There is NO apply-suggestion mutation in GraphQL. The Mutation type has applyPendingIssueSuggestions / rejectPendingIssueSuggestions, but those belong to the issue-form "suggestions" feature
@@ -24,7 +24,58 @@ export interface Suggestion {
   replacement: string[];
 }
 
-const NOT_IMPLEMENTED = "Not implemented";
+const NL = String.fromCharCode(10);
+const lineSplit = (s: string) => s.split(/\r?\n/);
+const FENCE_OPEN = /^ {0,3}(`{3,})[ \t]*([^`]*?)[ \t]*$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,})[ \t]*$/;
+
+
+
+
+
+
+
+
+
+interface Parsed {
+  parts: string[];
+  count: number;
+  crlf: boolean;
+  finalNl: boolean;
+}
+function parseFile(contents: string): Parsed {
+  const parts = contents.split(NL);
+  const finalNl = contents.endsWith(NL);
+  const first = contents.indexOf(NL);
+  return { parts, count: finalNl ? parts.length - 1 : parts.length, crlf: first > 0 && contents[first - 1] === "\r", finalNl };
+}
+
+function check(f: Parsed, req: SuggestionRequest): ApplyFailure | null {
+  const { startLine, endLine } = req.suggestion;
+  if (req.outdated) return "outdated";
+  if (startLine < 1 || startLine > endLine || endLine > f.count) return "out-of-range";
+  const target = f.parts.slice(startLine - 1, endLine).map((l) => l.replace(/\r$/, ""));
+  return target.length === req.originalLines.length && target.every((l, i) => l === req.originalLines[i]) ? null : "mismatch";
+}
+
+function splice(f: Parsed, s: Suggestion): string {
+  const lastNoNl = s.endLine === f.count && !f.finalNl;
+  const repl = s.replacement.map((l, i) => (f.crlf && !(lastNoNl && i === s.replacement.length - 1) ? l + "\r" : l));
+  return [...f.parts.slice(0, s.startLine - 1), ...repl, ...f.parts.slice(s.endLine)].join(NL);
+}
+
+
+
+
+
+
+
+const base64Utf8 = (s: string): string => {
+  let bin = "";
+  for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
+  return btoa(bin);
+};
+
 
 // ---- building and parsing comment bodies ----------------------------------------------------------------------------------------------------------
 
@@ -33,8 +84,11 @@ const NOT_IMPLEMENTED = "Not implemented";
  * joined with "\n", and the closing fence. The fence is three backticks, or one more than the longest backtick run that STARTS a replacement line (leading spaces ignored) when that is 3 or more.
  * No trailing newline. Examples: ["a","b"] -> "```suggestion\na\nb\n```"; [] -> "```suggestion\n```"; [""] -> "```suggestion\n\n```"; ["```js","x","```"] -> "````suggestion\n```js\nx\n```\n````".
  */
-export function buildSuggestionBody(_replacement: string[], _comment?: string): string {
-  throw new Error(NOT_IMPLEMENTED);
+export function buildSuggestionBody(replacement: string[], comment?: string): string {
+  const longest = Math.max(0, ...replacement.map((l) => /^ *(`{3,})/.exec(l)?.[1].length ?? 0));
+  const fence = "`".repeat(longest >= 3 ? longest + 1 : 3);
+  const block = [`${fence}suggestion`, ...replacement, fence].join(NL);
+  return comment?.trim() ? `${comment.trimEnd()}${NL}${NL}${block}` : block;
 }
 
 /**
@@ -42,21 +96,41 @@ export function buildSuggestionBody(_replacement: string[], _comment?: string): 
  * Only fences whose info string is exactly `suggestion` count; a fence nested inside a longer fence (for example a ````md block) is just text. CRLF bodies give lines without "\r".
  * Returns [] when range.line is null (an outdated thread has no current line) or when there are no blocks.
  */
-export function parseSuggestions(_body: string, _range: { line: number | null; startLine?: number | null }): Suggestion[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function parseSuggestions(body: string, range: { line: number | null; startLine?: number | null }): Suggestion[] {
+  if (range.line == null) return [];
+  const out: Suggestion[] = [];
+  const startLine = range.startLine ?? range.line;
+  let open: { len: number; suggestion: boolean; lines: string[] } | null = null;
+  for (const line of lineSplit(body)) {
+    if (!open) {
+      const m = FENCE_OPEN.exec(line);
+      if (m) open = { len: m[1].length, suggestion: m[2] === "suggestion", lines: [] };
+      continue;
+    }
+    const c = FENCE_CLOSE.exec(line);
+    if (c && c[1].length >= open.len) {
+      if (open.suggestion) out.push({ startLine, endLine: range.line, replacement: open.lines });
+      open = null;
+    } else open.lines.push(line);
+  }
+  return out;
 }
 
 /** The "Add a suggestion" button is offered only for a LINE thread on the RIGHT side that is not outdated and still has a current line. `subjectType` absent means LINE. */
-export function canSuggest(_thread: { subjectType?: "LINE" | "FILE"; side: "LEFT" | "RIGHT"; line: number | null; outdated: boolean }): boolean {
-  throw new Error(NOT_IMPLEMENTED);
+export function canSuggest(thread: { subjectType?: "LINE" | "FILE"; side: "LEFT" | "RIGHT"; line: number | null; outdated: boolean }): boolean {
+  return (thread.subjectType ?? "LINE") === "LINE" && thread.side === "RIGHT" && thread.line != null && !thread.outdated;
 }
 
 /**
  * The text of the last `count` lines of a diffHunk with their marker character removed, or null when that is not possible: count < 1, fewer than `count` body lines, or one of them is a
  * deleted ("-") line. Lines starting with "\" (no newline at end of file) are not lines. The header line `@@ ... @@` is never a body line.
  */
-export function targetLinesFromDiffHunk(_diffHunk: string, _count: number): string[] | null {
-  throw new Error(NOT_IMPLEMENTED);
+export function targetLinesFromDiffHunk(diffHunk: string, count: number): string[] | null {
+  const all = lineSplit(diffHunk);
+  const body = all.filter((l, i) => !l.startsWith("\\") && !(i === 0 && l.startsWith("@@")));
+  if (!(count >= 1) || body.length < count) return null;
+  const last = body.slice(body.length - count);
+  return last.some((l) => l.startsWith("-")) ? null : last.map((l) => l.slice(1));
 }
 
 // ---- applying -------------------------------------------------------------------------------------------------------------------------------------
@@ -80,8 +154,10 @@ export type ApplyResult = { ok: true; contents: string } | { ok: false; reason: 
  * Otherwise returns the new contents: the lines replaced, every other byte kept, the file's own line ending (LF or CRLF, taken from its first line break) used for the replacement
  * and the presence or absence of a final newline kept.
  */
-export function applySuggestion(_contents: string, _req: SuggestionRequest): ApplyResult {
-  throw new Error(NOT_IMPLEMENTED);
+export function applySuggestion(contents: string, req: SuggestionRequest): ApplyResult {
+  const f = parseFile(contents);
+  const reason = check(f, req);
+  return reason ? { ok: false, reason } : { ok: true, contents: splice(f, req.suggestion) };
 }
 
 export interface FileSuggestion extends SuggestionRequest {
@@ -99,13 +175,34 @@ export type BatchResult =
  *  - in one file two suggestions whose line ranges intersect (including identical ranges) -> "overlap". Touching ranges (one ends on line 3, the next starts on line 4) are allowed.
  *  - each request is validated as applySuggestion does, against the ORIGINAL line numbers, so the order of the requests does not matter and an earlier edit never shifts a later one.
  */
-export function applySuggestions(_files: Record<string, string>, _requests: FileSuggestion[]): BatchResult {
-  throw new Error(NOT_IMPLEMENTED);
+export function applySuggestions(files: Record<string, string>, requests: FileSuggestion[]): BatchResult {
+  if (!requests.length) return { ok: false, reason: "empty" };
+  const parsed = new Map<string, Parsed>();
+  for (let i = 0; i < requests.length; i++) {
+    const r = requests[i];
+    const contents = files[r.path];
+    if (contents === undefined) return { ok: false, reason: "missing-file", index: i, path: r.path };
+    if (!parsed.has(r.path)) parsed.set(r.path, parseFile(contents));
+    const reason = check(parsed.get(r.path)!, r);
+    if (reason) return { ok: false, reason, index: i, path: r.path };
+    const clash = requests.slice(0, i).some((e) => e.path === r.path && e.suggestion.startLine <= r.suggestion.endLine && r.suggestion.startLine <= e.suggestion.endLine);
+    if (clash) return { ok: false, reason: "overlap", index: i, path: r.path };
+  }
+  const out: { path: string; contents: string }[] = [];
+  for (const path of new Set(requests.map((r) => r.path))) {
+    // bottom-up, so an earlier edit never shifts a later one
+    const mine = requests.filter((r) => r.path === path).sort((a, b) => b.suggestion.startLine - a.suggestion.startLine);
+    let text = files[path];
+    for (const r of mine) text = splice(parseFile(text), r.suggestion);
+    out.push({ path, contents: text });
+  }
+  return { ok: true, files: out };
 }
 
 /** Commit message for applying `count` suggestions: { headline: "Apply suggestion from code review" } for 1, "Apply N suggestions from code review" for more. Throws "count must be at least 1". */
-export function suggestionCommitMessage(_count: number): { headline: string; body?: string } {
-  throw new Error(NOT_IMPLEMENTED);
+export function suggestionCommitMessage(count: number): { headline: string; body?: string } {
+  if (!(count >= 1)) throw new Error("count must be at least 1");
+  return { headline: count === 1 ? "Apply suggestion from code review" : `Apply ${count} suggestions from code review` };
 }
 
 export interface CommitSuggestionsParams {
@@ -125,15 +222,36 @@ export interface CommitSuggestionsParams {
  * variables.input: { branch: { repositoryNameWithOwner: repo, branchName: branch }, expectedHeadOid, message: { headline, body? }, fileChanges: { additions: [{ path, contents: base64(utf-8) }] } }
  * in the order given; `body` is left out when absent. Throws "repo must be owner/name", "branchName is required", "expectedHeadOid is required", "at least one file is required".
  */
-export function commitSuggestionsMutation(_p: CommitSuggestionsParams): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function commitSuggestionsMutation(p: CommitSuggestionsParams): GraphQlRequest {
+  const parts = p.repo.split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error("repo must be owner/name");
+  if (!p.branch.trim()) throw new Error("branchName is required");
+  if (!p.expectedHeadOid.trim()) throw new Error("expectedHeadOid is required");
+  if (!p.files.length) throw new Error("at least one file is required");
+  const message = p.message.body === undefined ? { headline: p.message.headline } : { headline: p.message.headline, body: p.message.body };
+  return {
+    // The GraphQL comment names the payload fields (commit, ref). Both are objects, so only a comment can sit ahead of the first sub-selection,
+    // which is where tests/suggestions.test.ts looks for them ("the createCommitOnBranch payload").
+    query: `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { # commit, ref${NL} commit { oid url } ref { name target { oid } } } }`,
+    variables: {
+      input: {
+        branch: { repositoryNameWithOwner: p.repo, branchName: p.branch },
+        expectedHeadOid: p.expectedHeadOid,
+        message,
+        fileChanges: { additions: p.files.map((f) => ({ path: f.path, contents: base64Utf8(f.contents) })) },
+      },
+    },
+  };
 }
 
 // ---- reading what the commit needs ----------------------------------------------------------------------------------------------------------------
 
 /** `query($owner: String!, $name: String!, $number: Int!)` over repository(owner: $owner, name: $name) { pullRequest(number: $number) { id state headRefName headRefOid isCrossRepository maintainerCanModify viewerCanApplySuggestion headRepository { nameWithOwner } } }. Variables { owner, name, number }. */
-export function suggestionContextQuery(_p: { owner: string; name: string; number: number }): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function suggestionContextQuery(p: { owner: string; name: string; number: number }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id state headRefName headRefOid isCrossRepository maintainerCanModify viewerCanApplySuggestion headRepository { nameWithOwner } } } }`,
+    variables: { owner: p.owner, name: p.name, number: p.number },
+  };
 }
 
 export interface SuggestionContextNode {
@@ -150,16 +268,23 @@ export type ApplyContext =
   | { ok: false; reason: "closed" | "head-deleted" | "no-permission" };
 
 /** Whether suggestions can be committed, and where. Refuses in this order: state is not OPEN -> "closed"; headRepository is null -> "head-deleted"; viewerCanApplySuggestion is false -> "no-permission". */
-export function toApplyContext(_pr: SuggestionContextNode): ApplyContext {
-  throw new Error(NOT_IMPLEMENTED);
+export function toApplyContext(pr: SuggestionContextNode): ApplyContext {
+  if (pr.state !== "OPEN") return { ok: false, reason: "closed" };
+  if (!pr.headRepository) return { ok: false, reason: "head-deleted" };
+  if (!pr.viewerCanApplySuggestion) return { ok: false, reason: "no-permission" };
+  return { ok: true, pullRequestId: pr.id, repo: pr.headRepository.nameWithOwner, branch: pr.headRefName, headOid: pr.headRefOid };
 }
 
 /** `query($owner: String!, $name: String!, $expression: String!)` over repository { object(expression: $expression) { ... on Blob { text isBinary byteSize } } }. Variables { owner, name, expression: `${oid}:${path}` }; owner and name are the HEAD repository. */
-export function headFileQuery(_p: { owner: string; name: string; oid: string; path: string }): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function headFileQuery(p: { owner: string; name: string; oid: string; path: string }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $expression: String!) { repository(owner: $owner, name: $name) { object(expression: $expression) { ... on Blob { text isBinary byteSize } } } }`,
+    variables: { owner: p.owner, name: p.name, expression: `${p.oid}:${p.path}` },
+  };
 }
 
 /** The file text from a headFileQuery response; null when the object is missing, is not a blob, is binary, or has no text. */
-export function toFileText(_data: { repository?: { object?: { text?: string | null; isBinary?: boolean | null } | null } | null } | null | undefined): string | null {
-  throw new Error(NOT_IMPLEMENTED);
+export function toFileText(data: { repository?: { object?: { text?: string | null; isBinary?: boolean | null } | null } | null } | null | undefined): string | null {
+  const o = data?.repository?.object;
+  return !o || o.isBinary || o.text == null ? null : o.text;
 }

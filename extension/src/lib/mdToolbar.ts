@@ -1,15 +1,6 @@
-// Batch 3, formatting toolbar for the comment box (CM-9). STUBS: the developer implements them. Every function throws "Not implemented" except the types.
-//
-// No GraphQL here: pure text edits over a textarea's (value, selStart, selEnd). Facts the rules rest on (GitHub-flavoured markdown, as GitHub's own toolbar writes it):
-//  - bold is **text**, italic is _text_, inline code is `text`, a link is [text](url), a quote line starts "> ", lists start "- ", "1. " and "- [ ] ", a heading is "### " (the toolbar's Heading button).
-//  - a suggestion is a fenced block with info string `suggestion` (see suggestions.ts); its fence is lengthened when the content has a fence of its own.
-//  - A textarea selection is [selStart, selEnd) with selStart <= selEnd; every function here expects that order and returns the new selection in the same terms.
-//
-// Selection rule for line-prefix edits (quote, lists, heading): the selection keeps covering the same text. selStart moves by the change made on its own line; selEnd by all the changes on
-// lines up to and including its own. A caret (selStart == selEnd) is the same rule, so a caret at column 0 ends up after the new prefix.
-//
-// Not covered by these rules (decisions, so the developer need not guess): indentation before a list marker is kept; a multi-line selection is wrapped as a whole by bold, italic and inline code
-// (no per-line wrapping); the suggestion button does not toggle (pressing it twice adds a second block, as on GitHub).
+// Batch 3, formatting toolbar for the comment box (CM-9): pure text edits over a textarea's (value, selStart, selEnd).
+// Markers are GitHub's own: **bold**, _italic_, `code`, [text](url), "> " quote, "- " / "1. " / "- [ ] " lists, "### " heading, ```suggestion fence.
+// Selection rule for line-prefix edits: selStart moves by the change on its own line, selEnd by every change up to and including its line.
 
 export interface TextEdit {
   value: string;
@@ -19,79 +10,143 @@ export interface TextEdit {
 
 export type ToolbarAction = "bold" | "italic" | "code" | "link" | "quote" | "bulletList" | "numberedList" | "taskList" | "heading" | "suggestion";
 
-const NOT_IMPLEMENTED = "Not implemented";
+const edit = (value: string, selStart: number, selEnd: number): TextEdit => ({ value, selStart, selEnd });
+const NL = String.fromCharCode(10);
+const FENCE = "```";
 
-/**
- * **bold**. Non-empty selection "x":
- *  - already wrapped, with the markers just outside the selection ("**|x|**") or inside it ("|**x**|"): the markers are removed and the text stays selected;
- *  - otherwise wrapped as "**x**" with the text (not the markers) selected.
- * Empty selection: inserts "****" with the caret between; if the caret is already between an empty pair ("**|**") the pair is removed.
- */
-export function bold(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** Toggle a symmetric marker around the selection (bold, italic, inline code). */
+function wrap(m: string, value: string, s: number, e: number): TextEdit {
+  const n = m.length;
+  const sel = value.slice(s, e);
+  const around = s - n >= 0 && value.slice(s - n, s) === m && value.slice(e, e + n) === m;
+  if (s === e) return around ? edit(value.slice(0, s - n) + value.slice(e + n), s - n, s - n) : edit(value.slice(0, s) + m + m + value.slice(e), s + n, s + n);
+  if (sel.length >= 2 * n && sel.startsWith(m) && sel.endsWith(m)) return edit(value.slice(0, s) + sel.slice(n, -n) + value.slice(e), s, e - 2 * n);
+  if (around) return edit(value.slice(0, s - n) + sel + value.slice(e + n), s - n, e - n);
+  return edit(value.slice(0, s) + m + sel + m + value.slice(e), s + n, e + n);
 }
 
-/** _italic_ with the same rules as bold, marker "_". Only "_" counts as italic, so text inside ** ** is wrapped, not unwrapped. */
-export function italic(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** **bold**; toggles off. */
+export function bold(value: string, selStart: number, selEnd: number): TextEdit {
+  return wrap("**", value, selStart, selEnd);
 }
 
-/**
- * Code. A selection with no line break is wrapped in single backticks with the same toggle rules as bold (marker "`"; empty selection gives "``" with the caret between).
- * A selection containing a line break is widened to whole lines and fenced: "```\n<lines>\n```", the inner lines selected, any text after the fence (including a final newline) kept.
- * If the widened lines already sit between a line that is exactly "```" and another that is exactly "```", the two fence lines are removed instead and the inner lines stay selected.
- */
-export function code(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** _italic_; toggles off. Only "_" counts, so text inside ** ** is wrapped, not unwrapped. */
+export function italic(value: string, selStart: number, selEnd: number): TextEdit {
+  return wrap("_", value, selStart, selEnd);
 }
 
-/**
- * [text](url).
- *  - a selection that is already a link "[text](target)" or sits exactly on the text of one ("[|text|](target)") becomes "text", selected;
- *  - a selection that starts with http:// or https:// becomes "[](the url)" with the caret between the brackets;
- *  - any other non-empty selection "text" becomes "[text](url)" with the placeholder `url` selected;
- *  - an empty selection inserts "[](url)" with the caret between the brackets.
- */
-export function link(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** Inline code for a one-line selection; a fenced block (whole lines) when the selection spans lines; toggles both off. */
+export function code(value: string, selStart: number, selEnd: number): TextEdit {
+  if (!value.slice(selStart, selEnd).includes(NL)) return wrap("`", value, selStart, selEnd);
+  const end = value[selEnd - 1] === NL ? selEnd - 1 : selEnd;
+  const ls = value.lastIndexOf(NL, selStart - 1) + 1;
+  const nl = value.indexOf(NL, end);
+  const le = nl < 0 ? value.length : nl;
+  const lines = value.slice(ls, le);
+  const prevStart = ls > 0 ? value.lastIndexOf(NL, ls - 2) + 1 : 0;
+  const rest = value.slice(le + 1);
+  const fenceEnd = rest.indexOf(NL);
+  if (ls > 0 && le < value.length && value.slice(prevStart, ls - 1) === FENCE && (fenceEnd < 0 ? rest : rest.slice(0, fenceEnd)) === FENCE) {
+    return edit(value.slice(0, prevStart) + lines + (fenceEnd < 0 ? "" : rest.slice(fenceEnd)), prevStart, prevStart + lines.length);
+  }
+  return edit(value.slice(0, ls) + FENCE + NL + lines + NL + FENCE + value.slice(le), ls + 4, ls + 4 + lines.length);
 }
 
-/** "> " on every non-blank line the selection touches (blank lines are left as they are; a lone empty line gets the prefix). If every non-blank touched line already starts with "> ", one "> " is removed from each instead. See the selection rule above. */
-export function quote(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** [text](url); a selected link becomes its text again. */
+export function link(value: string, selStart: number, selEnd: number): TextEdit {
+  const s = selStart, e = selEnd;
+  const sel = value.slice(s, e);
+  const whole = /^\[([^\]]*)\]\([^)]*\)$/.exec(sel);
+  if (whole) return edit(value.slice(0, s) + whole[1] + value.slice(e), s, s + whole[1].length);
+  const tail = /^\]\([^)]*\)/.exec(value.slice(e));
+  if (sel && value[s - 1] === "[" && tail) return edit(value.slice(0, s - 1) + sel + value.slice(e + tail[0].length), s - 1, e - 1);
+  if (/^https?:\/\//.test(sel)) return edit(value.slice(0, s) + `[](${sel})` + value.slice(e), s + 1, s + 1);
+  if (!sel) return edit(value.slice(0, s) + "[](url)" + value.slice(e), s + 1, s + 1);
+  const urlAt = s + sel.length + 3;
+  return edit(value.slice(0, s) + `[${sel}](url)` + value.slice(e), urlAt, urlAt + 3);
 }
 
-/**
- * Bulleted list: "- " on each non-blank touched line. A line's list kind is task ("- [ ] " or "- [x] ", also with * or +), else bullet ("- ", "* ", "+ "), else numbered ("1. " or "1) "), else none.
- * If every non-blank touched line is already a bullet, the markers are removed. Otherwise any existing marker on each line (of any kind) is replaced by "- ". Blank lines are untouched.
- */
-export function bulletList(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** Applies `fn` to the touched lines that matter (non-blank ones, or all when every touched line is blank) and moves the selection by the rule in the header. */
+function lineEdit(value: string, s: number, e: number, fn: (targets: string[]) => string[]): TextEdit {
+  const ls = value.lastIndexOf(NL, s - 1) + 1;
+  const nl = value.indexOf(NL, e);
+  const le = nl < 0 ? value.length : nl;
+  const old = value.slice(ls, le).split(NL);
+  let targets = old.map((_, i) => i).filter((i) => old[i].trim() !== "");
+  if (!targets.length) targets = old.map((_, i) => i);
+  const out = [...old];
+  fn(targets.map((i) => old[i])).forEach((l, k) => (out[targets[k]] = l));
+  let pos = ls, shift = 0, newS = s, newE = e;
+  old.forEach((l, i) => {
+    const delta = out[i].length - l.length;
+    const lineStartNew = pos + shift;
+    if (s >= pos && s <= pos + l.length) newS = Math.max(lineStartNew, s + shift + delta);
+    shift += delta;
+    if (e >= pos && e <= pos + l.length) newE = Math.max(lineStartNew, e + shift);
+    pos += l.length + 1;
+  });
+  return edit(value.slice(0, ls) + out.join(NL) + value.slice(le), newS, newE);
 }
 
-/** Numbered list: "1. ", "2. ", ... on the non-blank touched lines in order (blank lines are skipped and not counted). Same kind detection, toggle-off and replacement rules as bulletList. */
-export function numberedList(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** "> " on the touched lines; removed when all already have it. */
+export function quote(value: string, selStart: number, selEnd: number): TextEdit {
+  return lineEdit(value, selStart, selEnd, (ls) => {
+    const all = ls.every((l) => l.startsWith("> "));
+    return ls.map((l) => (all ? l.slice(2) : "> " + l));
+  });
 }
 
-/** Task list: "- [ ] " on each non-blank touched line. Same kind detection, toggle-off (every line already a task, checked or not) and replacement rules as bulletList. */
-export function taskList(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+const MARKER = { task: /^(\s*)[-*+] \[[ xX]\] /, bullet: /^(\s*)[-*+] /, numbered: /^(\s*)\d+[.)] / };
+const kindOf = (l: string) => (MARKER.task.test(l) ? "task" : MARKER.bullet.test(l) ? "bullet" : MARKER.numbered.test(l) ? "numbered" : null);
+
+function listEdit(value: string, s: number, e: number, want: "bullet" | "numbered" | "task"): TextEdit {
+  return lineEdit(value, s, e, (ls) => {
+    const off = ls.every((l) => kindOf(l) === want);
+    let n = 0;
+    return ls.map((l) => {
+      const k = kindOf(l);
+      const bare = k ? l.replace(MARKER[k], "$1") : l;
+      if (off) return bare;
+      const ind = /^\s*/.exec(bare)![0];
+      return ind + (want === "bullet" ? "- " : want === "task" ? "- [ ] " : `${++n}. `) + bare.slice(ind.length);
+    });
+  });
 }
 
-/** "### " on each non-blank touched line. A line that already starts with 1 to 6 "#" and a space has that prefix replaced by "### ". If every non-blank touched line already starts with exactly "### ", it is removed instead. */
-export function heading(_value: string, _selStart: number, _selEnd: number): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** "- " list; toggles off when every line is a bullet, otherwise replaces any other marker. */
+export function bulletList(value: string, selStart: number, selEnd: number): TextEdit {
+  return listEdit(value, selStart, selEnd, "bullet");
 }
 
-/**
- * Replaces the selection with a suggestion block holding `originalLines` (the thread's lines as they stand, so the author edits them in place):
- * "```suggestion\n" + originalLines.join("\n") + "\n```", the fence one backtick longer than any backtick run that starts one of the lines when that is 3 or more (as suggestions.buildSuggestionBody does).
- * The block starts on its own line (a "\n" is added before it when the selection start is not at the start of the text or of a line) and is followed by a line break (a "\n" is added after it when text follows
- * on the same line). The selection afterwards covers the original lines inside the block. Throws "original lines are required" for an empty array.
- */
-export function suggestion(_value: string, _selStart: number, _selEnd: number, _originalLines: string[]): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** "1. " list, skipping blank lines when counting. */
+export function numberedList(value: string, selStart: number, selEnd: number): TextEdit {
+  return listEdit(value, selStart, selEnd, "numbered");
+}
+
+/** "- [ ] " list. */
+export function taskList(value: string, selStart: number, selEnd: number): TextEdit {
+  return listEdit(value, selStart, selEnd, "task");
+}
+
+/** "### " on the touched lines; another level is replaced, an existing "### " removed. */
+export function heading(value: string, selStart: number, selEnd: number): TextEdit {
+  return lineEdit(value, selStart, selEnd, (ls) => {
+    const all = ls.every((l) => l.startsWith("### "));
+    return ls.map((l) => (all ? l.slice(4) : "### " + l.replace(/^#{1,6} /, "")));
+  });
+}
+
+/** A suggestion block holding `originalLines`, on its own lines, with the original lines selected. The fence grows when a line starts a fence of its own. */
+export function suggestion(value: string, selStart: number, selEnd: number, originalLines: string[]): TextEdit {
+  if (!originalLines.length) throw new Error("original lines are required");
+  const longest = Math.max(0, ...originalLines.map((l) => /^ *(`{3,})/.exec(l)?.[1].length ?? 0));
+  const fence = "`".repeat(longest >= 3 ? longest + 1 : 3);
+  const pre = selStart > 0 && value[selStart - 1] !== NL ? NL : "";
+  const post = selEnd < value.length && value[selEnd] !== NL ? NL : "";
+  const open = `${fence}suggestion${NL}`;
+  const text = originalLines.join(NL);
+  const start = selStart + pre.length + open.length;
+  return edit(value.slice(0, selStart) + pre + open + text + NL + fence + post + value.slice(selEnd), start, start + text.length);
 }
 
 export interface ShortcutKey {
@@ -102,12 +157,16 @@ export interface ShortcutKey {
   shiftKey: boolean;
 }
 
-/** Ctrl (or Cmd) + B bold, I italic, K link, E code; the letter in either case. Any other key, no Ctrl/Cmd, or Alt or Shift held, gives null. */
-export function shortcutAction(_e: ShortcutKey): ToolbarAction | null {
-  throw new Error(NOT_IMPLEMENTED);
+const SHORTCUTS: Record<string, ToolbarAction> = { b: "bold", i: "italic", k: "link", e: "code" };
+
+/** Ctrl (or Cmd) + B bold, I italic, K link, E code; any other key, no Ctrl/Cmd, or Alt or Shift held, gives null. */
+export function shortcutAction(e: ShortcutKey): ToolbarAction | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return null;
+  return SHORTCUTS[e.key.toLowerCase()] ?? null;
 }
 
-/** Runs the named action: the same result as calling that function directly. `originalLines` is used by "suggestion" only (which throws "original lines are required" when it is missing). */
-export function applyToolbar(_action: ToolbarAction, _value: string, _selStart: number, _selEnd: number, _ctx?: { originalLines?: string[] }): TextEdit {
-  throw new Error(NOT_IMPLEMENTED);
+/** Runs the named action. `originalLines` is for "suggestion" only. */
+export function applyToolbar(action: ToolbarAction, value: string, selStart: number, selEnd: number, ctx?: { originalLines?: string[] }): TextEdit {
+  if (action === "suggestion") return suggestion(value, selStart, selEnd, ctx?.originalLines ?? []);
+  return { bold, italic, code, link, quote, bulletList, numberedList, taskList, heading }[action](value, selStart, selEnd);
 }

@@ -1,4 +1,4 @@
-// Batch 3, editing, deleting, edit history and minimising comments (CM-4, CM-5, CM-6). STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
+// Batch 3, editing, deleting, edit history and minimising comments (CM-4, CM-5, CM-6). 
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with bogus node ids, so they passed validation and wrote nothing):
 //  CM-4 edit and delete
@@ -38,7 +38,29 @@ export type MinimizeClassifier = (typeof MINIMIZE_CLASSIFIERS)[number];
 /** Newest first, as GitHub returns them; `first: 20` is the page size of editHistoryQuery. */
 export const EDIT_HISTORY_PAGE = 20;
 
-const NOT_IMPLEMENTED = "Not implemented";
+const blank = (s: string | null | undefined) => !s || !s.trim();
+const KNOWN: string[] = ["IssueComment", "PullRequestReviewComment", "PullRequestReview"];
+const EDIT_NODE = "id body bodyHTML lastEditedAt";
+
+const EDIT: Record<string, { input: string; field: string; node: string; idKey: string }> = {
+  IssueComment: { input: "UpdateIssueCommentInput", field: "updateIssueComment", node: "issueComment", idKey: "id" },
+  PullRequestReviewComment: { input: "UpdatePullRequestReviewCommentInput", field: "updatePullRequestReviewComment", node: "pullRequestReviewComment", idKey: "pullRequestReviewCommentId" },
+  PullRequestReview: { input: "UpdatePullRequestReviewInput", field: "updatePullRequestReview", node: "pullRequestReview", idKey: "pullRequestReviewId" },
+};
+
+
+
+
+
+
+
+
+
+
+
+const META_FIELDS = "body viewerDidAuthor lastEditedAt includesCreatedEdit viewerCanUpdate viewerCanDelete viewerCanMinimize viewerCanUnminimize isMinimized minimizedReason viewerCanReact reactionGroups { content reactors { totalCount } viewerHasReacted }";
+const META_QUERY = `query($ids: [ID!]!) { nodes(ids: $ids) { __typename id ... on IssueComment { ${META_FIELDS} } ... on PullRequestReviewComment { state ${META_FIELDS} } ... on PullRequestReview { state ${META_FIELDS} } } }`;
+
 
 // ---- CM-4: edit and delete -----------------------------------------------------------------------------------------------------------------------
 
@@ -49,16 +71,24 @@ const NOT_IMPLEMENTED = "Not implemented";
  * Each is `mutation($input: <InputType>!) { <field>(input: $input) { <node> { id body bodyHTML lastEditedAt } } }`. The body is sent exactly as given.
  * Throws "unsupported comment type" for any other __typename and "body is required" for a blank body.
  */
-export function editCommentMutation(_comment: { __typename: string; id: string }, _body: string): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function editCommentMutation(comment: { __typename: string; id: string }, body: string): GraphQlRequest {
+  const e = EDIT[comment.__typename];
+  if (!e) throw new Error("unsupported comment type");
+  if (blank(body)) throw new Error("body is required");
+  return { query: `mutation($input: ${e.input}!) { ${e.field}(input: $input) { ${e.node} { ${EDIT_NODE} } } }`, variables: { input: { [e.idKey]: comment.id, body } } };
 }
 
 /**
  * The mutation for deleting `comment`: IssueComment -> deleteIssueComment, input { id }; PullRequestReviewComment -> deletePullRequestReviewComment, input { id }.
  * Throws "a submitted review cannot be deleted" for PullRequestReview and "unsupported comment type" for any other __typename.
  */
-export function deleteCommentMutation(_comment: { __typename: string; id: string }): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function deleteCommentMutation(comment: { __typename: string; id: string }): GraphQlRequest {
+  if (comment.__typename === "PullRequestReview") throw new Error("a submitted review cannot be deleted");
+  if (comment.__typename === "IssueComment") return { query: `mutation($input: DeleteIssueCommentInput!) { deleteIssueComment(input: $input) { clientMutationId } }`, variables: { input: { id: comment.id } } };
+  if (comment.__typename === "PullRequestReviewComment") {
+    return { query: `mutation($input: DeletePullRequestReviewCommentInput!) { deletePullRequestReviewComment(input: $input) { pullRequestReview { id } pullRequestReviewComment { id } } }`, variables: { input: { id: comment.id } } };
+  }
+  throw new Error("unsupported comment type");
 }
 
 export interface CommentFlags {
@@ -82,18 +112,37 @@ export interface CommentActions {
  *  canEdit = viewerCanUpdate for the three known types. canDelete = viewerCanDelete for IssueComment and PullRequestReviewComment only (a submitted review has no delete mutation).
  *  canMinimize = viewerCanMinimize and not already minimised. canUnminimize = viewerCanUnminimize and minimised. A missing or null flag is false; an unknown __typename gives all false.
  */
-export function commentActions(_c: CommentFlags): CommentActions {
-  throw new Error(NOT_IMPLEMENTED);
+export function commentActions(c: CommentFlags): CommentActions {
+  if (!KNOWN.includes(c.__typename)) return { canEdit: false, canDelete: false, canMinimize: false, canUnminimize: false };
+  return {
+    canEdit: !!c.viewerCanUpdate,
+    canDelete: c.__typename !== "PullRequestReview" && !!c.viewerCanDelete,
+    canMinimize: !!c.viewerCanMinimize && !c.isMinimized,
+    canUnminimize: !!c.viewerCanUnminimize && !!c.isMinimized,
+  };
 }
 
 /** Removes the comment from the feed's optimistic state: a top-level comment item is removed; a thread comment is removed and the thread's `date` and `lastActivity` recomputed from what is left; a thread left with no comments is removed. Items keep their positions. Pure; an unknown id returns an equal array. */
-export function applyCommentDelete(_items: FeedItem[], _commentId: string): FeedItem[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function applyCommentDelete(items: FeedItem[], commentId: string): FeedItem[] {
+  const out: FeedItem[] = [];
+  for (const i of items) {
+    if (i.kind === "comment") {
+      if (i.id !== commentId) out.push(i);
+    } else if (i.kind === "thread" && i.comments.some((c) => c.id === commentId)) {
+      const comments = i.comments.filter((c) => c.id !== commentId);
+      if (comments.length) out.push({ ...i, comments, date: comments[0].date, lastActivity: comments[comments.length - 1].date });
+    } else out.push(i);
+  }
+  return out;
 }
 
 /** Sets the rendered `html` of the comment (top-level or inside a thread) after an edit. Pure; an unknown id returns an equal array. */
-export function applyCommentEdit(_items: FeedItem[], _commentId: string, _html: string): FeedItem[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function applyCommentEdit(items: FeedItem[], commentId: string, html: string): FeedItem[] {
+  return items.map((i) => {
+    if (i.kind === "comment") return i.id === commentId ? { ...i, html } : i;
+    if (i.kind === "thread") return i.comments.some((c) => c.id === commentId) ? { ...i, comments: i.comments.map((c) => (c.id === commentId ? { ...c, html } : c)) } : i;
+    return i;
+  });
 }
 
 // ---- reading comment metadata --------------------------------------------------------------------------------------------------------------------
@@ -104,16 +153,23 @@ export function applyCommentEdit(_items: FeedItem[], _commentId: string, _html: 
  *  ... on PullRequestReviewComment { state <same fields> } ... on PullRequestReview { state <same fields> } } }`. Variables { ids }.
  * Returns one request per 100 distinct ids, in first-seen order; [] for no ids. Blank ids are dropped.
  */
-export function commentMetaQueries(_ids: string[]): GraphQlRequest[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function commentMetaQueries(ids: string[]): GraphQlRequest[] {
+  const seen = [...new Set(ids.filter((i) => !blank(i)))];
+  const out: GraphQlRequest[] = [];
+  for (let i = 0; i < seen.length; i += 100) out.push({ query: META_QUERY, variables: { ids: seen.slice(i, i + 100) } });
+  return out;
 }
 
 /**
  * `query($id: ID!) { node(id: $id) { __typename id ... on Comment { lastEditedAt includesCreatedEdit userContentEdits(first: 20) { totalCount nodes { editedAt deletedAt editor { login } diff } } } } }`.
  * Variables { id }. Throws "id is required" for a blank id.
  */
-export function editHistoryQuery(_id: string): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function editHistoryQuery(id: string): GraphQlRequest {
+  if (blank(id)) throw new Error("id is required");
+  return {
+    query: `query($id: ID!) { node(id: $id) { __typename id ... on Comment { lastEditedAt includesCreatedEdit userContentEdits(first: ${EDIT_HISTORY_PAGE}) { totalCount nodes { editedAt deletedAt editor { login } diff } } } } }`,
+    variables: { id },
+  };
 }
 
 export interface EditEntry {
@@ -145,8 +201,14 @@ export interface EditSource {
 }
 
 /** The "Edited" label and history list for one comment node (see EditInfo). */
-export function toEditInfo(_node: EditSource): EditInfo {
-  throw new Error(NOT_IMPLEMENTED);
+export function toEditInfo(node: EditSource): EditInfo {
+  if (!node.lastEditedAt) return { edited: false, label: null, lastEditedAt: null, history: [] };
+  const nodes = (node.userContentEdits?.nodes ?? []).filter((n): n is NonNullable<typeof n> => !!n);
+  const history: EditEntry[] = nodes
+    .map((n) => ({ editedAt: new Date(n.editedAt), editor: n.editor?.login ?? "ghost", body: n.diff ?? null, deleted: !!n.deletedAt, isCreation: false }))
+    .sort((a, b) => b.editedAt.getTime() - a.editedAt.getTime());
+  if (node.includesCreatedEdit && history.length) history[history.length - 1].isCreation = true;
+  return { edited: true, label: "Edited", lastEditedAt: new Date(node.lastEditedAt), history };
 }
 
 export interface MinimizedView {
@@ -159,8 +221,13 @@ export interface MinimizedView {
  * Collapsed with a label when isMinimized. The reason is minimizedReason, matched ignoring case and with "_" read as "-": abuse, off-topic, outdated, resolved, duplicate, spam are shown as they are,
  * "low-quality" as "low quality", any other text as given. A minimised comment with no reason reads "This comment was hidden". Not minimised: { collapsed: false, label: null }.
  */
-export function toMinimizedView(_node: { isMinimized?: boolean | null; minimizedReason?: string | null }): MinimizedView {
-  throw new Error(NOT_IMPLEMENTED);
+export function toMinimizedView(node: { isMinimized?: boolean | null; minimizedReason?: string | null }): MinimizedView {
+  if (!node.isMinimized) return { collapsed: false, label: null };
+  const raw = node.minimizedReason?.trim();
+  if (!raw) return { collapsed: true, label: "This comment was hidden" };
+  const key = raw.toLowerCase().replace(/_/g, "-");
+  const shown = key === "low-quality" ? "low quality" : ["abuse", "off-topic", "outdated", "resolved", "duplicate", "spam"].includes(key) ? key : raw;
+  return { collapsed: true, label: `This comment was marked as ${shown}` };
 }
 
 export interface CommentMeta {
@@ -181,18 +248,33 @@ export interface CommentMeta {
 }
 
 /** One `nodes` entry of a commentMetaQueries response as a CommentMeta, or null for null and for any other __typename. */
-export function toCommentMeta(_node: (CommentFlags & EditSource & { id: string; body?: string | null; state?: string; viewerDidAuthor?: boolean | null; minimizedReason?: string | null; viewerCanReact?: boolean | null; reactionGroups?: RawReactionGroup[] | null }) | null): CommentMeta | null {
-  throw new Error(NOT_IMPLEMENTED);
+export function toCommentMeta(node: (CommentFlags & EditSource & { id: string; body?: string | null; state?: string; viewerDidAuthor?: boolean | null; minimizedReason?: string | null; viewerCanReact?: boolean | null; reactionGroups?: RawReactionGroup[] | null }) | null): CommentMeta | null {
+  if (!node || !KNOWN.includes(node.__typename)) return null;
+  return {
+    id: node.id,
+    kind: node.__typename as CommentKind,
+    body: node.body ?? "",
+    viewerDidAuthor: !!node.viewerDidAuthor,
+    pending: node.state === "PENDING",
+    actions: commentActions(node),
+    edit: toEditInfo(node),
+    minimized: toMinimizedView(node),
+    viewerCanReact: !!node.viewerCanReact,
+    reactionGroups: node.reactionGroups ?? [],
+  };
 }
 
 // ---- CM-6: minimise ------------------------------------------------------------------------------------------------------------------------------
 
 /** `mutation($input: MinimizeCommentInput!) { minimizeComment(input: $input) { minimizedComment { isMinimized minimizedReason viewerCanMinimize viewerCanUnminimize } } }`. Input { subjectId, classifier }. Throws "subjectId is required" and "classifier must be one of SPAM, ABUSE, OFF_TOPIC, OUTDATED, DUPLICATE, RESOLVED". */
-export function minimizeMutation(_subjectId: string, _classifier: MinimizeClassifier): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function minimizeMutation(subjectId: string, classifier: MinimizeClassifier): GraphQlRequest {
+  if (blank(subjectId)) throw new Error("subjectId is required");
+  if (!(MINIMIZE_CLASSIFIERS as readonly string[]).includes(classifier)) throw new Error("classifier must be one of " + MINIMIZE_CLASSIFIERS.join(", "));
+  return { query: `mutation($input: MinimizeCommentInput!) { minimizeComment(input: $input) { minimizedComment { isMinimized minimizedReason viewerCanMinimize viewerCanUnminimize } } }`, variables: { input: { subjectId, classifier } } };
 }
 
 /** `mutation($input: UnminimizeCommentInput!) { unminimizeComment(input: $input) { unminimizedComment { isMinimized minimizedReason viewerCanMinimize viewerCanUnminimize } } }`. Input { subjectId }. Throws "subjectId is required". */
-export function unminimizeMutation(_subjectId: string): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function unminimizeMutation(subjectId: string): GraphQlRequest {
+  if (blank(subjectId)) throw new Error("subjectId is required");
+  return { query: `mutation($input: UnminimizeCommentInput!) { unminimizeComment(input: $input) { unminimizedComment { isMinimized minimizedReason viewerCanMinimize viewerCanUnminimize } } }`, variables: { input: { subjectId } } };
 }

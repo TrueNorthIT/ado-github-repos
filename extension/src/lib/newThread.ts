@@ -1,4 +1,4 @@
-// Batch 3, new line and file comments (CM-1). STUBS: the developer implements them. Every function throws "Not implemented" except the types.
+// Batch 3, new line and file comments (CM-1). 
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with bogus node ids, so they passed validation and wrote nothing):
 //  - mutation addPullRequestReviewThread(input: AddPullRequestReviewThreadInput!) takes { path: String, body: String!, pullRequestId: ID, pullRequestReviewId: ID, line: Int, side: DiffSide,
@@ -56,11 +56,14 @@ export interface PatchHunk {
   newCount: number;
 }
 
-const NOT_IMPLEMENTED = "Not implemented";
+import { THREAD_FIELDS } from "./feedQuery";
+const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm;
+const blank = (s: string) => !s.trim();
+
 
 /** Hunk headers of a unified-diff `patch` in order. `@@ -a,b +c,d @@`; an omitted count means 1. An empty patch gives []. */
-export function parsePatch(_patch: string): PatchHunk[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function parsePatch(patch: string): PatchHunk[] {
+  return [...(patch ?? "").matchAll(HUNK)].map((m) => ({ oldStart: +m[1], oldCount: m[2] === undefined ? 1 : +m[2], newStart: +m[3], newCount: m[4] === undefined ? 1 : +m[4] }));
 }
 
 /**
@@ -70,13 +73,21 @@ export function parsePatch(_patch: string): PatchHunk[] {
  *  - same editor with the points reversed: swapped so startLine <= line. Different editors: the original (LEFT) point is the start.
  * Throws "line must be a positive integer" for a line below 1 or not an integer, and "path is required" for a blank path.
  */
-export function toThreadTarget(_path: string, _sel: DiffSelection): LineTarget {
-  throw new Error(NOT_IMPLEMENTED);
+export function toThreadTarget(path: string, sel: DiffSelection): LineTarget {
+  if (blank(path)) throw new Error("path is required");
+  for (const p of [sel.start, sel.end]) if (!Number.isInteger(p.line) || p.line < 1) throw new Error("line must be a positive integer");
+  const side = (p: DiffPoint): DiffSide => (p.editor === "original" ? "LEFT" : "RIGHT");
+  let { start, end } = sel;
+  if (start.editor === end.editor && start.line === end.line) return { subjectType: "LINE", path, line: end.line, side: side(end) };
+  const swap = start.editor === end.editor ? start.line > end.line : start.editor === "modified";
+  if (swap) [start, end] = [end, start];
+  return { subjectType: "LINE", path, line: end.line, side: side(end), startLine: start.line, startSide: side(start) };
 }
 
 /** A whole-file thread (subjectType FILE). Throws "path is required" for a blank path. */
-export function fileTarget(_path: string): FileTarget {
-  throw new Error(NOT_IMPLEMENTED);
+export function fileTarget(path: string): FileTarget {
+  if (blank(path)) throw new Error("path is required");
+  return { subjectType: "FILE", path };
 }
 
 /**
@@ -84,8 +95,14 @@ export function fileTarget(_path: string): FileTarget {
  * (RIGHT: added and context lines, LEFT: deleted and context lines) AND the whole range lies in one hunk. A missing, null or empty patch (binary, very large,
  * pure rename) gives false: line comments are impossible there, a FILE thread is still possible.
  */
-export function isCommentable(_patch: string | null | undefined, _target: LineTarget): boolean {
-  throw new Error(NOT_IMPLEMENTED);
+export function isCommentable(patch: string | null | undefined, target: LineTarget): boolean {
+  if (!patch) return false;
+  const hunks = parsePatch(patch);
+  const find = (line: number, side: DiffSide) =>
+    hunks.findIndex((h) => (side === "LEFT" ? line >= h.oldStart && line < h.oldStart + h.oldCount : line >= h.newStart && line < h.newStart + h.newCount));
+  const end = find(target.line, target.side);
+  if (end < 0) return false;
+  return target.startLine === undefined || find(target.startLine, target.startSide ?? target.side) === end;
 }
 
 export interface AddThreadParams {
@@ -101,11 +118,24 @@ export interface AddThreadParams {
  * variables.input: { pullRequestId | pullRequestReviewId, path, body, subjectType, and for LINE line, side, startLine?, startSide? }. A FILE target sends no line or side.
  * The body is sent exactly as given. Throws "body is required" for a blank body, "pullRequestId is required" for a blank id when no reviewId is given.
  */
-export function addThreadMutation(_p: AddThreadParams): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function addThreadMutation(p: AddThreadParams): GraphQlRequest {
+  if (blank(p.body)) throw new Error("body is required");
+  if (!p.reviewId && blank(p.pullRequestId)) throw new Error("pullRequestId is required");
+  const t = p.target;
+  const input: Record<string, unknown> = { ...(p.reviewId ? { pullRequestReviewId: p.reviewId } : { pullRequestId: p.pullRequestId }), path: t.path, body: p.body, subjectType: t.subjectType };
+  if (t.subjectType === "LINE") {
+    input.line = t.line;
+    input.side = t.side;
+    if (t.startLine !== undefined) {
+      input.startLine = t.startLine;
+      input.startSide = t.startSide ?? t.side;
+    }
+  }
+  return { query: `mutation($input: AddPullRequestReviewThreadInput!) { addPullRequestReviewThread(input: $input) { thread { ${THREAD_FIELDS} } } }`, variables: { input } };
 }
 
 /** Adds a new thread, newest first by its first comment's date (same ordering rule as feedState.applyComment). Pure; the input array is not changed. */
-export function applyNewThread(_items: FeedItem[], _thread: ThreadItem): FeedItem[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function applyNewThread(items: FeedItem[], thread: ThreadItem): FeedItem[] {
+  const at = items.findIndex((i) => i.date.getTime() <= thread.date.getTime());
+  return at < 0 ? [...items, thread] : [...items.slice(0, at), thread, ...items.slice(at)];
 }

@@ -1,4 +1,4 @@
-// Batch 3, reactions (CM-7). STUBS: the developer implements them. Every function throws "Not implemented" except the types.
+// Batch 3, reactions (CM-7). 
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with bogus node ids, so they passed validation and wrote nothing):
 //  - ReactionContent = THUMBS_UP | THUMBS_DOWN | LAUGH | HOORAY | CONFUSED | HEART | ROCKET | EYES, which is also GitHub's picker order (+1, -1, laugh, hooray, confused, heart, rocket, eyes).
@@ -35,40 +35,59 @@ export interface ReactionState {
   viewerHasReacted: boolean;
 }
 
-const NOT_IMPLEMENTED = "Not implemented";
+const DEFS: ReactionDef[] = [
+  { content: "THUMBS_UP", emoji: "\u{1F44D}", name: "+1" },
+  { content: "THUMBS_DOWN", emoji: "\u{1F44E}", name: "-1" },
+  { content: "LAUGH", emoji: "\u{1F604}", name: "laugh" },
+  { content: "HOORAY", emoji: "\u{1F389}", name: "hooray" },
+  { content: "CONFUSED", emoji: "\u{1F615}", name: "confused" },
+  { content: "HEART", emoji: "\u2764\uFE0F", name: "heart" },
+  { content: "ROCKET", emoji: "\u{1F680}", name: "rocket" },
+  { content: "EYES", emoji: "\u{1F440}", name: "eyes" },
+];
+const GROUPS = "reactionGroups { content reactors { totalCount } viewerHasReacted }";
+
 
 /**
  * The eight reactions in GitHub's order with their emoji (written as escapes here because source encodings differ):
  *  THUMBS_UP \u{1F44D} "+1", THUMBS_DOWN \u{1F44E} "-1", LAUGH \u{1F604} "laugh", HOORAY \u{1F389} "hooray", CONFUSED \u{1F615} "confused", HEART ❤️ "heart" (with the variation selector), ROCKET \u{1F680} "rocket", EYES \u{1F440} "eyes".
  */
 export function reactionDefs(): ReactionDef[] {
-  throw new Error(NOT_IMPLEMENTED);
+  return DEFS.map((d) => ({ ...d }));
 }
 
 /** Always exactly eight entries in GitHub's order, whatever `raw` holds: missing groups are 0 / not reacted, order is ignored, unknown contents and null entries are dropped, a repeated content keeps the first. null or undefined raw gives eight empty entries. */
-export function normaliseReactions(_raw: (RawReactionGroup | null)[] | null | undefined): ReactionState[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function normaliseReactions(raw: (RawReactionGroup | null)[] | null | undefined): ReactionState[] {
+  const first = new Map<string, RawReactionGroup>();
+  for (const g of raw ?? []) if (g && !first.has(g.content)) first.set(g.content, g);
+  return DEFS.map((d) => {
+    const g = first.get(d.content);
+    return { content: d.content, emoji: d.emoji, count: g?.reactors?.totalCount ?? 0, viewerHasReacted: !!g?.viewerHasReacted };
+  });
 }
 
 /** The entries with count > 0, in order: the chips shown under a comment. */
-export function visibleReactions(_state: ReactionState[]): ReactionState[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function visibleReactions(state: ReactionState[]): ReactionState[] {
+  return state.filter((r) => r.count > 0);
 }
 
 /**
  * Pure toggle of the viewer's reaction: if viewerHasReacted, count - 1 (never below 0) and viewerHasReacted false; otherwise count + 1 and viewerHasReacted true. Other entries and the order are untouched;
  * the input is not modified. Applying it twice gives back an equal state, so it is also the rollback. An unknown content returns an equal array.
  */
-export function toggleReaction(_state: ReactionState[], _content: ReactionContent): ReactionState[] {
-  throw new Error(NOT_IMPLEMENTED);
+export function toggleReaction(state: ReactionState[], content: ReactionContent): ReactionState[] {
+  return state.map((r) => (r.content !== content ? r : r.viewerHasReacted ? { ...r, count: Math.max(0, r.count - 1), viewerHasReacted: false } : { ...r, count: r.count + 1, viewerHasReacted: true }));
 }
 
 /**
  * `mutation($input: AddReactionInput!) { addReaction(input: $input) { reaction { content } subject { id reactionGroups { content reactors { totalCount } viewerHasReacted } } } }` when `add`,
  * otherwise the same with RemoveReactionInput / removeReaction. variables.input { subjectId, content }. Throws "subjectId is required" and "content must be one of THUMBS_UP, THUMBS_DOWN, LAUGH, HOORAY, CONFUSED, HEART, ROCKET, EYES".
  */
-export function reactionMutation(_subjectId: string, _content: ReactionContent, _add: boolean): GraphQlRequest {
-  throw new Error(NOT_IMPLEMENTED);
+export function reactionMutation(subjectId: string, content: ReactionContent, add: boolean): GraphQlRequest {
+  if (!subjectId.trim()) throw new Error("subjectId is required");
+  if (!DEFS.some((d) => d.content === content)) throw new Error("content must be one of " + DEFS.map((d) => d.content).join(", "));
+  const [type, field] = add ? ["AddReactionInput", "addReaction"] : ["RemoveReactionInput", "removeReaction"];
+  return { query: `mutation($input: ${type}!) { ${field}(input: $input) { reaction { content } subject { id ${GROUPS} } } }`, variables: { input: { subjectId, content } } };
 }
 
 export type ToggleResult = { ok: true } | { ok: false; error: unknown };
@@ -78,10 +97,18 @@ export type ToggleResult = { ok: true } | { ok: false; error: unknown };
  * when they had. On success resolves { ok: true } and leaves the optimistic state. On rejection calls `set(current)` with the very same array it was given, then resolves { ok: false, error }. Never rejects.
  */
 export async function toggleOptimistically(
-  _current: ReactionState[],
-  _content: ReactionContent,
-  _send: (add: boolean) => Promise<unknown>,
-  _set: (state: ReactionState[]) => void,
+  current: ReactionState[],
+  content: ReactionContent,
+  send: (add: boolean) => Promise<unknown>,
+  set: (state: ReactionState[]) => void,
 ): Promise<ToggleResult> {
-  throw new Error(NOT_IMPLEMENTED);
+  const add = !current.find((r) => r.content === content)?.viewerHasReacted;
+  set(toggleReaction(current, content));
+  try {
+    await send(add);
+    return { ok: true };
+  } catch (error) {
+    set(current);
+    return { ok: false, error };
+  }
 }
