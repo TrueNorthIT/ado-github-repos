@@ -235,3 +235,10 @@ describe("AF-3 / AF-4: resolve and unresolve a review thread", () => {
     expect(a.query, "Expected no thread id in the query text").not.toContain("PRRT_");
   });
 });
+
+describe("feedQuery: review requests name Bot and Team reviewers", () => {
+  const q = norm(feedQuery(base).query);
+  it("selects User, Bot and Team on requestedReviewer", () => {
+    expect(q).toMatch(/requestedReviewer \{ __typename \.\.\. on User \{ login \} \.\.\. on Bot \{ login avatarUrl \} \.\.\. on Team \{ name \} \}/);
+  });
+});

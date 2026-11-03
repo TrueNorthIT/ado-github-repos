@@ -29,7 +29,7 @@ const FEED_QUERY = `query FeedQuery($owner: String!, $name: String!, $number: In
           ... on IssueComment { id databaseId author { login avatarUrl } bodyHTML body createdAt url }
           ... on PullRequestReview { id author { login avatarUrl } state body bodyHTML submittedAt createdAt url }
           ... on PullRequestCommit { id commit { oid messageHeadline message committedDate authoredDate author { name avatarUrl user { login } } } }
-          ... on ReviewRequestedEvent { id createdAt ${ACTOR} requestedReviewer { __typename ... on User { login } ... on Team { name } } }
+          ... on ReviewRequestedEvent { id createdAt ${ACTOR} requestedReviewer { __typename ... on User { login } ... on Bot { login avatarUrl } ... on Team { name } } }
           ... on LabeledEvent { id createdAt ${ACTOR} label { name color } }
           ... on UnlabeledEvent { id createdAt ${ACTOR} label { name color } }
           ... on ReadyForReviewEvent { id createdAt ${ACTOR} }

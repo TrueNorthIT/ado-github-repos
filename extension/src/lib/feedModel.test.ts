@@ -354,6 +354,17 @@ describe("AF-5: the other events", () => {
     expect(e, "Expected the team's name as the reviewer").toMatchObject({ type: "review_requested", reviewer: "Platform" });
   });
 
+  it("names the Copilot bot as Copilot on its review, keeping its avatar", () => {
+    const n = review("r1", "copilot-pull-request-reviewer", "COMMENTED", at("12:00"), "Looks fine");
+    const [e] = events(feed([n]).filter((i) => i.id === "r1"));
+    expect(e, "Expected the display name as actor and the bot avatar").toMatchObject({ type: "review_commented", actor: "Copilot", avatarUrl: av("copilot-pull-request-reviewer"), html: "<p>Looks fine</p>" });
+  });
+
+  it("maps a review request to a Bot via its display name", () => {
+    const e = events(feed([event("ReviewRequestedEvent", "E1", "ann", at("10:00"), { requestedReviewer: { __typename: "Bot", login: "copilot-pull-request-reviewer" } })])).find((x) => x.id === "E1")!;
+    expect(e).toMatchObject({ type: "review_requested", reviewer: "Copilot" });
+  });
+
   it.each([
     ["LabeledEvent", "labelled"],
     ["UnlabeledEvent", "unlabelled"],

@@ -1,5 +1,6 @@
 // Maps GitHub PR timeline items and review threads to the activity feed (AF-1, AF-3, AF-4, AF-5).
 import type { GhActor, PrListNode } from "./prModel";
+import { reviewerName } from "./copilotReview";
 
 /** A timeline node as returned by feedQuery; `__typename` is the GraphQL type name. Unknown types are ignored; null nodes are tolerated. */
 export interface TimelineNode {
@@ -101,7 +102,7 @@ export interface EventItem {
   kind: "event";
   id: string;
   type: EventType;
-  /** Login; "ghost" for a deleted account. For "pushed" the commit author. */
+  /** Login; "ghost" for a deleted account. For "pushed" the commit author. For review_*, the display name (the Copilot bot is "Copilot"); the type is the verdict. */
   actor: string;
   avatarUrl: string;
   /** For "pushed" the date of the last commit in the group. */
@@ -156,13 +157,13 @@ function toEvent(n: TimelineNode): EventItem | null {
       const type = REVIEW_TYPE[n.state];
       if (!type) return null; // PENDING: not submitted yet
       const a = who(n.author);
-      const e: EventItem = { kind: "event", id: n.id, type, actor: a.login, avatarUrl: a.avatarUrl, date: new Date(n.submittedAt ?? n.createdAt) };
+      const e: EventItem = { kind: "event", id: n.id, type, actor: reviewerName(a.login), avatarUrl: a.avatarUrl, date: new Date(n.submittedAt ?? n.createdAt) };
       if (n.bodyHTML?.trim() && n.body?.trim()) e.html = n.bodyHTML;
       return e;
     }
     case "ReviewRequestedEvent": {
       const r = n.requestedReviewer;
-      return { ...base("review_requested", n.createdAt), reviewer: r?.login ?? r?.name };
+      return { ...base("review_requested", n.createdAt), reviewer: r?.login ? reviewerName(r.login) : r?.name };
     }
     case "LabeledEvent":
       return { ...base("labelled", n.createdAt), label: n.label };

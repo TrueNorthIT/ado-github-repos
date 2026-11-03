@@ -59,6 +59,21 @@ const FEED_200: FixtureFeed = {
     commit(200, sha(5), "bob-dev", 5, "Remove old notes"),
     event("UnlabeledEvent", "EV_L2", "ann", 4, { label: { name: "wontfix", color: "ffffff" } }),
     review(200, "RV_3", "carol", "APPROVED", 3),
+    { ...review(200, "RV_C", "copilot-pull-request-reviewer", "COMMENTED", 3.5, `<p>Copilot reviewed 3 out of 3 changed files in this pull request and generated 2 comments.</p>
+<details><summary>Pull request overview</summary>
+<p>This PR adds a retry helper and wires it into <code>greet</code>.</p>
+<ul><li>Adds a placeholder document describing the helper</li><li>Adds <code>retry()</code> with exponential backoff
+<ul><li>capped at 30 seconds</li></ul></li><li>Updates the tests</li></ul>
+<ol><li>First step</li><li>Second step</li></ol>
+<table><thead><tr><th>File</th><th>Description</th></tr></thead><tbody><tr><td>src/util/retry.ts</td><td>New retry helper with backoff.</td></tr><tr><td>src/util/greet.ts</td><td>Uses a template string.</td></tr></tbody></table>
+<pre><code>const wait = Math.min(2 ** n * 100, 30000);
+await sleep(wait);</code></pre>
+</details>
+<h3>Suggestions</h3>
+<p>Consider a jitter. <sub>Review effort 2/5</sub></p>
+<hr>
+<p><sub>Tip: <a href="https://example.com">Customize your pull request review experience</a></sub></p>`), author: { login: "copilot-pull-request-reviewer", avatarUrl: "https://avatars.githubusercontent.com/in/946600?v=4" } },
+    event("ReviewRequestedEvent", "EV_R4", "ann", 3.6, { requestedReviewer: { __typename: "Bot", login: "copilot-pull-request-reviewer", avatarUrl: "" } }),
     event("HeadRefForcePushedEvent", "EV_F1", "ann", 2, { beforeCommit: { oid: sha(5) }, afterCommit: { oid: sha(6) } }),
     issueComment(200, "IC_3", "bob-dev", 1, '<p>Looks good to me now. See the <a href="https://example.com/guide">guide</a>.</p>'),
   ],
