@@ -3,6 +3,7 @@ import {
   ZERO_SHA,
   formatLocalDay,
   pushesPath,
+  nextActivityCursor,
   isPushActivity,
   mapActivity,
   groupPushesByDate,
@@ -268,5 +269,23 @@ describe("C-4: pushExpansion says which commits an expanded push lists", () => {
   it("uses just the after commit for a branch creation", () => {
     const p = mapActivity(act({ before: ZERO_SHA, activity_type: "branch_creation" }));
     expect(pushExpansion("acme/web", p), "Expected only the after commit when before is all zeros").toEqual({ kind: "single", sha: B });
+  });
+});
+
+describe("Pushes paging and the pusher filter", () => {
+  it("adds the after cursor and the actor, encoded, after per_page", () => {
+    expect(pushesPath("acme/web", "main", 30, { after: "abc=/+", actor: "dependabot[bot]" })).toBe(
+      "/repos/acme/web/activity?ref=refs%2Fheads%2Fmain&per_page=30&after=abc%3D%2F%2B&actor=dependabot%5Bbot%5D"
+    );
+  });
+  it("leaves the URL alone for an empty actor", () => {
+    expect(pushesPath("acme/web", "main", 30, { actor: "  " })).toBe(pushesPath("acme/web", "main"));
+  });
+  it("reads the after cursor from the Link next relation", () => {
+    const link = '<https://api.github.com/repositories/1/activity?per_page=2&after=Y3Vyc29y%3D>; rel="next", <https://api.github.com/x?after=zzz>; rel="prev"';
+    expect(nextActivityCursor(link), "Expected the next link's after value, decoded").toBe("Y3Vyc29y=");
+  });
+  it.each([null, "", '<https://api.github.com/x?after=zzz>; rel="prev"'])("has no cursor for Link %j", (link) => {
+    expect(nextActivityCursor(link)).toBeUndefined();
   });
 });

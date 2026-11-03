@@ -7,7 +7,7 @@ import {
   type FCommit, type RepoRefs,
 } from "./fixtures/refs";
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 const status = (code: number) => new Response("{}", { status: code });
 const PAGE = 50;
 const REPO_ID = (fullName: string) => `REPO_${fullName.toLowerCase()}`;
@@ -103,7 +103,13 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
   const rr: RepoRefs = refsOf(fullName);
   if (rest === "/activity") {
     const ref = (u.searchParams.get("ref") ?? "").replace(/^refs\/heads\//, "");
-    return json(activities(rr, ref).slice(0, Number(u.searchParams.get("per_page") || 30)));
+    // Pages of 8 (not per_page) so "Load more" shows with these short fixture histories; the cursor is the offset, as an opaque string.
+    const actor = u.searchParams.get("actor");
+    const all = activities(rr, ref).filter((a) => !actor || a.actor?.login === actor);
+    const from = Number(u.searchParams.get("after")?.replace(/^cur/, "") || 0);
+    const more = all.length > from + 8;
+    const link = more ? `<https://api.github.com${u.pathname}?ref=${encodeURIComponent(u.searchParams.get("ref") ?? "")}&per_page=30&after=cur${from + 8}>; rel="next"` : undefined;
+    return json(all.slice(from, from + 8), 200, link ? { link } : {});
   }
   const cmp = /^\/compare\/(.+)\.\.\.(.+)$/.exec(rest);
   if (cmp) {

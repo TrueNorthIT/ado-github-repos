@@ -63,8 +63,17 @@ export function formatLocalDay(date: Date): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
-export function pushesPath(repo: string, branch: string, perPage = 30): string {
-  return `/repos/${repo}/activity?ref=${encodeURIComponent("refs/heads/" + branch)}&per_page=${perPage}`;
+/** `after` is the cursor from the previous page's Link rel="next"; `actor` filters server-side by login (live: GitHub honours it, exact login). */
+export function pushesPath(repo: string, branch: string, perPage = 30, opts: { after?: string; actor?: string } = {}): string {
+  const actor = opts.actor?.trim();
+  return `/repos/${repo}/activity?ref=${encodeURIComponent("refs/heads/" + branch)}&per_page=${perPage}${opts.after ? `&after=${encodeURIComponent(opts.after)}` : ""}${actor ? `&actor=${encodeURIComponent(actor)}` : ""}`;
+}
+
+/** The `after` cursor of a Link header's rel="next" entry, or undefined on the last page. */
+export function nextActivityCursor(link: string | null | undefined): string | undefined {
+  const next = /<([^>]+)>\s*;\s*rel="next"/.exec(link ?? "");
+  const after = next && new URL(next[1]).searchParams.get("after");
+  return after || undefined;
 }
 
 export function isPushActivity(activityType: string): boolean {

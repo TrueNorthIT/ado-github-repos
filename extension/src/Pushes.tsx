@@ -2,10 +2,13 @@
 import * as React from "react";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
+import { FilterBar } from "azure-devops-ui/FilterBar";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
+import { TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
+import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib/pushes";
@@ -86,14 +89,34 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
   const [load, setLoad] = React.useState<Load<PushesData>>({ t: "loading" });
   const [reload, setReload] = React.useState(0);
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
+  const [filterOpen, setFilterOpen] = React.useState(false);
+  const [actor, setActor] = React.useState("");
+  const [more, setMore] = React.useState(false);
+  const filter = React.useMemo(() => new Filter(), []);
+  // "Pushed by" is applied server-side (the activity API's `actor` param), so wait for typing to pause before asking.
+  React.useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onChange = () => { clearTimeout(t); t = setTimeout(() => setActor((filter.getFilterItemValue<string>("actor") ?? "").trim()), 400); };
+    filter.subscribe(onChange, FILTER_CHANGE_EVENT);
+    return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
+  }, [filter]);
   React.useEffect(() => {
     if (!ref) return;
     let dead = false;
     setLoad({ t: "loading" });
     setExpanded(new Set());
-    listPushes(repo, ref).then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
+    listPushes(repo, ref, { actor }).then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
     return () => { dead = true; };
-  }, [repo, ref, signedIn, reload]);
+  }, [repo, ref, signedIn, reload, actor]);
+  const loadMore = () => {
+    if (!ref || load.t !== "ready" || !load.v.next) return;
+    const prev = load.v;
+    setMore(true);
+    listPushes(repo, ref, { actor, after: prev.next }).then(
+      (v) => { setLoad({ t: "ready", v: { pushes: [...prev.pushes, ...v.pushes], heads: { ...prev.heads, ...v.heads }, next: v.next } }); setMore(false); },
+      (err) => { setMore(false); setLoad({ t: "error", err }); }
+    );
+  };
   const groups = React.useMemo(() => (load.t === "ready" ? groupPushesByDate(load.v.pushes) : []), [load]);
   const openCommit = React.useCallback((sha: string) => go({ repo, ref: state.ref, commit: sha }), [go, repo, state.ref]);
   const error = repoErr ?? (load.t === "error" ? load.err : null);
@@ -102,14 +125,22 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
   return (
     <>
       {defaultBranch && ref && <BranchBar repo={repo} current={ref} defaultBranch={defaultBranch} onPick={(b) => go({ repo, ref: b === defaultBranch ? undefined : b })} />}
-      <Header className="repos-files-header" title="Pushes" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[switcherItem(repo, openSwitch, (r) => go({ repo: r }))]} />
+      <Header className="repos-files-header" title="Pushes" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[
+        switcherItem(repo, openSwitch, (r) => go({ repo: r })),
+        { id: "filter", text: "Filter", important: true, renderButton: () => <Button key="filter" className="gh-cmd-icon" subtle iconProps={{ iconName: "Filter" }} ariaLabel="Filter pushes" ariaPressed={filterOpen} tooltipProps={{ text: "Filter" }} onClick={() => setFilterOpen((o) => !o)} /> },
+      ]} />
       <div className="page-content page-content-top gh-pr-body flex-column">
+        {filterOpen && (
+          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("actor", { value: "" }); }} searchRoleAriaLabel="Filter pushes">
+            <TextFilterBarItem filterItemKey="actor" placeholder="Pushed by (GitHub username)" ariaLabel="Pushed by" />
+          </FilterBar>
+        )}
         {error ? (
           <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this repository's pushes" permission="Contents" />
         ) : load.t === "loading" || !ref ? (
           <Loading label="Loading pushes" />
         ) : !groups.length ? (
-          <ZeroData iconProps={{ iconName: "BranchShelveset" }} imageAltText="" primaryText="No pushes" secondaryText={`GitHub has no recorded pushes to ${ref}.`} />
+          <ZeroData iconProps={{ iconName: "BranchShelveset" }} imageAltText="" primaryText="No pushes" secondaryText={actor ? `GitHub has no recorded pushes to ${ref} by ${actor}.` : `GitHub has no recorded pushes to ${ref}.`} />
         ) : (
           <Card className="gh-pr-card gh-pushes-card" contentProps={{ contentPadding: false }}>
             <div className="gh-pushes flex-column">
@@ -134,6 +165,11 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
               ))}
             </div>
           </Card>
+        )}
+        {load.t === "ready" && load.v.next && (
+          <div className="gh-load-more flex-row justify-center">
+            {more ? <Spinner size={SpinnerSize.medium} ariaLabel="Loading more pushes" /> : <Button text="Load more" onClick={loadMore} />}
+          </div>
         )}
       </div>
     </>
