@@ -36,6 +36,8 @@ export interface AlertRow {
   severity: Severity;
   title: string;
   location: string;
+  /** Dependabot only: the manifest file the dependency is declared in, shown under the package name. */
+  manifestPath?: string;
   firstDetected: Date;
   state: AlertState;
   tool?: string;
@@ -170,6 +172,7 @@ export function alertRow(kind: AlertKind, json: any): AlertRow {
   if (kind === "dependabot") {
     row.title = json.security_advisory?.summary ?? "";
     row.location = json.dependency?.package?.name ?? "";
+    if (json.dependency?.manifest_path) row.manifestPath = json.dependency.manifest_path;
     row.ruleId = json.security_advisory?.ghsa_id;
   } else if (kind === "code") {
     row.title = json.rule?.description ?? "";

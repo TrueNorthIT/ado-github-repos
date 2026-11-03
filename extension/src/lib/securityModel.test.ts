@@ -79,11 +79,22 @@ describe("AS-2: Dependabot rows", () => {
       severity: "Medium",
       title: "widget-parser has a denial of service via pattern amplification",
       location: "widget-parser",
+      manifestPath: "app/package-lock.json",
       firstDetected: new Date("2030-01-03T10:00:00Z"),
       state: "Open",
       ruleId: "GHSA-aaaa-bbbb-cccc",
       url: "https://github.com/acme/web/security/dependabot/7",
     });
+  });
+
+  it("carries the manifest path as a separate field and leaves location as the package", () => {
+    const row = alertRow("dependabot", dependabotJson({ dependency: { package: { ecosystem: "npm", name: "widget-parser" }, manifest_path: "web/package-lock.json" } }));
+    expect(row.manifestPath, "Expected the manifest path for the secondary line").toBe("web/package-lock.json");
+    expect(row.location, "Expected location to stay the package name").toBe("widget-parser");
+  });
+  it("has no manifestPath key when the alert has none, and none for other alert kinds", () => {
+    expect(alertRow("dependabot", dependabotJson({ dependency: { package: { name: "widget-parser" } } })), "Expected no manifestPath key").not.toHaveProperty("manifestPath");
+    expect(alertRow("code", codeScanningJson()), "Expected no manifestPath on a code scanning row").not.toHaveProperty("manifestPath");
   });
 
   it("reads the four states: open, dismissed, fixed and auto_dismissed", () => {
