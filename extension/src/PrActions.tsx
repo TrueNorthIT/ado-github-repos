@@ -437,8 +437,9 @@ function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: Actio
   const toggle = (name: string) => { memo.current = { ...memo.current, open: { ...memo.current.open, [name]: !memo.current.open[name] } }; bump((n) => n + 1); };
   const leaf = (r: ActionablePolicyRow, i: number): ITreeItem<PolicyNode> => ({ id: `r-${r.kind}-${r.title}-${i}`, data: { kind: "row", r } });
   const open = memo.current.open;
-  const sig = JSON.stringify([rows.map((r) => [r.kind, r.title, r.state, r.detail, r.required, r.group]), open]);
-  // Rebuilt only when the rows or the open groups change: a fresh provider every render makes the Tree re-render without end.
+  const sig = JSON.stringify([rows.map((r) => [r.kind, r.title, r.state, r.detail, r.required, r.group]), open, store.busy]);
+  // Rebuilt only when the rows, the open groups or the busy state change: a fresh provider every render makes the Tree re-render without
+  // end, and the Re-run buttons read store.busy, so a busy flip must rebuild it too or they would not disable while a re-run runs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const provider = React.useMemo(() => new TreeItemProvider<PolicyNode>([
     ...top.map(leaf),
