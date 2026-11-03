@@ -186,7 +186,7 @@
 .gh-feed-list::before { content: ""; position: absolute; left: 11px; top: 28px; bottom: 28px; border-left: 2px dotted var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); }
 .gh-feed-row { position: relative; min-width: 0; }
 .gh-feed-row-thread, .gh-feed-row-comment, .gh-feed-row:first-child { margin-bottom: 16px; }
-.gh-feed-rail { position: absolute; left: -32px; top: 19px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: var(--background-color, #fff); z-index: 1; }
+.gh-feed-rail { position: absolute; left: -32px; top: 19px; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: rgba(var(--palette-neutral-2, 248, 248, 248), 1); /* the page grey, so the icon masks the dotted line without a white box */ z-index: 1; }
 .gh-feed-row-event .gh-feed-rail { top: 14px; }
 .gh-feed-rail .fabric-icon { margin: 4px 0; font-size: 14px; }
 .gh-feed-rail-success { color: var(--status-success-foreground, #107c10); }
