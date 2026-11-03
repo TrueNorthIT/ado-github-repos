@@ -347,6 +347,17 @@
 .gh-ba-bar { height: 2px; background: var(--communication-background, #0078d4); min-width: 0; }
 .gh-ba-split { align-self: stretch; width: 1px; background: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); margin: 0 1px; min-height: 18px; }
 .gh-branch-lock { margin-left: 6px; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-branch-lock.bolt-button { margin-left: 2px; padding: 2px 4px; min-height: 0; }
+/* Branch policies page: native's policy rows (toggle, name, sentence, settings). */
+.gh-bpol-card { margin-bottom: 16px; }
+.gh-bpol-list { gap: 20px; }
+.gh-bpol-row { gap: 12px; align-items: flex-start; }
+.gh-bpol-toggle { flex-shrink: 0; margin-top: 2px; }
+.gh-bpol-text { gap: 2px; min-width: 0; }
+.gh-bpol-detail { gap: 4px; margin-top: 8px; padding-left: 12px; border-left: 2px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-bpol-source { margin-top: 4px; }
+.gh-bpol-na .gh-bpol-title { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-bpol-empty { padding: 4px 0 8px; }
 .gh-tag-kind { margin-left: 8px; }
 .gh-fav.bolt-button .fabric-icon.ms-Icon--FavoriteStarFill { color: rgb(214, 127, 60); }
 .gh-tags-empty { min-height: 320px; justify-content: center; }

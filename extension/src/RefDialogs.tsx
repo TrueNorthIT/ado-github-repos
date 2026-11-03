@@ -112,3 +112,42 @@ export function ConfirmDeleteDialog({ what, name, busy, error, clearError, confi
     </Dialog>
   );
 }
+
+/** Rename branch: the name field starts with the current name; the same checks as New branch, and the name must change. */
+export function RenameBranchDialog({ from, existing, busy, error, clearError, rename, close }: {
+  from: string; existing: string[]; busy: boolean; error: string | null; clearError: () => void;
+  rename: (to: string) => void; close: () => void;
+}) {
+  const [name, setName] = React.useState(from);
+  const others = React.useMemo(() => existing.filter((n) => n !== from), [existing, from]);
+  const ok = name !== from && isNameOk(name, others);
+  return (
+    <Dialog
+      titleProps={{ text: "Rename branch" }}
+      onDismiss={close}
+      footerButtonProps={[{ text: "Cancel", onClick: close }, { text: "Rename", primary: true, disabled: !ok || busy, onClick: () => rename(name) }]}
+    >
+      <div className="gh-dialog-form flex-column">
+        <ErrorLine error={error} dismiss={clearError} />
+        <NameField label="New name" name={name} setName={setName} existing={others} what="Branch" />
+        <div className="secondary-text body-m">Open pull requests and branch protection rules move to the new name. Local clones keep the old name until they are updated.</div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Confirmation for "Set as default branch". */
+export function SetDefaultBranchDialog({ branch, current, busy, error, clearError, confirm, close }: { branch: string; current: string | undefined; busy: boolean; error: string | null; clearError: () => void; confirm: () => void; close: () => void }) {
+  return (
+    <Dialog
+      titleProps={{ text: "Set as default branch" }}
+      onDismiss={close}
+      footerButtonProps={[{ text: "Cancel", onClick: close }, { text: "Set as default", primary: true, disabled: busy, onClick: confirm }]}
+    >
+      <div className="flex-column gh-dialog-form">
+        <ErrorLine error={error} dismiss={clearError} />
+        <div>Make <strong>{branch}</strong> the default branch{current ? <> instead of <strong>{current}</strong></> : null}? New pull requests and clones will use it, and it becomes the base for comparisons.</div>
+      </div>
+    </Dialog>
+  );
+}

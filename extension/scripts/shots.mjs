@@ -24,6 +24,9 @@ const MOCK_PAGES = {
   commits: `?hub=commits${REPO}`,
   pushes: `?hub=pushes${REPO}`,
   branches: `?hub=branches${REPO}&branchTab=all`,
+  "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`,
+  "branch-policies-reader": `?hub=branches&scenario=notAdmin${REPO}&view=policies&polBranch=release%2F1.0`,
+  "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v1.0.0&cmpHead=develop`,
   tags: `?hub=tags${REPO}`,
   releases: `?hub=tags${REPO}&tagTab=releases`,
   prs: `?hub=prs${REPO}&view=prs`,
@@ -51,6 +54,7 @@ async function livePages() {
   return {
     files: `?hub=files${REPO}`, commits: `?hub=commits${REPO}`, pushes: `?hub=pushes${REPO}`,
     branches: `?hub=branches${REPO}&branchTab=all`, tags: `?hub=tags${REPO}`, releases: `?hub=tags${REPO}&tagTab=releases`,
+    "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`, "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v0.1.0&cmpHead=main`,
     prs: `?hub=prs${REPO}&view=prs`, "pr-3": `?hub=prs${REPO}&view=prs&pr=3`, "pr-3-files": `?hub=prs${REPO}&view=prs&pr=3&prPage=files`, "pr-4": `?hub=prs${REPO}&view=prs&pr=4`,
     actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
