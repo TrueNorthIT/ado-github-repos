@@ -24,6 +24,7 @@ const MOCK_PAGES = {
   commits: `?hub=commits${REPO}`,
   pushes: `?hub=pushes${REPO}`,
   "commits-filtered": `?hub=commits${REPO}&cAuthor=ann&cFrom=2026-01-01`,
+  "commit-detail": `?hub=commits${REPO}&commit=ed921796ed921796ed921796ed921796ed921796&commitTab=details`,
   "pushes-filtered": `?hub=pushes${REPO}&pushPeriod=week`,
   branches: `?hub=branches${REPO}&branchTab=all`,
   tags: `?hub=tags${REPO}`,

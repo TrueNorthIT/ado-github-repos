@@ -28,6 +28,8 @@ import { usePrefs } from "./prefs";
 import { watchTheme } from "./theme";
 import { MoreButton } from "azure-devops-ui/Menu";
 import { useCommitActions } from "./CommitActions";
+import { CommitWorkItemList, MessageWithWorkItems, WorkItemPills, useWorkItemLinks, type WorkItemLinks } from "./CommitWorkItems";
+import { findWorkItemIds } from "./lib/workItems";
 import "./browser.css";
 
 type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
@@ -46,7 +48,7 @@ function useLoad<T>(make: () => Promise<T>, deps: unknown[]): [Load<T>, () => vo
 
 // ---------- the header's second line ----------
 
-function Meta({ d, repo, branch, branchHref, openBranch }: { d: CommitDetail; repo: string; branch?: string; branchHref: string; openBranch: (e?: React.MouseEvent | React.KeyboardEvent) => void }) {
+function Meta({ d, repo, branch, branchHref, openBranch, workItems }: { d: CommitDetail; repo: string; branch?: string; branchHref: string; openBranch: (e?: React.MouseEvent | React.KeyboardEvent) => void; workItems?: React.ReactNode }) {
   return (
     <div className="gh-pr-meta flex-row flex-center">
       <span className="gh-pr-meta-text">
@@ -56,6 +58,7 @@ function Meta({ d, repo, branch, branchHref, openBranch }: { d: CommitDetail; re
         <span className="secondary-text">committed <RelDate date={d.committedDate} /></span>
         {branch && <Link className="gh-pr-branch-link" href={branchHref} onClick={openBranch}>{branch}</Link>}
         <CheckStatusCell status={d.status} />
+        {workItems}
       </span>
     </div>
   );
@@ -72,12 +75,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Details({ d, repo, parentHref, openParent }: { d: CommitDetail; repo: string; parentHref: (sha: string) => string; openParent: (sha: string) => void }) {
+function Details({ d, repo, parentHref, openParent, wiIds, wiLinks }: { d: CommitDetail; repo: string; parentHref: (sha: string) => string; openParent: (sha: string) => void; wiIds: number[]; wiLinks: WorkItemLinks }) {
   return (
     <div className="page-content page-content-top flex-column">
       <Card className="gh-pr-card" contentProps={{ contentPadding: true }}>
         <div className="gh-detail flex-column">
-          <Row label="Message"><pre className="gh-detail-message">{d.message}</pre></Row>
+          <Row label="Message"><pre className="gh-detail-message"><MessageWithWorkItems text={d.message} links={wiLinks} /></pre></Row>
+          {wiIds.length > 0 && <Row label="Work items"><CommitWorkItemList links={wiLinks} /></Row>}
           <Row label="Author"><PersonLine person={d.author} /> <span className="secondary-text"><RelDate date={d.authoredDate} /></span></Row>
           <Row label="Committer"><PersonLine person={d.committer} /> <span className="secondary-text"><RelDate date={d.committedDate} /></span></Row>
           <Row label={d.parents.length === 1 ? "Parent" : "Parents"}>
@@ -177,6 +181,8 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
   React.useEffect(() => watchTheme(setDark), []);
   const [load, retry] = useLoad(() => getCommitDetail(repo, sha), [repo, sha, props.signedIn]);
   const actions = useCommitActions(repo, props.signedIn);
+  const wiIds = React.useMemo(() => (load.t === "ready" ? findWorkItemIds(load.v.message) : []), [load]);
+  const wiLinks = useWorkItemLinks(wiIds);
   const tab = state.commitTab ?? "files";
   const back = () => go({ repo, ref: state.ref });
   const set = (s: Partial<typeof state>) => go({ ...state, ...s });
@@ -224,14 +230,14 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
       />
       <div className="gh-pr-sub">
         {actions.ui}
-        {d ? <Meta d={d} repo={repo} branch={branch} branchHref={href("files", { repo, ref: branch })} openBranch={openInHub("files", { repo, ref: branch })} /> : <div className="gh-pr-meta" />}
+        {d ? <Meta d={d} repo={repo} branch={branch} branchHref={href("files", { repo, ref: branch })} openBranch={openInHub("files", { repo, ref: branch })} workItems={<WorkItemPills ids={wiIds} links={wiLinks} />} /> : <div className="gh-pr-meta" />}
       </div>
       <TabBar ariaLabel="Commit" selectedTabId={tab} onSelectedTabChanged={(id) => set({ commitTab: id as "files" | "details" })} tabSize={TabSize.Tall} disableSticky>
         <Tab id="files" name="Files" />
         <Tab id="details" name="Details" />
       </TabBar>
       {!d ? <Loading label="Loading commit" /> : tab === "details" ? (
-        <Details d={d} repo={repo} parentHref={(p) => href("commits", { repo, ref: state.ref, commit: p })} openParent={(p) => go({ repo, ref: state.ref, commit: p })} />
+        <Details d={d} repo={repo} parentHref={(p) => href("commits", { repo, ref: state.ref, commit: p })} openParent={(p) => go({ repo, ref: state.ref, commit: p })} wiIds={wiIds} wiLinks={wiLinks} />
       ) : (
         <FilesTab d={d} repo={repo} parent={state.parent ?? 1} setParent={(n) => set({ parent: n === 1 ? undefined : n })} dark={dark} props={props} />
       )}

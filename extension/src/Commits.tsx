@@ -17,6 +17,8 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { computeGraph, type GraphLayout, type GraphRow } from "./lib/commitGraph";
 import { isShaPrefix, type CommitRow } from "./lib/commitsQuery";
 import { applyCommitFilters, formatDayText, hasServerFilters, matchesKeyword, noMatchText, normalizeCommitFilters, parseDayText, type CommitFilters } from "./lib/commitsRest";
+import { commitWorkItemIds } from "./lib/commitWorkItems";
+import { WorkItemPills, useWorkItemLinks, type WorkItemLinks } from "./CommitWorkItems";
 import { patchHash, useHashExtras } from "./hostNav";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
@@ -45,6 +47,8 @@ export interface CommitTableProps {
   showHeader?: boolean;
   /** The ⋯ items of a commit; leave out for no actions column. */
   menu?: (sha: string) => IMenuItem[];
+  /** AB# mentions per sha and their links: pills on the second line. Leave out for none. */
+  workItems?: { bySha: Record<string, number[]>; links: WorkItemLinks };
 }
 
 function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
@@ -85,6 +89,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
               <PersonLine person={row.author} className="secondary-text body-s" />
               <span className="secondary-text body-s"><CommitTime date={row.date} /></span>
               <SignaturePill signature={row.signature} />
+              {p.workItems?.bySha[row.sha] && <WorkItemPills ids={p.workItems.bySha[row.sha]} links={p.workItems.links} />}
             </span>
           }
         />
@@ -129,7 +134,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
 }
 
 export function CommitTable(p: CommitTableProps) {
-  const cols = React.useMemo(() => columns(p), [p.graph, p.commitHref, p.open, p.prHref, p.openPr, p.menu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cols = React.useMemo(() => columns(p), [p.graph, p.commitHref, p.open, p.prHref, p.openPr, p.menu, p.workItems]); // eslint-disable-line react-hooks/exhaustive-deps
   const provider = React.useMemo(() => p.rows ? new ArrayItemProvider(p.rows) : skeletonRows<CommitRow>(), [p.rows]);
   return (
     <Table<CommitRow>
@@ -228,6 +233,9 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const filtering = !!keyword || hasServerFilters(server);
   // The graph needs every row in order, so it hides while a filter drops some (author, date and path filters skip commits too).
   const graph = React.useMemo(() => (prefs.graph && !filtering ? computeGraph(rows) : undefined), [prefs.graph, filtering, rows]);
+  const wiIds = React.useMemo(() => commitWorkItemIds(rows), [rows]);
+  const wiLinks = useWorkItemLinks(wiIds.all);
+  const workItems = React.useMemo(() => ({ bySha: wiIds.bySha, links: wiLinks }), [wiIds, wiLinks]);
   const clearFilters = () => ["keyword", "author", "from", "to", "path"].forEach((k) => filter.setFilterItemState(k, { value: "" }));
 
   const search = async () => {
@@ -310,7 +318,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         ) : (
           <>
             <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
-              <CommitTable rows={filtered} graph={graph} label={`Commits on ${ref}`} commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} />
+              <CommitTable rows={filtered} graph={graph} label={`Commits on ${ref}`} commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} workItems={workItems} />
             </Card>
             {next.more && (
               <div className="gh-load-more flex-row justify-center">
