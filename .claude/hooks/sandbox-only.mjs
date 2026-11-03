@@ -10,7 +10,8 @@ if (!/GH_SANDBOX_TOKEN|ghu_[A-Za-z0-9]/.test(cmd)) process.exit(0);
 
 const found = new Set();
 const add = (o, n) => found.add(`${o}/${n}`.replace(/\.git$/, "").toLowerCase());
-for (const m of cmd.matchAll(/\/repos\/([^/\s"'`?]+)\/([^/\s"'`?]+)/g)) add(m[1], m[2]);
+// `gh api` takes the path with or without its leading slash (gh api repos/o/r), so a word start counts as well as "/".
+for (const m of cmd.matchAll(/(?:^|[\s/"'`=])repos\/([^/\s"'`?]+)\/([^/\s"'`?]+)/g)) add(m[1], m[2]);
 for (const m of cmd.matchAll(/(?<!api\.)github\.com[/:]([^/\s"'`]+)\/([^/\s"'`?#]+)/g)) add(m[1], m[2]);
 for (const m of cmd.matchAll(/(?:^|\s)(?:-R|--repo)(?:\s+|=)["']?([^/\s"']+)\/([^\s"']+?)["']?(?=\s|$)/g)) add(m[1], m[2]);
 for (const m of cmd.matchAll(/repo:["']?([^/\s"']+)\/([^\s"']+?)["']?(?=\s|$|&|")/g)) add(m[1], m[2]);
