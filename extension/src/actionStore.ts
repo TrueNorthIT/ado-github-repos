@@ -21,6 +21,7 @@ import type { WorkItemRef } from "./lib/workItems";
 import { completeWorkItems } from "./workItemsApi";
 import { addClosingIssueToBody, addWorkItemToBody, removeClosingIssueFromBody, removeWorkItemFromBody, updatePullRequestMutation, type EditField, type UpdatePullRequestInput } from "./lib/prEdit";
 import { addAssigneesMutation, removeAssigneesMutation, removeReviewRequestsRequest, requestReviewsMutation, type Candidate, type RequestedReviewer } from "./lib/reviewerSearch";
+import { mapRevert, revertPullRequestMutation } from "./lib/revertPr";
 import { addLabelsMutation, removeLabelsMutation } from "./lib/labels";
 import { setMilestoneMutation } from "./lib/milestones";
 import { addProjectItemMutation, deleteProjectItemMutation } from "./lib/projects";
@@ -194,6 +195,18 @@ export class ActionStore {
   private v() {
     if (!this.view) throw new Error("Pull request actions have not loaded.");
     return this.view;
+  }
+
+  /** Reverts this merged pull request. Resolves with the new pull request's number, or null when it failed (the error is on the store). */
+  async revert(title: string, draft: boolean): Promise<number | null> {
+    const v = this.v();
+    let made: number | null = null;
+    await this.run(async () => {
+      const r = mapRevert(await mutate(revertPullRequestMutation({ pullRequestId: v.pr.id, title, draft })));
+      if (!r) throw new Error("GitHub did not return the new pull request.");
+      made = r.number;
+    });
+    return made;
   }
 
   vote(id: VoteId, body?: string) {
