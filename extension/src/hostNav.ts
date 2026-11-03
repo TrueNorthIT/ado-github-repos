@@ -20,6 +20,9 @@ const NAV_SERVICE = "ms.vss-features.host-navigation-service";
  * #...&pr=234 link opened the PR list, because the empty state made the PR hub fill in its default repo and replace
  * the real hash). An empty first answer is therefore read once more after a short wait before it is trusted.
  */
+/** Delays (ms) between the re-reads of the host hash before a default repo is written to the address (about 4 s in all). */
+export const IF_EMPTY_WAITS = [300, 700, 1200, 1800];
+
 export async function readInitialHash(get: () => Promise<string>, waitMs = 400): Promise<string> {
   const first = await get();
   if (first.replace(/^#+/, "")) return first;
@@ -90,9 +93,12 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     onChange(s);
   };
 
+  // Bumped by every navigation, so a pending default fill can tell it has been overtaken.
+  let navs = 0;
   emit(await readInitialHash(() => svc.getHash()));
-  svc.onHashChanged(emit);
+  svc.onHashChanged((h) => { navs++; emit(h); });
   const write = (s: BrowseState, replace?: boolean) => {
+    navs++;
     const h = carry(s, rawHash);
     setRaw(h);
     if (replace) svc.replaceHash(h.slice(1)); // e.g. a hub filling in its default repo: no extra history entry
@@ -103,12 +109,22 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   };
   return (s, replace) => {
     if (replace !== "ifEmpty") return write(s, replace);
-    // A default repo must never overwrite a real address: the host can answer the first getHash() before it has the
-    // hash (0.26.0 and again 0.27.1: a #...&pr=234 link opened the PR list). Ask again now; if a repo is there, use it.
+    // A default repo must never overwrite a real address. On a cold load the host can answer getHash() with "" for well
+    // over a second (0.26.0, 0.27.1, and 0.31.0 even after a re-read: a #...&path=README.md link opened the repo root).
+    // So show the default in memory only, keep asking, and adopt the real hash if it turns up; write the default to the
+    // address only once it is still empty at the end, and never if the user navigated meanwhile.
+    const at = navs;
+    announce(s);
+    onChange(parse(serialize(s)));
     void (async () => {
-      const h = await svc.getHash().catch(() => "");
-      if (parse(h).repo) emit(h);
-      else write(s, true);
+      for (const wait of IF_EMPTY_WAITS) {
+        await new Promise((r) => setTimeout(r, wait));
+        if (navs !== at) return;
+        const h = await svc.getHash().catch(() => "");
+        if (navs !== at) return;
+        if (parse(h).repo) return emit(h);
+      }
+      write(s, true);
     })();
   };
 }
