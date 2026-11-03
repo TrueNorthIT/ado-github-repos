@@ -115,7 +115,9 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   svc.onHashChanged((h) => {
     navs++;
     // Back/forward cannot be blocked: put the old address back, keep the editor, and ask. Discard moves on to the new address.
-    if (h.replace(/^#+/, "") !== rawHash.replace(/^#+/, "") && guarded(current, parse(h), () => emit(h))) svc.replaceHash(rawHash.replace(/^#+/, ""));
+    // Discard must also put the new address back in the bar: the old one was restored while the dialog was up.
+    const moveOn = () => { svc.replaceHash(h.replace(/^#+/, "")); emit(h); };
+    if (h.replace(/^#+/, "") !== rawHash.replace(/^#+/, "") && guarded(current, parse(h), moveOn)) svc.replaceHash(rawHash.replace(/^#+/, ""));
     else emit(h);
   });
   const write = (s: BrowseState, replace?: boolean) => {
