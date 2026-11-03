@@ -446,7 +446,8 @@
 .gh-batch { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
 .gh-batch-bar { gap: 12px; padding: 8px 12px; border: 1px solid rgba(var(--palette-primary, 0, 120, 212), 1); border-radius: 4px; background: rgba(var(--palette-primary, 0, 120, 212), .08); }
 .gh-batch .gh-feed-error { padding: 0; }
-.gh-review-dialog { gap: 12px; min-width: min(560px, 80vw); }
+.gh-review-dialog { gap: 12px; width: 520px; max-width: 100%; box-sizing: border-box; }
+.gh-review-dialog .bolt-radio-button-text, .gh-review-dialog .bolt-radio-button-group { white-space: normal; }
 .gh-review-dialog .gh-feed-error { padding: 0; }
 .gh-finish-review.bolt-button { white-space: nowrap; }
 

@@ -3,7 +3,6 @@ import * as React from "react";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Dialog } from "azure-devops-ui/Dialog";
-import { FormItem } from "azure-devops-ui/FormItem";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { RadioButton, RadioButtonGroup } from "azure-devops-ui/RadioButton";
@@ -85,11 +84,11 @@ function ReviewDialog({ store, repo, close }: { store: FeedStore; repo: string; 
         ) : (
           <>
             <CommentBox value={body} set={setBody} label="Review summary" placeholder="Leave a comment" disabled={busy} submit={submit} repo={repo} participants={people(store)} rows={5} autoFocus />
-            <FormItem className="gh-review-verdict" label="Review type">
+            <div className="gh-review-verdict">
               <RadioButtonGroup text="Review type" selectedButtonId={event} onSelect={(id) => setEvent(id as SubmitEvent)}>
                 {VERDICTS.map((v) => <RadioButton key={v.id} id={v.id} text={`${v.text}. ${v.hint}`} disabled={busy} />)}
               </RadioButtonGroup>
-            </FormItem>
+            </div>
             <span className="secondary-text body-s">{n} pending {n === 1 ? "comment" : "comments"} will be submitted with this review.</span>
           </>
         )}
