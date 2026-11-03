@@ -77,6 +77,9 @@ function history(count: number, big: boolean): { commits: FCommit[]; main: strin
       parents, pr: pr ?? null, status: r() < 0.12 ? "FAILURE" : r() < 0.06 ? null : r() < 0.03 ? "PENDING" : "SUCCESS",
     };
     c.message = `${c.title}\n\n${c.title} (details).\nCo-authored in the mock fixtures.`;
+    // Azure Boards mentions (AB#), in the headline of some commits and the body of others; 1000..1099 resolve in the work item mock, 4242 does not.
+    if (idx % 7 === 3) { c.title = `${c.title} AB#${1000 + (idx % 6)}`; c.message = `${c.title}\n\n${c.message.split("\n").slice(2).join("\n")}`; }
+    else if (idx % 5 === 2) c.message += `\n\nRelated work items: AB#${1000 + (idx % 4)}, AB#${1002 + (idx % 3)}${idx % 10 === 7 ? ", AB#4242" : ""}`;
     commits.push(c);
     return c;
   };

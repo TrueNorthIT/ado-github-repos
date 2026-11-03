@@ -55,6 +55,7 @@ export type PushExpansion = { kind: "compare"; path: string } | { kind: "single"
 
 import { GHOST_AVATAR, mapCheckState, type CheckStatus } from "./commitsQuery";
 import { comparePath } from "./commitDetail";
+import { isPushPeriod } from "./pushesHash";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -63,10 +64,12 @@ export function formatLocalDay(date: Date): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
-/** `after` is the cursor from the previous page's Link rel="next"; `actor` filters server-side by login (live: GitHub honours it, exact login). */
-export function pushesPath(repo: string, branch: string, perPage = 30, opts: { after?: string; actor?: string } = {}): string {
+/** `after` is the cursor from the previous page's Link rel="next"; `actor` filters server-side by login (live: GitHub honours it, exact login);
+ *  `period` is the activity API's `time_period` (day, week, month, quarter, year), anything else is left out. */
+export function pushesPath(repo: string, branch: string, perPage = 30, opts: { after?: string; actor?: string; period?: string } = {}): string {
   const actor = opts.actor?.trim();
-  return `/repos/${repo}/activity?ref=${encodeURIComponent("refs/heads/" + branch)}&per_page=${perPage}${opts.after ? `&after=${encodeURIComponent(opts.after)}` : ""}${actor ? `&actor=${encodeURIComponent(actor)}` : ""}`;
+  const period = isPushPeriod(opts.period) ? `&time_period=${opts.period}` : "";
+  return `/repos/${repo}/activity?ref=${encodeURIComponent("refs/heads/" + branch)}&per_page=${perPage}${opts.after ? `&after=${encodeURIComponent(opts.after)}` : ""}${actor ? `&actor=${encodeURIComponent(actor)}` : ""}${period}`;
 }
 
 /** The `after` cursor of a Link header's rel="next" entry, or undefined on the last page. */

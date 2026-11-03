@@ -132,7 +132,8 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
     const ref = (u.searchParams.get("ref") ?? "").replace(/^refs\/heads\//, "");
     // Pages of 8 (not per_page) so "Load more" shows with these short fixture histories; the cursor is the offset, as an opaque string.
     const actor = u.searchParams.get("actor");
-    const all = activities(rr, ref).filter((a) => !actor || a.actor?.login === actor);
+    const days = ({ day: 1, week: 7, month: 30, quarter: 90, year: 365 } as Record<string, number>)[u.searchParams.get("time_period") ?? ""];
+    const all = activities(rr, ref).filter((a) => (!actor || a.actor?.login === actor) && (!days || Date.parse(a.timestamp) >= Date.now() - days * 864e5));
     const from = Number(u.searchParams.get("after")?.replace(/^cur/, "") || 0);
     const more = all.length > from + 8;
     const link = more ? `<https://api.github.com${u.pathname}?ref=${encodeURIComponent(u.searchParams.get("ref") ?? "")}&per_page=30&after=cur${from + 8}>; rel="next"` : undefined;
@@ -159,6 +160,26 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
       commits: commits.slice((page - 1) * per, page * per).map(restCommit),
       files: page === 1 ? filesOf(rr, commits) : [],
     });
+  }
+  if (rest === "/commits" && (init?.method ?? "GET") === "GET") {
+    // The Commits list (REST): sha, path, author (login or name, case-insensitive), since, until, paged by page and per_page with a Link header.
+    if (sc === "commitsFail") return new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) } });
+    const tip = resolve(rr, u.searchParams.get("sha") ?? "main");
+    if (!tip) return json({ message: "No commit found for SHA" }, 422);
+    const path = u.searchParams.get("path");
+    const author = u.searchParams.get("author")?.toLowerCase();
+    const since = u.searchParams.get("since") ? Date.parse(u.searchParams.get("since")!) : -Infinity;
+    const until = u.searchParams.get("until") ? Date.parse(u.searchParams.get("until")!) : Infinity;
+    const all = historyOf(rr, tip).filter((c) =>
+      (!path || filesOf(rr, [c]).some((f: any) => f.filename === path || f.filename.startsWith(`${path}/`))) &&
+      (!author || c.author.login?.toLowerCase() === author || c.author.name.toLowerCase() === author) &&
+      c.at + 60e3 >= since && c.at + 60e3 <= until);
+    const page = Number(u.searchParams.get("page") || 1);
+    const per = Number(u.searchParams.get("per_page") || 30);
+    const more = page * per < all.length;
+    const q = new URLSearchParams(u.searchParams);
+    q.set("page", String(page + 1));
+    return json(all.slice((page - 1) * per, page * per).map(restCommit), 200, more ? { link: `<https://api.github.com${u.pathname}?${q}>; rel="next"` } : {});
   }
   const one = /^\/commits\/([0-9a-f]{4,40})$/.exec(rest);
   if (one) {

@@ -15,6 +15,10 @@ import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemP
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib/pushes";
+import { applyPushFilters, isPushPeriod, noPushesText, PUSH_PERIODS, type PushPeriod } from "./lib/pushesHash";
+import { DropdownFilterBarItem } from "azure-devops-ui/Dropdown";
+import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
+import { patchHash, useHashExtras } from "./hostNav";
 import type { CommitRow } from "./lib/commitsQuery";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitTable } from "./Commits";
@@ -85,7 +89,7 @@ function PushDay({ repo, branch, pushes, heads, open, expanded, toggle, keyOf, d
                 <Link className="gh-push-title commit-title font-weight-semibold text-ellipsis" subtle removeUnderline href={href("commits", { repo, ref: branch, commit: push.after })} onClick={hubClick(() => open(push.after))}>
                   {title}
                 </Link>
-                {push.forced && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Force push</Pill>}
+                {push.forced && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.outlined} iconProps={{ iconName: "Warning" }} ariaLabel="Force push: this push rewrote the branch's history">Force push</Pill>}
                 {push.created && <Pill className="gh-pr-pill" size={PillSize.compact} variant={PillVariant.standard}>Branch created</Pill>}
               </div>
               <div className="gh-push-line2 flex-row flex-center secondary-text body-s">
@@ -131,14 +135,27 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
   const [load, setLoad] = React.useState<Load<PushesData>>({ t: "loading" });
   const [reload, setReload] = React.useState(0);
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
-  const [filterOpen, setFilterOpen] = React.useState(false);
-  const [actor, setActor] = React.useState("");
+  const { pushFilters: fromHash } = useHashExtras();
+  const [filterOpen, setFilterOpen] = React.useState(() => !!(fromHash.actor || fromHash.period));
+  const [actor, setActor] = React.useState(fromHash.actor ?? "");
+  const [period, setPeriod] = React.useState<PushPeriod | undefined>(fromHash.period);
   const [more, setMore] = React.useState(false);
-  const filter = React.useMemo(() => new Filter(), []);
-  // "Pushed by" is applied server-side (the activity API's `actor` param), so wait for typing to pause before asking.
+  const periodSel = React.useMemo(() => { const d = new DropdownSelection(); d.select(Math.max(0, PUSH_PERIODS.findIndex((x) => x.id === (fromHash.period ?? "any")))); return d; }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const filter = React.useMemo(() => { const f = new Filter(); f.setState({ actor: { value: fromHash.actor ?? "" }, period: { value: [fromHash.period ?? "any"] } }, true); return f; }, []); // eslint-disable-line react-hooks/exhaustive-deps -- the hash only seeds it
+  // "Pushed by" and the date are applied server-side (the activity API's `actor` and `time_period`), so wait for typing to pause before asking.
   React.useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => { clearTimeout(t); t = setTimeout(() => setActor((filter.getFilterItemValue<string>("actor") ?? "").trim()), 400); };
+    const onChange = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const a = (filter.getFilterItemValue<string>("actor") ?? "").trim();
+        const p = (filter.getFilterItemValue<string[]>("period") ?? [])[0];
+        const next = isPushPeriod(p) ? p : undefined;
+        setActor(a);
+        setPeriod(next);
+        patchHash((h) => applyPushFilters(h, { actor: a, period: next })); // kept in the hash, so a reload or a link keeps them
+      }, 400);
+    };
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]);
@@ -147,18 +164,19 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
     let dead = false;
     setLoad({ t: "loading" });
     setExpanded(new Set());
-    listPushes(repo, ref, { actor }).then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
+    listPushes(repo, ref, { actor, period }).then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
     return () => { dead = true; };
-  }, [repo, ref, signedIn, reload, actor]);
+  }, [repo, ref, signedIn, reload, actor, period]);
   const loadMore = () => {
     if (!ref || load.t !== "ready" || !load.v.next) return;
     const prev = load.v;
     setMore(true);
-    listPushes(repo, ref, { actor, after: prev.next }).then(
+    listPushes(repo, ref, { actor, period, after: prev.next }).then(
       (v) => { setLoad({ t: "ready", v: { pushes: [...prev.pushes, ...v.pushes], heads: { ...prev.heads, ...v.heads }, next: v.next } }); setMore(false); },
       (err) => { setMore(false); setLoad({ t: "error", err }); }
     );
   };
+  const clearFilters = () => { filter.setFilterItemState("actor", { value: "" }); periodSel.select(0); filter.setFilterItemState("period", { value: ["any"] }); };
   const groups = React.useMemo(() => (load.t === "ready" ? groupPushesByDate(load.v.pushes) : []), [load]);
   const openCommit = React.useCallback((sha: string) => go({ repo, ref: state.ref, commit: sha }), [go, repo, state.ref]);
   const error = repoErr ?? (load.t === "error" ? load.err : null);
@@ -174,8 +192,9 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
       </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {filterOpen && (
-          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("actor", { value: "" }); }} searchRoleAriaLabel="Filter pushes">
+          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); clearFilters(); }} searchRoleAriaLabel="Filter pushes">
             <TextFilterBarItem filterItemKey="actor" placeholder="Pushed by (GitHub username)" ariaLabel="Pushed by" />
+            <DropdownFilterBarItem filterItemKey="period" placeholder="Date" items={PUSH_PERIODS} selection={periodSel} enforceSingleSelect showFilterBox={false} ariaLabel="Date" />
           </FilterBar>
         )}
         {error ? (
@@ -185,7 +204,14 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
             <Table<object> ariaLabel="Loading pushes" className="gh-push-skeleton" role="table" columns={SKELETON_COLUMNS} itemProvider={skeletonRows<object>()} showHeader={false} spacerWidth={8} />
           </Card>
         ) : !groups.length ? (
-          <ZeroData iconProps={{ iconName: "BranchShelveset" }} imageAltText="" primaryText="No pushes" secondaryText={actor ? `GitHub has no recorded pushes to ${ref} by ${actor}.` : `GitHub has no recorded pushes to ${ref}.`} />
+          <ZeroData
+            iconProps={{ iconName: actor || period ? "Filter" : "BranchShelveset" }}
+            imageAltText=""
+            primaryText="No pushes"
+            secondaryText={noPushesText(ref, actor, period)}
+            actionText={actor || period ? "Clear filters" : undefined}
+            onActionClick={actor || period ? clearFilters : undefined}
+          />
         ) : (
           <Card className="gh-pr-card gh-pushes-card" contentProps={{ contentPadding: false }}>
             <div className="gh-pushes flex-column">

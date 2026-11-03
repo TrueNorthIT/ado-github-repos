@@ -288,6 +288,8 @@
 .gh-person .bolt-persona, .gh-person .vss-Persona { flex: none; }
 .gh-person-name { min-width: 0; }
 .gh-commit-line2 { gap: 8px; min-width: 0; white-space: nowrap; }
+.gh-wi-pills { gap: 4px; min-width: 0; }
+.gh-wi-pill-link { display: inline-flex; }
 .gh-commit-line2 .gh-commit-sha, .gh-commit-sha { font-size: 11px; font-weight: 400; font-family: "Cascadia Mono", Consolas, "Courier New", monospace; }
 .gh-commit-date { white-space: nowrap; }
 .gh-commit-title.bolt-link { padding: 0; font-size: 14px; font-weight: 600; min-width: 0; max-width: 100%; }
