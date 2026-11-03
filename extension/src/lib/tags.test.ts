@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tagListQuery, mapTag, mapTagsPage, createTagMutation, createTagObjectRequest, type GqlTagNode } from "./tags";
+import { tagListQuery, mapTag, mapTagsPage, createTagMutation, createTagObjectRequest, branchFromTagMutation, type GqlTagNode } from "./tags";
 import { buildRefTree, type RefNode } from "./branches";
 import { GHOST_AVATAR } from "./commitsQuery";
 
@@ -185,5 +185,19 @@ describe("T-2: createTagObjectRequest (step 1 of an annotated tag)", () => {
 
   it.each(["", "   ", "\n"])("throws for a blank message %j, before any request exists", (message) => {
     expect(() => createTagObjectRequest("acme/web", { tag: "v2", message, oid: COMMIT }), "Expected an annotated tag to need a message").toThrow(/message/i);
+  });
+});
+
+describe("New branch from tag: createRef at the tag's commit", () => {
+  it("uses the commit oid for a lightweight tag", () => {
+    expect(branchFromTagMutation("REPO_1", mapTag(lightweight()), "hotfix").variables, "Expected refs/heads/hotfix at the commit").toEqual({ input: { repositoryId: "REPO_1", name: "refs/heads/hotfix", oid: COMMIT } });
+  });
+  it("uses the commit oid, not the tag object's, for an annotated tag", () => {
+    const node = annotated();
+    const input = (branchFromTagMutation("REPO_1", mapTag(node), "hotfix").variables as any).input;
+    expect(input.oid, "Expected the commit the tag object points at").toBe(COMMIT);
+  });
+  it("throws when the tag has no commit to branch from", () => {
+    expect(() => branchFromTagMutation("REPO_1", mapTag({ id: "x", name: "bad", target: null }), "hotfix")).toThrow(/commit/i);
   });
 });

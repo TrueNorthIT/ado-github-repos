@@ -10,12 +10,12 @@ import { MoreButton } from "azure-devops-ui/Menu";
 import { TextField } from "azure-devops-ui/TextField";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { buildRefTree, type RefLeaf } from "./lib/branches";
-import type { TagRow } from "./lib/tags";
+import { branchFromTagMutation, type TagRow } from "./lib/tags";
 import { ErrorView } from "./Browser";
 import { HubProps, Loading, PersonLine, RepoHubPage, switcherItem } from "./RepoHub";
-import { ConfirmDeleteDialog, NewTagDialog } from "./RefDialogs";
+import { ConfirmDeleteDialog, NewBranchDialog, NewTagDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
-import { createTag, deleteRef, findCommit, invalidateRefs, listAllBranches, listAllTags, type BranchesData, type TagsData } from "./githubBrowse";
+import { createTag, deleteRef, mutate, findCommit, invalidateRefs, listAllBranches, listAllTags, type BranchesData, type TagsData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { RefWriteError, useRefWrites } from "./refWrites";
 import "./browser.css";
@@ -31,7 +31,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
   const [reload, setReload] = React.useState(0);
   const [query, setQuery] = React.useState(state.q ?? "");
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
-  const [dialog, setDialog] = React.useState<{ kind: "new" } | { kind: "delete"; tag: TagRow } | null>(null);
+  const [dialog, setDialog] = React.useState<{ kind: "new" } | { kind: "delete"; tag: TagRow } | { kind: "branch"; tag: TagRow } | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -72,6 +72,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
               id: `gh-tag-menu-${t.name}`,
               items: [
                 { id: "delete", text: "Delete tag", iconProps: { iconName: "Delete" }, disabled: writes.busy, onActivate: () => setDialog({ kind: "delete", tag: t }) },
+                { id: "branch", text: "New branch from tag", iconProps: { iconName: "BranchFork2" }, disabled: writes.busy || !t.sha, onActivate: () => setDialog({ kind: "branch", tag: t }) },
                 { id: "browse", text: "Browse files", iconProps: { iconName: "OpenSource" }, href: href("files", { repo, ref: t.name }), onActivate: openInHub("files", { repo, ref: t.name }) as any },
                 { id: "history", text: "View history", iconProps: { iconName: "History" }, href: href("commits", { repo, ref: `refs/tags/${t.name}` }), onActivate: openInHub("commits", { repo, ref: `refs/tags/${t.name}` }) as any },
                 { id: "copy", text: "Copy tag name", iconProps: { iconName: "Copy" }, onActivate: () => { void navigator.clipboard?.writeText(t.name); } },
@@ -103,6 +104,10 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
       if (!oid) throw new RefWriteError("No commit to tag.");
       await createTag(repo, v.repoId, { name: p.name, oid, message: p.message });
     }, () => { setDialog(null); refresh(); });
+  };
+  const createBranchFrom = (tag: TagRow, name: string) => {
+    if (!v) return;
+    void writes.run(() => mutate(branchFromTagMutation(v.repoId, tag, name)), () => { setDialog(null); setNotice(`Created branch ${name} from tag ${tag.name}.`); });
   };
   const doDelete = (t: TagRow) => void writes.run(() => deleteRef(t.id), () => { setDialog(null); setNotice(`Deleted tag ${t.name}.`); refresh(); });
   const closeDialog = () => { if (!writes.busy) { setDialog(null); writes.clearError(); } };
@@ -146,6 +151,9 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
       </div>
       {dialog?.kind === "new" && v && (
         <NewTagDialog branches={branchNames} existing={v.tags.map((t) => t.name)} defaultBase={defaultBranch} busy={writes.busy} error={writes.error} clearError={writes.clearError} create={create} close={closeDialog} />
+      )}
+      {dialog?.kind === "branch" && v && (
+        <NewBranchDialog branches={branchNames} existing={branchNames} defaultBase="" fixedBase={`Tag ${dialog.tag.name} (${dialog.tag.shortSha})`} busy={writes.busy} error={writes.error} clearError={writes.clearError} create={(name) => createBranchFrom(dialog.tag, name)} close={closeDialog} />
       )}
       {dialog?.kind === "delete" && (
         <ConfirmDeleteDialog what="tag" name={dialog.tag.name} busy={writes.busy} error={writes.error} clearError={writes.clearError} confirm={() => doDelete(dialog.tag)} close={closeDialog} />

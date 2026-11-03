@@ -37,8 +37,10 @@ const BaseBranch = ({ label, branches, value, setValue }: { label: string; branc
 const ErrorLine = ({ error, dismiss }: { error: string | null; dismiss: () => void }) =>
   error ? <MessageCard severity={MessageCardSeverity.Error} onDismiss={dismiss}>{error}</MessageCard> : null;
 
-export function NewBranchDialog({ branches, existing, defaultBase, busy, error, clearError, create, close }: {
-  branches: string[]; existing: string[]; defaultBase: string; busy: boolean; error: string | null; clearError: () => void;
+export function NewBranchDialog({ branches, existing, defaultBase, fixedBase, busy, error, clearError, create, close }: {
+  branches: string[]; existing: string[]; defaultBase: string;
+  /** A base that is not a branch (a tag's commit): shown as read-only text instead of the branch picker. */
+  fixedBase?: string; busy: boolean; error: string | null; clearError: () => void;
   create: (name: string, base: string) => void; close: () => void;
 }) {
   const [name, setName] = React.useState("");
@@ -53,7 +55,11 @@ export function NewBranchDialog({ branches, existing, defaultBase, busy, error, 
       <div className="gh-dialog-form flex-column">
         <ErrorLine error={error} dismiss={clearError} />
         <NameField label="Name" name={name} setName={setName} existing={existing} what="Branch" />
-        <BaseBranch label="Based on" branches={branches} value={base} setValue={setBase} />
+        {fixedBase ? (
+          <FormItem label="Based on"><div>{fixedBase}</div></FormItem>
+        ) : (
+          <BaseBranch label="Based on" branches={branches} value={base} setValue={setBase} />
+        )}
       </div>
     </Dialog>
   );

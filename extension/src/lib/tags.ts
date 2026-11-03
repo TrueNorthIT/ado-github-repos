@@ -44,6 +44,7 @@ export interface RestRequest {
 }
 
 import { mapPerson } from "./commitsQuery";
+import { createBranchMutation } from "./branches";
 
 const PERSON = "name user { login avatarUrl }";
 
@@ -97,4 +98,10 @@ export function createTagMutation(repositoryId: string, name: string, oid: strin
 export function createTagObjectRequest(repo: string, p: { tag: string; message: string; oid: string }): RestRequest {
   if (!p.message.trim()) throw new Error("An annotated tag needs a message.");
   return { method: "POST", path: `/repos/${repo}/git/tags`, body: { tag: p.tag, message: p.message, object: p.oid, type: "commit" } };
+}
+
+/** New branch from a tag: createRef at the tag's commit (TagRow.sha is the commit even for an annotated tag). THROWS when the tag has none. */
+export function branchFromTagMutation(repositoryId: string, tag: TagRow, name: string): GraphQlRequest {
+  if (!tag.sha) throw new Error(`Tag ${tag.name} does not point at a commit.`);
+  return createBranchMutation(repositoryId, name, tag.sha);
 }
