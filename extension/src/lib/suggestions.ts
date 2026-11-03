@@ -288,3 +288,18 @@ export function toFileText(data: { repository?: { object?: { text?: string | nul
   const o = data?.repository?.object;
   return !o || o.isBinary || o.text == null ? null : o.text;
 }
+
+/** What to tell the user when applying is refused. */
+export function applyFailureText(reason: BatchFailure | "closed" | "head-deleted" | "no-permission"): string {
+  switch (reason) {
+    case "outdated": return "This suggestion is outdated: the code it was written against has changed.";
+    case "mismatch": return "The code on this branch no longer matches what the suggestion was written against.";
+    case "out-of-range": return "The lines this suggestion targets no longer exist in the file.";
+    case "overlap": return "Two of the selected suggestions change the same lines. Apply them one at a time.";
+    case "missing-file": return "A file this suggestion changes could not be read at the head of the branch.";
+    case "empty": return "No suggestions are selected.";
+    case "closed": return "This pull request is closed, so suggestions cannot be applied.";
+    case "head-deleted": return "The branch this pull request comes from no longer exists.";
+    case "no-permission": return "You do not have permission to apply suggestions on this pull request.";
+  }
+}
