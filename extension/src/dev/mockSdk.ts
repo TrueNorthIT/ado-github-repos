@@ -37,6 +37,10 @@ try {
     localStorage.removeItem(PREFIX + "seeded");
   } else if (!localStorage.getItem(PREFIX + "seeded")) {
     docs.set(TOKENS, { id: "tokens", ...fakeTokens() }); persist(TOKENS, docs.get(TOKENS));
+    // VW-9: the user last opened a few of the fixture PRs a week ago, so the list shows "updated since you viewed" on them.
+    const old = new Date(Date.now() - 7 * 86400e3).toISOString();
+    const prefs = { id: "prefs", graph: true, sideBySide: true, favourites: {}, lastViewed: { "truenorthit/github-repos#199": old, "truenorthit/github-repos#197": old, "truenorthit/github-repos#305": old } };
+    docs.set("github-repos-prefs/prefs", prefs); persist("github-repos-prefs/prefs", prefs);
     localStorage.setItem(PREFIX + "seeded", "1");
   }
 } catch { /* ignore */ }

@@ -467,8 +467,9 @@
 .gh-ws-toggle { flex: none; margin-right: 8px; }
 .gh-viewed-error { margin: 0 20px 8px; }
 /* The tree's filter box and menu (VW-5) */
-.gh-tree-filter { gap: 4px; padding: 8px 8px 4px 12px; flex: 0 0 auto; }
-.gh-tree-filter-box { min-width: 0; }
+.gh-tree-filter { gap: 4px; padding: 8px 8px 4px 12px; flex: 0 0 auto; flex-wrap: nowrap; }
+.gh-tree-filter-box { flex: 1 1 60px; min-width: 60px; }
+.gh-tree-filter-box input { min-width: 0; }
 .gh-tree-filter-menu { flex: none; }
 /* File card header additions */
 .gh-viewed { flex: none; margin-left: 4px; }
@@ -495,3 +496,4 @@
 /* List: updated since you viewed (VW-9) */
 .gh-pr-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--palette-primary, 0, 120, 212), 1); }
 .gh-pr-line1 .gh-pr-title-unread { font-weight: 600; }
+.gh-updates-body { min-width: 0; width: 100%; }

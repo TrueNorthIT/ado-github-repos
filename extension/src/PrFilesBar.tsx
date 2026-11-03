@@ -6,7 +6,7 @@ import { DropdownExpandableButton } from "azure-devops-ui/Components/Dropdown/Dr
 import { DropdownMultiSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
 import { ListBoxItemType, type IListBoxItem } from "azure-devops-ui/ListBox";
-import { TextField } from "azure-devops-ui/TextField";
+import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
 import { Toggle } from "azure-devops-ui/Toggle";
 import type { ChangesFrom, RangeContext } from "./lib/commitRange";
 import { EMPTY_FILE_FILTER, isFilterActive, type FileFilter, type FileStatus } from "./lib/fileFilter";
@@ -54,6 +54,7 @@ export function TreeFilter({ files, filter, onChange }: { files: { path: string 
     <div className="gh-tree-filter flex-row flex-center">
       <TextField
         className="gh-tree-filter-box flex-grow"
+        width={TextFieldWidth.auto}
         value={filter.query}
         onChange={(_e, v) => onChange({ ...filter, query: v })}
         placeholder="Filter files"
@@ -69,6 +70,7 @@ export function TreeFilter({ files, filter, onChange }: { files: { path: string 
         selection={selection}
         onSelect={sync}
         showFilterBox={false}
+        minCalloutWidth={200}
         dismissOnSelect={false}
         renderExpandable={(p) => <DropdownExpandableButton {...p} iconProps={{ iconName: "FilterSolid", size: IconSize.medium }} text={count ? String(count) : undefined} />}
       />

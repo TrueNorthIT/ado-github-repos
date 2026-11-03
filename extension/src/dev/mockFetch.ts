@@ -88,7 +88,7 @@ function b4Graphql(query: string, v: Record<string, any>, sc: string): Response 
   }
   if (query.includes("viewerViewedState")) return json({ data: mine ? viewedData(v.number) : { repository: { pullRequest: null } } });
   if (query.includes("itemTypes: [PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED_EVENT]")) return json({ data: mine ? updatesData(v.number) : { repository: { pullRequest: null } } });
-  if (query.includes("viewerLatestReview")) return json({ data: mine ? rangeData(v.number, sc) : { repository: { pullRequest: null } } });
+  if (query.includes("viewerLatestReview") && query.includes("parents(first: 2)")) return json({ data: mine ? rangeData(v.number, sc) : { repository: { pullRequest: null } } });
   return undefined;
 }
 
@@ -144,12 +144,12 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   }
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
+  const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
+  if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
   if (refsAnswer) return refsAnswer;
   const reviewers = /^\/pulls\/(\d+)\/requested_reviewers$/.exec(rest);
   if (reviewers && init?.method === "DELETE") return status(removeRequestedReviewers(Number(reviewers[1]), JSON.parse(String(init.body ?? "null")), sc));
-  const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
-  if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const files = /^\/pulls\/(\d+)\/files$/.exec(rest);
   if (files) return repo.fullName.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === Number(files[1])) ? json(restFiles(Number(files[1]))) : status(404);
   const rerun = /^\/actions\/runs\/(\d+)\/(rerun|rerun-failed-jobs)$/.exec(rest);

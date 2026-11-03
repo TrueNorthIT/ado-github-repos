@@ -139,6 +139,7 @@ function PrTable({ rows, repo, open, label }: { rows: PrListRow[]; repo: string;
   const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
   return (
     <Table<PrListRow>
+      key={Object.keys(lastViewed).length /* the rows are memoised: remount once the stored views arrive */}
       ariaLabel={label}
       role="table"
       columns={cols}

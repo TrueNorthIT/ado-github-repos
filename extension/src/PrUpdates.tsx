@@ -119,10 +119,12 @@ export function PrUpdatesTab({ repo, number, pr: _pr, dark, signedIn, signIn, bu
   return (
     <div className="page-content page-content-top gh-updates flex-column">
       <Card className="gh-pr-card gh-updates-card" titleProps={{ text: "Updates", ariaLevel: 2 }} headerCommandBarItems={picked.length ? [{ id: "clear", text: "Clear selection", iconProps: { iconName: "Cancel" }, important: true, onActivate: () => setPicked([]) }] : undefined}>
+        <div className="gh-updates-body flex-column flex-grow">
         <p className="secondary-text body-s gh-updates-hint">Tick one update to see its changes, or two to compare them.</p>
         <ul className="gh-updates-list" aria-label="Updates, newest first">
           {newest.map((u) => <UpdateRow key={u.index} u={u} checked={picked.includes(u.index)} toggle={(v) => toggle(u.index, v)} />)}
         </ul>
+        </div>
       </Card>
       {picked.length > 0 && <Compare repo={repo} updates={load.updates} picked={picked} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </div>
