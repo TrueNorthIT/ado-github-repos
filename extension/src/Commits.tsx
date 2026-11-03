@@ -7,7 +7,7 @@ import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
-import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell } from "azure-devops-ui/Table";
+import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
 import { MoreButton, type IMenuItem } from "azure-devops-ui/Menu";
 import { TextField } from "azure-devops-ui/TextField";
 import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
@@ -20,7 +20,7 @@ import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
 import { useCommitActions } from "./CommitActions";
 import { GraphCell, graphWidth } from "./CommitGraph";
-import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, PersonLine, PrCell, RepoHubPage, titleSwitcher, useDefaultBranch } from "./RepoHub";
+import { BranchBar, CheckStatusCell, CommitTime, HubProps, PersonLine, PrCell, RepoHubPage, skeletonRows, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { findCommit, invalidateRefs, listCommits } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
@@ -30,7 +30,8 @@ import "./browser.css";
 // ---------- the table (also the Pushes page's expanded commits) ----------
 
 export interface CommitTableProps {
-  rows: CommitRow[];
+  /** undefined while loading: the table shows shimmer rows. */
+  rows: CommitRow[] | undefined;
   /** Lane layout of `rows`; omit for no Graph column. */
   graph?: GraphLayout;
   label: string;
@@ -53,6 +54,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
       id: "graph",
       name: "Graph",
       width: graphWidth(lanes),
+      columnLayout: TableColumnLayout.none,
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="graph" columnIndex={columnIndex} tableColumn={tableColumn} className="gh-graph-cell">
           {byIndex.has(row.sha) && <GraphCell row={byIndex.get(row.sha)!} lanes={lanes} />}
@@ -64,6 +66,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
       id: "commit",
       name: "Commit",
       width: -100,
+      columnLayout: TableColumnLayout.twoLine,
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <TwoLineTableCell
           key="commit"
@@ -112,6 +115,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
       id: "more",
       name: "",
       width: 40,
+      columnLayout: TableColumnLayout.none,
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="more" columnIndex={columnIndex} tableColumn={tableColumn}>
           <MoreButton ariaLabel={`Actions for commit ${row.shortSha}`} contextualMenuProps={{ menuProps: { id: `gh-commit-menu-${row.sha}`, items: menu(row.sha) } }} />
@@ -124,7 +128,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
 
 export function CommitTable(p: CommitTableProps) {
   const cols = React.useMemo(() => columns(p), [p.graph, p.commitHref, p.open, p.prHref, p.openPr, p.menu]); // eslint-disable-line react-hooks/exhaustive-deps
-  const provider = React.useMemo(() => new ArrayItemProvider(p.rows), [p.rows]);
+  const provider = React.useMemo(() => p.rows ? new ArrayItemProvider(p.rows) : skeletonRows<CommitRow>(), [p.rows]);
   return (
     <Table<CommitRow>
       className="gh-commit-table"
@@ -267,7 +271,9 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         {error ? (
           <ErrorView err={error} signIn={doSignIn} busy={props.busy} retry={retry} subject="see this repository's commits" permission="Contents" />
         ) : load.t === "loading" || !ref ? (
-          <Loading label="Loading commits" />
+          <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
+            <CommitTable rows={undefined} label="Loading commits" commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} />
+          </Card>
         ) : !filtered.length ? (
           <ZeroData iconProps={{ iconName: "BranchCommit" }} imageAltText="" primaryText={keyword || path ? "No commits match" : "No commits"} secondaryText={path ? `No commits on ${ref} touched ${path}.` : undefined} />
         ) : (

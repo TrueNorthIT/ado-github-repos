@@ -16,7 +16,7 @@ import { Icon, IconSize } from "azure-devops-ui/Icon";
 import type { BranchTabId } from "./lib/browseState";
 import { barWidths, branchesToCompare, buildRefTree, canDeleteBranch, filterByTab, inBatches, maxDivergence, STALE_DAYS, type AheadBehind, type Branch, type RefLeaf } from "./lib/branches";
 import { ErrorView } from "./Browser";
-import { CheckStatusCell, HubProps, Loading, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
+import { CheckStatusCell, HubProps, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { NewBranchDialog, ConfirmDeleteDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
@@ -228,13 +228,12 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
         {error ? (
           <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); refresh(); }} subject="see this repository's branches" permission="Contents" />
-        ) : data.t === "loading" || !prefsReady ? (
-          <Loading label="Loading branches" />
-        ) : !nodes.length ? (
+        ) : !nodes.length && !(data.t === "loading" || !prefsReady) ? (
           <ZeroData iconProps={{ iconName: "BranchFork2" }} imageAltText="" primaryText={state.q ? "No branches match" : tabEmpty} />
         ) : (
           <Card className="gh-pr-card gh-refs-card bolt-table-card" contentProps={{ contentPadding: false }}>
             <RefTree<Branch>
+              loading={data.t === "loading" || !prefsReady}
               key={`${tab}|${Object.keys(compares).length}|${favs.join()}`}
               nodes={nodes}
               columns={columns}

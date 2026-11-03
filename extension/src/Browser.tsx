@@ -12,7 +12,8 @@ import { MoreButton, type IMenuItem } from "azure-devops-ui/Menu";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
-import { Table, ITableColumn, SimpleTableCell, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
+import { skeletonRows } from "./RepoHub"; // a cycle with RepoHub (which imports this file), harmless: only used at render time
+import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
 import { RelDate } from "./RelDate";
 import { LatestRelease } from "./LatestRelease";
 import { Tooltip } from "azure-devops-ui/TooltipEx";
@@ -272,17 +273,19 @@ function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: stri
 
 // ---------- listing ----------
 
-function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEntry[]; go: (path: string) => void; repo: string; refName: string; folder: string; menu: (e: TreeEntry) => IMenuItem[] }) {
+/** `entries` undefined while the folder loads: shimmer rows in the same columns. */
+function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEntry[] | undefined; go: (path: string) => void; repo: string; refName: string; folder: string; menu: (e: TreeEntry) => IMenuItem[] }) {
   // Names show at once; commit info fills in after. A failed lookup just leaves those cells blank.
   const [commits, setCommits] = React.useState<Record<string, CommitInfo>>({});
   React.useEffect(() => {
     let dead = false;
     setCommits({});
+    if (!entries) return;
     getCommits(repo, refName, folder, entries).then((c) => !dead && setCommits(c), () => {});
     return () => { dead = true; };
   }, [entries, repo, refName, folder]);
   const [dir, setDir] = React.useState<"asc" | "desc">("asc");
-  const sorted = React.useMemo(() => new ArrayItemProvider(sortListing(entries, dir)), [entries, dir, commits]); // a new provider when commits arrive makes Table redraw its cells
+  const sorted = React.useMemo(() => entries ? new ArrayItemProvider(sortListing(entries, dir)) : skeletonRows<TreeEntry>(), [entries, dir, commits]); // a new provider when commits arrive makes Table redraw its cells
   const sorting = React.useMemo(() => new ColumnSorting<TreeEntry>((_i, order) => setDir(order === SortOrder.descending ? "desc" : "asc")), []);
   const columns = React.useMemo<ITableColumn<TreeEntry>[]>(
     () => [
@@ -290,6 +293,7 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
         id: "name",
         name: "Name",
         width: -35,
+        columnLayout: TableColumnLayout.singleLinePrefix,
         sortProps: { ariaLabelAscending: "Sorted A to Z", ariaLabelDescending: "Sorted Z to A", sortOrder: dir === "asc" ? SortOrder.ascending : SortOrder.descending },
         renderCell: (_r, columnIndex, tableColumn, e) => (
           <SimpleTableCell key="name" columnIndex={columnIndex} tableColumn={tableColumn}>
@@ -334,6 +338,7 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
         id: "more",
         name: "",
         width: 40,
+        columnLayout: TableColumnLayout.none,
         renderCell: (_r, columnIndex, tableColumn, e) => {
           const items = menu(e);
           return (
@@ -346,10 +351,10 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
     ],
     [go, repo, refName, dir, commits, menu]
   );
-  if (!entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
+  if (entries && !entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
   return (
     <Card className="bolt-table-card" contentProps={{ contentPadding: false }}>
-      <Table<TreeEntry> ariaLabel="Folder contents" columns={columns} itemProvider={sorted} behaviors={[sorting]} role="table" />
+      <Table<TreeEntry> ariaLabel={entries ? "Folder contents" : "Loading folder contents"} columns={columns} itemProvider={sorted} behaviors={[sorting]} role="table" />
     </Card>
   );
 }
@@ -885,7 +890,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                           commit={() => openWrite(editing.kind === "edit" ? { kind: "edit", path: editing.path, text: editText.current, original: editing.initial, bom: editing.bom } : { kind: "new", path: newPath, text: editText.current })}
                         />
                       )}
-                      {view.t === "loading" && <Spinner size={SpinnerSize.large} ariaLabel="Loading" />}
+                      {view.t === "loading" && (kind === "folder" && tab !== "history" ? <Listing entries={undefined} go={nav} repo={repo} refName={refName} folder={path} menu={entryMenu} /> : <Spinner size={SpinnerSize.large} ariaLabel="Loading" />)}
                       {view.t === "missing" && (
                         <MessageCard severity={MessageCardSeverity.Warning} buttonProps={[{ text: "Go to the repository root", onClick: () => nav("") }]}>
                           This path doesn't exist on {ctx.ref}.

@@ -1,11 +1,12 @@
 // A table of refs grouped into collapsible folders by "/" (Branches and Tags): azure-devops-ui's Tree with several columns.
 import * as React from "react";
 import { Link } from "azure-devops-ui/Link";
-import { SimpleTableCell } from "azure-devops-ui/Table";
+import { SimpleTableCell, Table, TableColumnLayout, type ITableColumn } from "azure-devops-ui/Table";
 import { Tree, ExpandableTreeCell, ITreeColumn } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import type { RefLeaf, RefNode } from "./lib/branches";
 import { FileIcon } from "./fileIcons";
+import { skeletonRows } from "./RepoHub";
 
 export interface RefColumn<T> {
   id: string;
@@ -20,7 +21,7 @@ const toItem = <T,>(n: RefNode<T>, collapsed: ReadonlySet<string>): ITreeItem<Re
     ? { id: `folder:${n.path}`, data: n, expanded: !collapsed.has(n.path), childItems: n.children.map((c) => toItem(c, collapsed)) }
     : { id: `ref:${(n.item as unknown as { name: string }).name}`, data: n };
 
-export function RefTree<T extends { name: string }>({ nodes, columns, name, nameCell, collapsed, toggleFolder, label, onOpen }: {
+export function RefTree<T extends { name: string }>({ nodes, columns, name, nameCell, collapsed, toggleFolder, label, onOpen, loading }: {
   nodes: RefNode<T>[];
   columns: RefColumn<T>[];
   /** Header of the first (hierarchical) column. */
@@ -32,6 +33,8 @@ export function RefTree<T extends { name: string }>({ nodes, columns, name, name
   label: string;
   /** Activating (clicking) a ref row. */
   onOpen: (item: T) => void;
+  /** Shimmer rows in the same columns (a Table: Tree has no loading rows), until the refs arrive. */
+  loading?: boolean;
 }) {
   const provider = React.useMemo(() => new TreeItemProvider<RefNode<T>>(nodes.map((n) => toItem(n, collapsed))), [nodes, collapsed]);
   const cols = React.useMemo<ITreeColumn<RefNode<T>>[]>(
@@ -73,6 +76,14 @@ export function RefTree<T extends { name: string }>({ nodes, columns, name, name
     ],
     [columns, name, nameCell]
   );
+  const skeletonCols = React.useMemo<ITableColumn<object>[]>(
+    () => [
+      { id: "name", name, width: -100, columnLayout: TableColumnLayout.singleLinePrefix, renderCell: () => null as never },
+      ...columns.map<ITableColumn<object>>((c) => ({ id: c.id, name: c.name, width: c.width, columnLayout: c.name ? TableColumnLayout.singleLine : TableColumnLayout.none, renderCell: () => null as never })),
+    ],
+    [columns, name]
+  );
+  if (loading) return <Table<object> ariaLabel={`Loading ${label.toLowerCase()}`} className="gh-ref-tree" columns={skeletonCols} itemProvider={skeletonRows<object>()} role="table" spacerWidth={8} />;
   return (
     <Tree<RefNode<T>>
       ariaLabel={label}

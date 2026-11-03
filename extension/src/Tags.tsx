@@ -12,7 +12,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { buildRefTree, type RefLeaf } from "./lib/branches";
 import { branchFromTagMutation, type TagRow } from "./lib/tags";
 import { ErrorView } from "./Browser";
-import { HubProps, Loading, PersonLine, RepoHubPage, titleSwitcher } from "./RepoHub";
+import { HubProps, PersonLine, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { ConfirmDeleteDialog, NewBranchDialog, NewTagDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createTag, deleteRef, mutate, findCommit, invalidateRefs, listAllBranches, listAllTags, type BranchesData, type TagsData } from "./githubBrowse";
@@ -150,17 +150,15 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
         {error ? (
           <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); refresh(); }} subject="see this repository's tags" permission="Contents" />
-        ) : data.t === "loading" ? (
-          <Loading label="Loading tags" />
         ) : none ? (
           <Card className="gh-pr-card gh-refs-card gh-tags-empty" contentProps={{ contentPadding: false }}>
             <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="This repository has no tags" secondaryText="Use tags to mark a point in history that is relevant to the repository." />
           </Card>
-        ) : !nodes.length ? (
+        ) : !nodes.length && data.t !== "loading" ? (
           <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="No tags match" />
         ) : (
           <Card className="gh-pr-card gh-refs-card bolt-table-card" contentProps={{ contentPadding: false }}>
-            <RefTree<TagRow> key={releases.length} nodes={nodes} columns={columns} name="Tag" nameCell={nameCell} collapsed={collapsed} toggleFolder={toggleFolder} label="Tags" onOpen={() => {}} />
+            <RefTree<TagRow> loading={data.t === "loading"} key={releases.length} nodes={nodes} columns={columns} name="Tag" nameCell={nameCell} collapsed={collapsed} toggleFolder={toggleFolder} label="Tags" onOpen={() => {}} />
           </Card>
         )}
       </div>

@@ -12,7 +12,7 @@ import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Tab, TabBadge, TabBar, TabSize } from "azure-devops-ui/Tabs";
-import { ITableColumn, SimpleTableCell, Table, TwoLineTableCell } from "azure-devops-ui/Table";
+import { ITableColumn, SimpleTableCell, Table, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
 import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { TextField } from "azure-devops-ui/TextField";
 import { ZeroData, ZeroDataActionType } from "azure-devops-ui/ZeroData";
@@ -21,7 +21,7 @@ import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { ErrorView, Markdown, BranchPicker } from "./Browser";
-import { HubProps, Loading, RepoHubPage, titleSwitcher } from "./RepoHub";
+import { HubProps, Loading, RepoHubPage, skeletonRows, titleSwitcher } from "./RepoHub";
 import { RelDate } from "./RelDate";
 import { GhError, listBranches, renderMarkdown } from "./githubBrowse";
 import { gotoHash, patchHash, useHashExtras } from "./hostNav";
@@ -134,7 +134,7 @@ function columns(kind: AlertKind, repo: string, open: (n: number) => void): ITab
       renderCell: (_r: number, c: number, col: ITableColumn<AlertRow>, row: AlertRow) => <SimpleTableCell key="sev" columnIndex={c} tableColumn={col}><SeverityPill severity={row.severity} /></SimpleTableCell>,
     }]),
     {
-      id: "title", name: kind === "secret" ? "Secret" : "Alert", width: -50,
+      id: "title", name: kind === "secret" ? "Secret" : "Alert", width: -50, columnLayout: TableColumnLayout.twoLine,
       renderCell: (_r, c, col, row) => (
         <TwoLineTableCell
           key="title" columnIndex={c} tableColumn={col}
@@ -143,7 +143,7 @@ function columns(kind: AlertKind, repo: string, open: (n: number) => void): ITab
         />
       ),
     },
-    { id: "location", name: locName, width: -30, renderCell: (_r, c, col, row) => row.manifestPath ? (
+    { id: "location", name: locName, width: -30, columnLayout: kind === "dependabot" ? TableColumnLayout.twoLine : TableColumnLayout.singleLine, renderCell: (_r, c, col, row) => row.manifestPath ? (
       <TwoLineTableCell key="loc" columnIndex={c} tableColumn={col}
         line1={<span className="text-ellipsis monospaced-xs" title={row.location}>{row.location}</span>}
         line2={<span className="text-ellipsis secondary-text body-s monospaced-xs" title={row.manifestPath}>{row.manifestPath}</span>} />
@@ -231,7 +231,11 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
         {kind === "code" && <TextFilterBarItem filterItemKey="tool" placeholder="Tool" ariaLabel="Tool" />}
         {kind === "code" && <TextFilterBarItem filterItemKey="rule" placeholder="Rule" ariaLabel="Rule" />}
       </FilterBar>
-      {load.t === "loading" && <Loading label="Loading alerts" />}
+      {load.t === "loading" && (
+        <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
+          <Table<AlertRow> ariaLabel="Loading alerts" role="table" columns={cols} itemProvider={skeletonRows<AlertRow>()} spacerWidth={8} />
+        </Card>
+      )}
       {load.t === "error" && <Unavailable kind={kind} repo={repo} err={load.err} retry={() => setReload((n) => n + 1)} signIn={() => void props.signIn()} busy={props.busy} />}
       {load.t === "ready" && !rows.length && (
         <ZeroData

@@ -8,6 +8,8 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { ObservableValue, type IReadonlyObservableValue } from "azure-devops-ui/Core/Observable";
+import { ArrayItemProvider, type IItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState } from "./lib/browseState";
 import { filterBranches } from "./lib/branchSwitch";
 import { RelDate } from "./RelDate";
@@ -51,6 +53,17 @@ export function useDefaultRepo(enabled: boolean): { repo?: string; none: boolean
 export const Loading = ({ label = "Loading" }: { label?: string }) => (
   <div className="gh-pr-loading flex-row flex-center justify-center"><Spinner size={SpinnerSize.large} ariaLabel={label} /></div>
 );
+
+const skeletons = new Map<number, IItemProvider<unknown>>();
+/**
+ * The native loading state of a Table: rows whose item is an ObservableValue holding undefined render as shimmer rows, shaped by each
+ * column's `columnLayout`. Pass this as the itemProvider (same Table, same columns) until the real rows arrive.
+ */
+export function skeletonRows<T>(n = 8): IItemProvider<T | IReadonlyObservableValue<T | undefined>> {
+  let p = skeletons.get(n);
+  if (!p) skeletons.set(n, (p = new ArrayItemProvider(Array.from({ length: n }, () => new ObservableValue<undefined>(undefined)))));
+  return p as IItemProvider<T | IReadonlyObservableValue<T | undefined>>;
+}
 
 /** Fills the first connected repo into the hash (no history entry), then renders `children(repo)` inside the neutral page. */
 export function RepoHubPage({ state, go, children }: { state: BrowseState; go: HubProps["go"]; children: (repo: string) => React.ReactNode }) {

@@ -9,7 +9,7 @@ import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
-import { SimpleTableCell } from "azure-devops-ui/Table";
+import { SimpleTableCell, Table, TableColumnLayout, type ITableColumn } from "azure-devops-ui/Table";
 import { ExpandableTreeCell, ITreeColumn, Tree } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { VssPersona } from "azure-devops-ui/VssPersona";
@@ -18,7 +18,7 @@ import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib
 import type { CommitRow } from "./lib/commitsQuery";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitTable } from "./Commits";
-import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, RepoHubPage, titleSwitcher, useDefaultBranch } from "./RepoHub";
+import { BranchBar, CheckStatusCell, CommitTime, HubProps, RepoHubPage, skeletonRows, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { invalidateRefs, listPushCommits, listPushes, type PushesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import "./browser.css";
@@ -47,6 +47,12 @@ function PushCommits({ repo, push, branch }: { repo: string; push: PushRow; bran
     </div>
   );
 }
+
+/** Shimmer rows in the Pushes columns while the first page loads (a Table: Tree has no loading rows). */
+const SKELETON_COLUMNS: ITableColumn<object>[] = [
+  { id: "push", width: -100, columnLayout: TableColumnLayout.twoLinePrefix, renderCell: () => null as never },
+  { id: "when", width: 200, columnLayout: TableColumnLayout.singleLine, renderCell: () => null as never },
+];
 
 type PushNode = { kind: "push"; push: PushRow } | { kind: "commits"; push: PushRow };
 
@@ -175,7 +181,9 @@ function PushList({ repo, props }: { repo: string; props: HubProps }) {
         {error ? (
           <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this repository's pushes" permission="Contents" />
         ) : load.t === "loading" || !ref ? (
-          <Loading label="Loading pushes" />
+          <Card className="gh-pr-card gh-pushes-card" contentProps={{ contentPadding: false }}>
+            <Table<object> ariaLabel="Loading pushes" className="gh-push-skeleton" role="table" columns={SKELETON_COLUMNS} itemProvider={skeletonRows<object>()} showHeader={false} spacerWidth={8} />
+          </Card>
         ) : !groups.length ? (
           <ZeroData iconProps={{ iconName: "BranchShelveset" }} imageAltText="" primaryText="No pushes" secondaryText={actor ? `GitHub has no recorded pushes to ${ref} by ${actor}.` : `GitHub has no recorded pushes to ${ref}.`} />
         ) : (

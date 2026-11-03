@@ -10,7 +10,7 @@ import { Icon, IconSize } from "azure-devops-ui/Icon";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
-import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell, renderEmptyCell } from "azure-devops-ui/Table";
+import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell, renderEmptyCell } from "azure-devops-ui/Table";
 import { RelDate } from "./RelDate";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -36,7 +36,7 @@ import { prListNewPrHash } from "./lib/newPrHash";
 import { NewPullRequest } from "./NewPullRequest";
 import { getPrefs } from "./prefs";
 import { ErrorView, RepoSwitcher } from "./Browser";
-import { useDefaultRepo } from "./RepoHub";
+import { skeletonRows, useDefaultRepo } from "./RepoHub";
 import { PrPage } from "./PrPage";
 import "./browser.css";
 
@@ -67,6 +67,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
     {
       id: "avatar",
       width: 48,
+      columnLayout: TableColumnLayout.none, // the title column's twoLinePrefix draws the avatar's shimmer
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="avatar" columnIndex={columnIndex} tableColumn={tableColumn}>
           <VssPersona imageUrl={row.avatarUrl} displayName={row.authorName ?? row.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError />
@@ -76,6 +77,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
     {
       id: "title",
       width: -100,
+      columnLayout: TableColumnLayout.twoLinePrefix,
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <TwoLineTableCell
           key="title"
@@ -120,7 +122,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
         </SimpleTableCell>
       ),
     },
-    { id: "side", width: 42, renderCell: renderEmptyCell },
+    { id: "side", width: 42, columnLayout: TableColumnLayout.none, renderCell: renderEmptyCell },
   ];
 }
 
@@ -135,10 +137,11 @@ function useLastViewed(): LastViewedMap {
   return m;
 }
 
-function PrTable({ rows, repo, open, label }: { rows: PrListRow[]; repo: string; open: (n: number) => void; label: string }) {
+/** `rows` undefined while loading: shimmer rows (`skeleton` of them). */
+function PrTable({ rows, repo, open, label, skeleton }: { rows: PrListRow[] | undefined; skeleton?: number; repo: string; open: (n: number) => void; label: string }) {
   const lastViewed = useLastViewed();
   const cols = React.useMemo(() => columns(repo, open, lastViewed), [repo, open, lastViewed]);
-  const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
+  const provider = React.useMemo(() => rows ? new ArrayItemProvider(rows) : skeletonRows<PrListRow>(skeleton), [rows, skeleton]);
   return (
     <Table<PrListRow>
       key={Object.keys(lastViewed).length /* the rows are memoised: remount once the stored views arrive */}
@@ -273,7 +276,11 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
           />
         </FilterBar>
       )}
-      {load.t === "loading" && <Loading />}
+      {load.t === "loading" && (
+        <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
+          <PrTable rows={undefined} repo={p.repo} open={p.open} label="Loading pull requests" />
+        </Card>
+      )}
       {load.t === "error" && <Failed load={load} p={p} bump={() => setReload((n) => n + 1)} />}
       {data && !data.rows.length && (hasListFilters(filters) ? <ZeroData iconProps={{ iconName: "Filter" }} imageAltText="" primaryText="No matching pull requests" secondaryText="Clear or change the filters to see more." /> : <Empty />)}
       {data && data.rows.length > 0 && (
@@ -287,7 +294,8 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
 
 // ---------- Mine ----------
 
-function Section({ title, rows, p }: { title: string; rows: PrListRow[]; p: TabProps }) {
+/** `rows` undefined while loading: the title shows with a skeleton table. */
+function Section({ title, rows, p }: { title: string; rows: PrListRow[] | undefined; p: TabProps }) {
   const [collapsed, setCollapsed] = React.useState(false);
   return (
     <Card
@@ -300,11 +308,11 @@ function Section({ title, rows, p }: { title: string; rows: PrListRow[]; p: TabP
       renderHeader={() => (
         <div className="bolt-card-header bolt-card-header-collapsible bolt-card-expandable-header gh-pr-section-header flex-row flex-center">
           <Header className="gh-pr-section-title" title={title} titleSize={TitleSize.Medium} titleAriaLevel={2} />
-          <Pill containsCount size={PillSize.regular} variant={PillVariant.standard} ariaLabel={`${rows.length} pull requests`}>{rows.length}</Pill>
+          {rows && <Pill containsCount size={PillSize.regular} variant={PillVariant.standard} ariaLabel={`${rows.length} pull requests`}>{rows.length}</Pill>}
         </div>
       )}
     >
-      {rows.length ? <PrTable rows={rows} repo={p.repo} open={p.open} label={title} /> : <div className="gh-pr-section-empty secondary-text">No pull requests</div>}
+      {!rows ? <PrTable rows={undefined} skeleton={3} repo={p.repo} open={p.open} label={`Loading ${title}`} /> : rows.length ? <PrTable rows={rows} repo={p.repo} open={p.open} label={title} /> : <div className="gh-pr-section-empty secondary-text">No pull requests</div>}
     </Card>
   );
 }
@@ -315,7 +323,12 @@ function MineList(p: TabProps) {
   const mine = load.t === "ready" ? load.data.mine : undefined;
   return (
     <>
-      {load.t === "loading" && <Loading />}
+      {load.t === "loading" && (
+        <>
+          <Section title="Created by me" rows={undefined} p={p} />
+          <Section title="Review requested" rows={undefined} p={p} />
+        </>
+      )}
       {load.t === "error" && <Failed load={load} p={p} bump={() => setReload((n) => n + 1)} />}
       {mine && !mine.created.length && !mine.reviewRequested.length && <Empty />}
       {mine && (mine.created.length > 0 || mine.reviewRequested.length > 0) && (

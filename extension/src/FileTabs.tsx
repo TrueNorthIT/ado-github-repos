@@ -66,7 +66,13 @@ export function HistoryTab({ repo, urlRef, refName, path, signedIn, signIn, busy
   const prHref = React.useCallback((n: number) => href("prs", { repo, view: "prs", pr: n }), [href, repo]);
 
   if (load.t === "error") return <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this repository's history" permission="Contents" />;
-  if (load.t === "loading") return <Loading label="Loading history" />;
+  if (load.t === "loading") {
+    return (
+      <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
+        <CommitTable rows={undefined} label="Loading history" commitHref={commitHref} open={open} prHref={prHref} openPr={openPr} />
+      </Card>
+    );
+  }
   if (!rows.length) return <ZeroData iconProps={{ iconName: "History" }} imageAltText="" primaryText="No history" secondaryText={`No commits on ${refName} touched ${path || "this repository"}.`} />;
   return (
     <>

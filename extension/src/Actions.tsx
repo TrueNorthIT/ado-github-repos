@@ -13,7 +13,7 @@ import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Panel } from "azure-devops-ui/Panel";
 import { ContentSize } from "azure-devops-ui/Callout";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
-import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell } from "azure-devops-ui/Table";
+import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { TextField } from "azure-devops-ui/TextField";
@@ -22,7 +22,7 @@ import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import type { HubProps } from "./RepoHub";
-import { Loading, PersonLine, RepoHubPage, titleSwitcher } from "./RepoHub";
+import { PersonLine, RepoHubPage, skeletonRows, titleSwitcher } from "./RepoHub";
 import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
 import { RunStatusIcon } from "./ActionsUi";
@@ -105,6 +105,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
     {
       name: "", id: "status",
       width: 40,
+      columnLayout: TableColumnLayout.none,
       renderCell: (_r, i, c, run) => (
         <SimpleTableCell key="status" columnIndex={i} tableColumn={c}>
           <RunStatusIcon state={run.state} />
@@ -114,6 +115,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
     {
       name: "Run", id: "title",
       width: -100,
+      columnLayout: TableColumnLayout.twoLine,
       renderCell: (_r, i, c, run) => (
         <TwoLineTableCell
           key="title"
@@ -135,6 +137,7 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
     {
       name: "Triggered by", id: "actor",
       width: 170,
+      columnLayout: TableColumnLayout.singleLinePrefix,
       renderCell: (_r, i, c, run) => (
         <SimpleTableCell key="actor" columnIndex={i} tableColumn={c}>
           {run.actor && <PersonLine person={run.actor} />}
@@ -165,9 +168,9 @@ function runColumns(repo: string, open: (id: number) => void, now: Date, showWor
   ];
 }
 
-function RunTable({ repo, runs, open, now, showWorkflow, label }: { repo: string; runs: WorkflowRun[]; open: (id: number) => void; now: Date; showWorkflow: boolean; label: string }) {
+function RunTable({ repo, runs, open, now, showWorkflow, label }: { repo: string; runs: WorkflowRun[] | undefined; /* undefined while loading: shimmer rows */ open: (id: number) => void; now: Date; showWorkflow: boolean; label: string }) {
   const cols = React.useMemo(() => runColumns(repo, open, now, showWorkflow), [repo, open, now, showWorkflow]);
-  const provider = React.useMemo(() => new ArrayItemProvider(runs), [runs]);
+  const provider = React.useMemo(() => runs ? new ArrayItemProvider(runs) : skeletonRows<WorkflowRun>(), [runs]);
   return <Table<WorkflowRun> ariaLabel={label} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} singleClickActivation onActivate={(_e, r) => open(r.data.id)} />;
 }
 
@@ -181,6 +184,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
     {
       name: "", id: "status",
       width: 40,
+      columnLayout: TableColumnLayout.none,
       renderCell: (_r, i, c, row) => (
         <SimpleTableCell key="status" columnIndex={i} tableColumn={c}>
           {row.latest ? <RunStatusIcon state={row.latest.state} /> : <span className="secondary-text" aria-label="Never run">–</span>}
@@ -190,6 +194,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
     {
       name: "Workflow", id: "name",
       width: -40,
+      columnLayout: TableColumnLayout.twoLine,
       renderCell: (_r, i, c, row) => (
         <TwoLineTableCell
           key="name"
@@ -210,6 +215,7 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
     {
       name: "Last run", id: "latest",
       width: -60,
+      columnLayout: TableColumnLayout.twoLine,
       renderCell: (_r, i, c, row) =>
         recent && row.latest ? (
           <TwoLineTableCell
@@ -243,9 +249,9 @@ function workflowColumns(repo: string, openWf: (id: number) => void, open: (id: 
   ];
 }
 
-function WorkflowTable({ repo, rows, openWf, open, recent }: { repo: string; rows: WorkflowRow[]; openWf: (id: number) => void; open: (id: number) => void; recent: boolean }) {
+function WorkflowTable({ repo, rows, openWf, open, recent }: { repo: string; rows: WorkflowRow[] | undefined; openWf: (id: number) => void; open: (id: number) => void; recent: boolean }) {
   const cols = React.useMemo(() => workflowColumns(repo, openWf, open, recent), [repo, openWf, open, recent]);
-  const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
+  const provider = React.useMemo(() => rows ? new ArrayItemProvider(rows) : skeletonRows<WorkflowRow>(), [rows]);
   return <Table<WorkflowRow> ariaLabel={recent ? "Recent workflows" : "All workflows"} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} singleClickActivation onActivate={(_e, r) => openWf(r.data.wf.id)} />;
 }
 
@@ -261,7 +267,13 @@ function Landing({ repo, tab, goto, props }: { repo: string; tab: "recent" | "al
   }, [repo, props.signedIn]);
   const openWf = React.useCallback((id: number) => goto({ workflow: id }), [goto]);
   const open = React.useCallback((id: number) => goto({ run: id }), [goto]);
-  if (load.t === "loading") return <Loading />;
+  if (load.t === "loading") {
+    return (
+      <Card className="gh-pr-card bolt-table-card gh-act-listcard" contentProps={{ contentPadding: false }} titleProps={tab === "recent" ? { text: "Recently run workflows", ariaLevel: 2 } : undefined}>
+        <WorkflowTable repo={repo} rows={undefined} openWf={openWf} open={open} recent={tab === "recent"} />
+      </Card>
+    );
+  }
   if (load.t === "error") return <ErrorView err={load.err} signIn={() => void props.signIn()} busy={props.busy} retry={retry} subject="see this repository's workflows" permission="Actions" />;
   const rows = tab === "recent"
     ? load.v.filter((r) => r.latest).sort((a, b) => b.latest!.createdAt.getTime() - a.latest!.createdAt.getTime())
@@ -367,7 +379,13 @@ function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }
     setMore(false);
   };
   const filtered = Object.values(filters).some(Boolean);
-  if (s.t === "loading") return <Loading />;
+  if (s.t === "loading") {
+    return (
+      <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
+        <RunTable repo={repo} runs={undefined} open={open} now={now} showWorkflow={showWorkflow} label="Loading workflow runs" />
+      </Card>
+    );
+  }
   if (s.t === "error") return <ErrorView err={s.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => setN((x) => x + 1)} subject="see this repository's workflow runs" permission="Actions" />;
   if (!s.runs.length) {
     return filtered
