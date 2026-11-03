@@ -98,7 +98,7 @@ export function NewTagDialog({ branches, existing, defaultBase, presetSha, busy,
   );
 }
 
-export function ConfirmDeleteDialog({ what, name, busy, error, clearError, confirm, close }: { what: "branch" | "tag"; name: string; busy: boolean; error: string | null; clearError: () => void; confirm: () => void; close: () => void }) {
+export function ConfirmDeleteDialog({ what, name, busy, error, clearError, confirm, close }: { what: "branch" | "tag" | "release"; name: string; busy: boolean; error: string | null; clearError: () => void; confirm: () => void; close: () => void }) {
   return (
     <Dialog
       titleProps={{ text: `Delete ${what}` }}
@@ -107,7 +107,7 @@ export function ConfirmDeleteDialog({ what, name, busy, error, clearError, confi
     >
       <div className="flex-column gh-dialog-form">
         <ErrorLine error={error} dismiss={clearError} />
-        <div>Delete {what} <strong>{name}</strong>? {what === "branch" ? "Open pull requests from it will be closed." : "The commit it points at is not deleted."}</div>
+        <div>Delete {what} <strong>{name}</strong>? {what === "branch" ? "Open pull requests from it will be closed." : what === "release" ? "The tag it was made from is not deleted." : "The commit it points at is not deleted."}</div>
       </div>
     </Dialog>
   );

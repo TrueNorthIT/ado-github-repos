@@ -14,6 +14,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
 import { Table, ITableColumn, SimpleTableCell, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
 import { RelDate } from "./RelDate";
+import { LatestRelease } from "./LatestRelease";
 import { Tooltip } from "azure-devops-ui/TooltipEx";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Tree, ExpandableTreeCell, ITreeColumn } from "azure-devops-ui/TreeEx";
@@ -831,6 +832,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                 <RepoSwitcher repo={repo} openTick={openSwitch} onPick={(r) => go({ repo: r })} />
                 <MoreButton ariaLabel="Repository actions" contextualMenuProps={{ menuProps: { id: "gh-repo-menu", items: menuItems } }} />
               </div>
+              <LatestRelease repo={repo} signedIn={signedIn} />
               <div className="gh-tree-wrap">
                 {ctx && <FolderTree repo={repo} tree={ctx.tree} folder={isFile ? dirOf(path) : path} current={path} go={nav} onEntries={noteEntries} />}
               </div>
