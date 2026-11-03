@@ -12,6 +12,7 @@ import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rang
 import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
 import { securityFile, securityMarkdown, securityRest } from "./fixtures/security";
 import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
+import { releasesGraphql, releasesRest } from "./releasesMock";
 import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -43,6 +44,8 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  const rel = releasesGraphql(query, variables, sc); // Releases: list, latest, reactions
+  if (rel) return rel;
   const wr = writesGraphql(query, variables, sc); // the web editor: write context, commits, new branches (before everything that also knows createRef or ref()s)
   if (wr) return wr;
   const np = newPrGraphql(query, variables, sc); // batch 5: the New pull request page (before the generic mutation and pullRequests routes)
@@ -155,6 +158,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;
+  const relAnswer = releasesRest(repo.fullName, rest, init);
+  if (relAnswer) return relAnswer;
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
   if (refsAnswer) return refsAnswer;
   const reviewers = /^\/pulls\/(\d+)\/requested_reviewers$/.exec(rest);
