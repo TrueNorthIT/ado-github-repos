@@ -97,9 +97,20 @@
       }
     },
     {
+      "id": "github-repos-security-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Advanced Security",
+        "order": 7,
+        "uri": "dist/hub.html",
+        "iconName": "Shield"
+      }
+    },
+    {
       "id": "github-repos-breadcrumb",
       "type": "ms.vss-web.breadcrumb-provider",
-      "targets": [".github-repos-hub", ".github-repos-commits-hub", ".github-repos-pushes-hub", ".github-repos-branches-hub", ".github-repos-tags-hub", ".github-repos-prs-hub"],
+      "targets": [".github-repos-hub", ".github-repos-commits-hub", ".github-repos-pushes-hub", ".github-repos-branches-hub", ".github-repos-tags-hub", ".github-repos-prs-hub", ".github-repos-security-hub"],
       "properties": {
         "serviceName": "github-repos-breadcrumb",
         "registeredObjectId": "github-repos-breadcrumb",

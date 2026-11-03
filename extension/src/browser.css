@@ -508,3 +508,24 @@
 .gh-np-note { padding: 8px 4px 0; }
 .gh-np-preview { margin-top: 8px; }
 .gh-np-preview .gh-pr-files { margin-top: 8px; }
+
+/* ---------- Advanced Security (R2) ---------- */
+.gh-sec-pill { flex: none; }
+.gh-sec-more { padding: 12px 0; gap: 12px; }
+.gh-sec-more-err { color: var(--status-error-text, rgba(var(--palette-error, 205, 74, 69), 1)); }
+.gh-sec-crumb { padding: 12px 20px 0; }
+.gh-sec-detail-header.bolt-header { padding-bottom: 8px; }
+.gh-sec-facts { gap: 8px; padding: 4px 0; }
+.gh-sec-fact { gap: 12px; align-items: baseline; }
+.gh-sec-fact-label { flex: 0 0 160px; }
+.gh-sec-fact-value { min-width: 0; overflow-wrap: anywhere; }
+.gh-sec-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gh-sec-loc { gap: 8px; min-width: 0; }
+.gh-sec-list { margin: 0; padding: 0 0 0 4px; list-style: none; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.gh-sec-snippet { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; border: 1px solid var(--component-grid-cell-bottom-border-color, rgba(var(--palette-black-alpha-10, 0, 0, 0), 0.1)); }
+.gh-sec-snippet td { padding: 0 8px; white-space: pre; line-height: 20px; }
+.gh-sec-ln { width: 1%; text-align: right; user-select: none; color: var(--text-secondary-color, rgba(0, 0, 0, 0.55)); border-right: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0, 0, 0, 0.1)); }
+.gh-sec-code { overflow-x: auto; }
+.gh-sec-target td { background: var(--status-warning-background, rgba(var(--palette-warning, 255, 185, 0), 0.25)); }
+.gh-sec-target .gh-sec-code { box-shadow: inset 3px 0 0 var(--status-warning-icon-foreground, rgba(var(--palette-warning, 255, 185, 0), 1)); }
+.gh-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

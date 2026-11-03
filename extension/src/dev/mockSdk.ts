@@ -2,8 +2,8 @@
 import type { GitHubTokenSet } from "../../../shared/contract";
 
 export const scenario = () => new URLSearchParams(location.search).get("scenario") || "ok";
-/** Which hub contribution the mock page pretends to be: `?hub=commits|pushes|branches|tags|prs`; anything else is Files. Read only here. */
-export const MOCK_HUBS = ["repos", "commits", "pushes", "branches", "tags", "prs"] as const;
+/** Which hub contribution the mock page pretends to be: `?hub=commits|pushes|branches|tags|prs|security`; anything else is Files. Read only here. */
+export const MOCK_HUBS = ["repos", "commits", "pushes", "branches", "tags", "prs", "security"] as const;
 export const mockHub = () => {
   const h = new URLSearchParams(location.search).get("hub");
   return h === "repos" || !h || !(MOCK_HUBS as readonly string[]).includes(h) ? "github-repos-hub" : `github-repos-${h}-hub`;
