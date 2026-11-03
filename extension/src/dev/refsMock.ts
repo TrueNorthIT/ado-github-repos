@@ -1,9 +1,9 @@
 // __TN_MOCK__ Mock GitHub answers for the Repos pages (batch R1): commit lists and detail, pushes, compare, branches, tags and their writes.
 // Scenario `refsFail` makes every write answer 403 (the app shows "Your GitHub sign-in isn't allowed to do this...").
 import { ME } from "./fixtures/prs";
-import { repoOf } from "./fixtures/repos";
+import { repoOf, TEXT } from "./fixtures/repos";
 import {
-  activities, ancestors, branchNode, commitNode, contentAt, filesOf, historyOf, newId, PEOPLE, refsOf, resolve, tagNode, avatar,
+  activities, actor, ancestors, branchNode, commitNode, contentAt, filesOf, historyOf, newId, PEOPLE, refsOf, resolve, tagNode, avatar,
   type FCommit, type RepoRefs,
 } from "./fixtures/refs";
 
@@ -54,6 +54,13 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
     return json({ data: null, errors: [{ message: "Could not resolve to a Ref" }] });
   }
 
+  if (query.includes("blame(path: $path)")) {
+    const rr = known(v);
+    if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
+    const tip = resolve(rr, String(v.ref));
+    if (!tip) return json({ data: { repository: { ref: null } } });
+    return json({ data: { repository: { ref: { target: { blame: { ranges: blameRanges(rr, tip, String(v.path)) } } } } } });
+  }
   if (query.includes("history(first: 50")) {
     const rr = known(v);
     if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
@@ -91,6 +98,25 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
   return undefined;
 }
 
+/** Blame for a fixture file: its lines split into runs, newest commits that touched the path first, with an earlier commit appearing twice (not adjacent) and ages 1 to 10 spread over the runs. */
+function blameRanges(rr: RepoRefs, tip: string, path: string) {
+  const lines = Math.max(1, (TEXT[path] ?? "").trimEnd().split(String.fromCharCode(10)).length);
+  const touching = historyOf(rr, tip).filter((c) => filesOf(rr, [c]).some((f: any) => f.filename === path));
+  const pool = touching.length ? touching : historyOf(rr, tip);
+  const picks = [0, 1, 0, 2, 3, 2].map((i) => pool[Math.min(i, pool.length - 1)]);
+  const runs = Math.min(picks.length, lines);
+  const out = [];
+  let start = 1;
+  for (let i = 0; i < runs; i++) {
+    const end = i === runs - 1 ? lines : Math.min(lines - (runs - 1 - i), start + Math.max(0, Math.floor(lines / runs) - 1) + (i % 2));
+    const c = picks[i];
+    const age = Math.max(1, Math.min(10, 1 + Math.round(((Date.now() - c.at) / (rr.commits.length ? Date.now() - rr.commits[0].at : 1)) * 9)));
+    out.push({ startingLine: start, endingLine: end, age, commit: { oid: c.sha, abbreviatedOid: c.sha.slice(0, 7), messageHeadline: c.title, committedDate: new Date(c.at + 60e3).toISOString(), author: actor(c.author) } });
+    start = end + 1;
+  }
+  return out;
+}
+
 const restCommit = (c: FCommit) => ({
   sha: c.sha,
   commit: { message: c.message, author: { name: c.author.name, date: new Date(c.at).toISOString() }, committer: { date: new Date(c.at + 60e3).toISOString() } },
@@ -120,10 +146,16 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
     const b = ancestors(rr, base);
     const commits = historyOf(rr, head).filter((c) => !b.has(c.sha)).reverse(); // oldest first, as GitHub
     const page = Number(u.searchParams.get("page") || 1);
+    const per = Number(u.searchParams.get("per_page") || 250);
+    const behind = [...b].filter((s) => !a.has(s)).length;
+    const mergeBase = historyOf(rr, head).find((c) => b.has(c.sha))?.sha ?? base;
     return json({
+      status: commits.length && behind ? "diverged" : commits.length ? "ahead" : behind ? "behind" : "identical",
       ahead_by: commits.length,
-      behind_by: [...b].filter((s) => !a.has(s)).length,
-      commits: commits.slice(0, Number(u.searchParams.get("per_page") || 250)).map(restCommit),
+      behind_by: behind,
+      total_commits: commits.length,
+      merge_base_commit: { sha: mergeBase },
+      commits: commits.slice((page - 1) * per, page * per).map(restCommit),
       files: page === 1 ? filesOf(rr, commits) : [],
     });
   }
@@ -144,5 +176,14 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
 
 /** File contents at a commit sha of the history fixtures. */
 export function refsContent(fullName: string, ref: string, path: string): string | undefined {
-  return contentAt(refsOf(fullName), ref, path);
+  const rr = refsOf(fullName);
+  // A fixture branch other than main has its own text for the paths the history fixtures touch, so the Compare tab has something to show.
+  const b = ref === "main" ? undefined : rr.branches.find((x) => x.name === ref);
+  return contentAt(rr, b ? b.tip : ref, path);
 }
+
+/** Whether a compare of two refs is the history fixtures' (both are fixture branches) rather than the New pull request fixtures'. */
+export const isRefsCompare = (fullName: string, base: string, head: string) => {
+  const rr = refsOf(fullName);
+  return [base, head].every((n) => rr.branches.some((x) => x.name === n));
+};
