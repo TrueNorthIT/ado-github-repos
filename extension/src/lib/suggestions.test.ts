@@ -343,7 +343,8 @@ describe("CM-2: commitSuggestionsMutation builds createCommitOnBranch", () => {
 
   it("selects the new commit and branch tip", () => {
     const req = commitSuggestionsMutation(params);
-    expectSelection(req, /createCommitOnBranch\(input:\s*\$input\)/, ["commit", "ref"], "the createCommitOnBranch payload");
+    // commit and ref are both object fields, so expectSelection (which reads only up to the first nested brace) can't see both.
+    expect(norm(req.query), "Expected the payload to select commit { ... } and ref { ... }").toMatch(/createCommitOnBranch\(input:\s*\$input\)\s*\{\s*commit\s*\{[^}]*\}\s*ref\s*\{/);
     expect(norm(req.query), "Expected commit { oid ... }").toMatch(/commit\s*\{[^}]*\boid\b/);
   });
 

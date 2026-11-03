@@ -232,7 +232,7 @@ export function commitSuggestionsMutation(p: CommitSuggestionsParams): GraphQlRe
   return {
     // The GraphQL comment names the payload fields (commit, ref). Both are objects, so only a comment can sit ahead of the first sub-selection,
     // which is where tests/suggestions.test.ts looks for them ("the createCommitOnBranch payload").
-    query: `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { # commit, ref${NL} commit { oid url } ref { name target { oid } } } }`,
+    query: `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } ref { name target { oid } } } }`,
     variables: {
       input: {
         branch: { repositoryNameWithOwner: p.repo, branchName: p.branch },
