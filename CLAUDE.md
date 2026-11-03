@@ -54,4 +54,10 @@ Commit messages: a meaningful subject and a body saying why. They become the rel
 
 Real checks in Azure DevOps need a browser signed in to ADO and GitHub. TrueNorth's Conditional Access requires a compliant device, so that can't happen from a cloud machine; it's done on Joe's laptop (Claude in Chrome, or by hand). Elsewhere, check with tests, the mock harness and `npm run shots`, and list what still needs a live check.
 
-Live test data: use the TrueTunes repo's test PR #234, its `test/github-repos-extension-pr` branch and `test/merge-target`; leave real work untouched, and ask before anything that writes to a real repo, board or release.
+Test data: **`TrueNorthIT/gh-repos-sandbox`** (private) exists for this, and anything in it is safe to change, re-run, release or delete. It has:
+- `main`, `feature/greeting` (PR #3: a code, markdown and image diff, an inline review thread, a label, a milestone and "Closes #1"), `test/failing` (draft PR #4: failing matrix tests, lint error and warning annotations, JUnit artifacts) and `test/merge-target`;
+- tags `v0.1.0` (annotated), `v0.2.0-beta.1` and `nightly`; releases v0.1.0 (Latest, two assets, a reaction), v0.2.0 beta 1 (Pre-release) and v0.3.0 (Draft);
+- workflows CI (lint, matrix test, build), "Manual run" (every `workflow_dispatch` input type, plus `sleep_seconds` for testing Cancel) and Deploy (waits on the `sandbox-approval` environment, which has a required reviewer);
+- Dependabot alerts from an old `lodash`. Code scanning is off (it needs Code Security on a private repo).
+
+Re-seed what a test used up (a deleted release, a merged PR) before finishing. Older live tests used TrueTunes PR #234 and its branches; leave other real work untouched, and ask before anything that writes outside the sandbox.
