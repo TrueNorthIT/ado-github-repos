@@ -484,6 +484,9 @@ function FolderTree({ repo, tree, folder, current, go, onEntries }: { repo: stri
       onActivate={(_e, row) => {
         const n = row.data.underlyingItem.data;
         if (n.kind !== "submodule") go(n.path);
+        // The row is selected on click, before go() runs; if the unsaved-edit guard keeps you where you are, put the
+        // highlight back on the open file (seen live in 0.32.1: Keep editing left the clicked file highlighted).
+        setTimeout(highlight, 0);
       }}
       singleClickActivation
       showHeader={false}
