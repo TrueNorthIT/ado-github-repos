@@ -16,6 +16,15 @@ import type { GraphQlRequest } from "./prQuery";
 import type { RestRequest } from "./restRequest";
 import type { RawReactionGroup, ReactionContent } from "./reactions";
 import type { Person } from "./commitsQuery";
+import { validateRefName } from "./refName";
+
+const RELEASE_FIELDS =
+  "id databaseId name tagName tagCommit { oid } author { login avatarUrl } createdAt publishedAt isDraft isPrerelease isLatest description descriptionHTML releaseAssets(first: 100) { nodes { name size downloadCount downloadUrl } } reactionGroups { content reactors { totalCount } viewerHasReacted } viewerCanReact url";
+const splitRepo = (repo: string) => {
+  const [owner = "", name = ""] = repo.split("/");
+  return { owner, name };
+};
+const encodeTag = (tag: string) => tag.split("/").map(encodeURIComponent).join("/");
 
 export type ReleaseBadge = "latest" | "prerelease" | "draft";
 
@@ -66,55 +75,107 @@ export interface ReleasesPage {
 
 /** GraphQL: one page of releases, newest first (orderBy CREATED_AT DESC), 100 per page, with viewerPermission. */
 export function releasesQuery(repo: string, after: string | null = null): GraphQlRequest {
-  throw new Error("not implemented");
+  return {
+    query: `query($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { viewerPermission releases(first: 100, after: $after, orderBy: {field: CREATED_AT, direction: DESC}) { pageInfo { hasNextPage endCursor } nodes { ${RELEASE_FIELDS} } } } }`,
+    variables: { ...splitRepo(repo), after },
+  };
 }
 
 /** Maps the releasesQuery response (`data`) to a page. */
 export function toReleasesPage(data: unknown): ReleasesPage {
-  throw new Error("not implemented");
+  const repo = (data as any)?.repository;
+  const rel = repo?.releases;
+  const releases: Release[] = (rel?.nodes ?? []).map((n: any): Release => {
+    const author: Person | undefined = n.author?.login ? { name: n.author.login, login: n.author.login, avatarUrl: n.author.avatarUrl } : undefined;
+    return {
+      id: n.id,
+      databaseId: n.databaseId,
+      name: n.name || n.tagName,
+      tagName: n.tagName,
+      ...(n.tagCommit?.oid ? { commitOid: n.tagCommit.oid } : {}),
+      ...(author ? { author } : {}),
+      createdAt: new Date(n.createdAt),
+      ...(n.publishedAt ? { publishedAt: new Date(n.publishedAt) } : {}),
+      isDraft: !!n.isDraft,
+      isPrerelease: !!n.isPrerelease,
+      isLatest: !!n.isLatest,
+      description: n.description ?? "",
+      descriptionHTML: n.descriptionHTML ?? "",
+      assets: (n.releaseAssets?.nodes ?? []).map((a: any) => ({ name: a.name, size: a.size, downloadCount: a.downloadCount, downloadUrl: a.downloadUrl })),
+      reactions: n.reactionGroups ?? [],
+      viewerCanReact: !!n.viewerCanReact,
+      url: n.url,
+    };
+  });
+  return {
+    releases,
+    hasNextPage: !!rel?.pageInfo?.hasNextPage,
+    endCursor: rel?.pageInfo?.endCursor ?? null,
+    viewerCanWrite: ["ADMIN", "MAINTAIN", "WRITE"].includes(repo?.viewerPermission),
+  };
 }
 
 /** Badges in display order. Draft shows only "draft". A pre-release is never "latest". */
 export function releaseBadges(r: Pick<Release, "isDraft" | "isPrerelease" | "isLatest">): ReleaseBadge[] {
-  throw new Error("not implemented");
+  if (r.isDraft) return ["draft"];
+  if (r.isPrerelease) return ["prerelease"];
+  return r.isLatest ? ["latest"] : [];
 }
 
 /** Case-insensitive match on name or tag name; a blank query returns the list unchanged. Order is kept. */
 export function filterReleases<T extends Pick<Release, "name" | "tagName">>(list: T[], query: string): T[] {
-  throw new Error("not implemented");
+  const q = query.trim().toLowerCase();
+  return q ? list.filter((r) => r.name.toLowerCase().includes(q) || r.tagName.toLowerCase().includes(q)) : list;
 }
 
 export const RELEASES_PAGE_SIZE = 10;
 
 /** Client-side paging. `page` is 1-based and clamped to [1, pageCount]; an empty list is one empty page. */
 export function pageReleases<T>(list: T[], page: number, size = RELEASES_PAGE_SIZE): { items: T[]; page: number; pageCount: number } {
-  throw new Error("not implemented");
+  const pageCount = Math.max(1, Math.ceil(list.length / size));
+  const p = Math.min(Math.max(1, Math.floor(page) || 1), pageCount);
+  return { items: list.slice((p - 1) * size, p * size), page: p, pageCount };
 }
 
 /** 1024-based. Bytes as a whole number; KB, MB and GB with one decimal place below 10 of the unit and none at 10 or above:
  *  0 -> "0 B", 512 -> "512 B", 1229 -> "1.2 KB", 2907697 -> "2.8 MB", 15728640 -> "15 MB", 1610612736 -> "1.5 GB". */
 export function formatBytes(bytes: number): string {
-  throw new Error("not implemented");
+  if (bytes < 1024) return `${bytes} B`;
+  let v = bytes;
+  let u = -1;
+  do {
+    v /= 1024;
+    u++;
+  } while (v >= 1024 && u < 2);
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${["KB", "MB", "GB"][u]}`;
 }
 
 /** The two archives GitHub lists under every release's assets. */
 export function sourceArchives(repo: string, tagName: string): { name: string; url: string }[] {
-  throw new Error("not implemented");
+  const base = `https://github.com/${repo}/archive/refs/tags/${encodeTag(tagName)}`;
+  return [
+    { name: "Source code (zip)", url: `${base}.zip` },
+    { name: "Source code (tar.gz)", url: `${base}.tar.gz` },
+  ];
 }
 
 /** The release for a tag name, or undefined. */
 export function releaseForTag<T extends Pick<Release, "tagName">>(list: T[], tagName: string): T | undefined {
-  throw new Error("not implemented");
+  return list.find((r) => r.tagName === tagName);
 }
 
 /** GraphQL: repository.latestRelease { tagName name publishedAt url } for the Files page line. */
 export function latestReleaseQuery(repo: string): GraphQlRequest {
-  throw new Error("not implemented");
+  return {
+    query: "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { latestRelease { tagName name publishedAt url } } }",
+    variables: splitRepo(repo),
+  };
 }
 
 /** Maps latestReleaseQuery's `data`; undefined when the repo has no (non-draft, non-pre-release) latest release. */
 export function toLatestRelease(data: unknown): { tagName: string; name: string; publishedAt: Date; url: string } | undefined {
-  throw new Error("not implemented");
+  const l = (data as any)?.repository?.latestRelease;
+  return l ? { tagName: l.tagName, name: l.name || l.tagName, publishedAt: new Date(l.publishedAt), url: l.url } : undefined;
 }
 
 /** GitHub allows these six reactions on a release, in this order. */
@@ -149,51 +210,74 @@ export type ReleaseFormErrors = Partial<Record<"tagName" | "target" | "name", st
 /** Errors by field, empty when valid. Tag: required, a valid ref name (refName.ts validateRefName), and not already released unless it is the
  *  tag being edited ("A release for v1.0 already exists"). Target: required only when the tag is new. Name: at most 1024 characters. */
 export function validateReleaseForm(form: ReleaseForm, ctx: ReleaseFormContext): ReleaseFormErrors {
-  throw new Error("not implemented");
+  const errors: ReleaseFormErrors = {};
+  const tag = form.tagName.trim();
+  const check = validateRefName(tag, []);
+  if (!check.ok) errors.tagName = check.reason;
+  else if (ctx.releasedTags.includes(tag) && tag !== ctx.editingTag) errors.tagName = `A release for ${tag} already exists`;
+  if (!ctx.existingTags.includes(tag) && !form.target.trim()) errors.target = "Choose a branch or commit for the new tag.";
+  if (form.name.trim().length > 1024) errors.name = "The title can be at most 1024 characters.";
+  return errors;
 }
 
 /** True when the form's tag does not exist yet (so GitHub will create it from `target` on publish). */
 export function isNewTag(form: Pick<ReleaseForm, "tagName">, ctx: Pick<ReleaseFormContext, "existingTags">): boolean {
-  throw new Error("not implemented");
+  return !ctx.existingTags.includes(form.tagName.trim());
 }
 
 /** POST /repos/{repo}/releases (create) or PATCH /repos/{repo}/releases/{id} (edit). `draft` is the button pressed (Save draft / Publish).
  *  Body: tag_name, name, body, draft, prerelease, make_latest; target_commitish only when the tag is new. A blank name is sent as "". */
 export function saveReleaseRequest(repo: string, form: ReleaseForm, ctx: ReleaseFormContext, opts: { draft: boolean; releaseId?: number }): RestRequest {
-  throw new Error("not implemented");
+  const body: Record<string, unknown> = { tag_name: form.tagName.trim() };
+  if (isNewTag(form, ctx)) body.target_commitish = form.target.trim();
+  Object.assign(body, {
+    name: form.name.trim(),
+    body: form.body,
+    draft: opts.draft,
+    prerelease: form.prerelease,
+    make_latest: form.makeLatest && !form.prerelease ? "true" : "false",
+  });
+  return opts.releaseId === undefined
+    ? { method: "POST", path: `/repos/${repo}/releases`, body }
+    : { method: "PATCH", path: `/repos/${repo}/releases/${opts.releaseId}`, body };
 }
 
 /** POST /repos/{repo}/releases/generate-notes with tag_name, target_commitish (new tags only) and previous_tag_name when given. Response: { name, body }. */
 export function generateNotesRequest(repo: string, form: Pick<ReleaseForm, "tagName" | "target">, ctx: Pick<ReleaseFormContext, "existingTags">, previousTag?: string): RestRequest {
-  throw new Error("not implemented");
+  const body: Record<string, unknown> = { tag_name: form.tagName.trim() };
+  if (isNewTag(form, ctx)) body.target_commitish = form.target.trim();
+  if (previousTag) body.previous_tag_name = previousTag;
+  return { method: "POST", path: `/repos/${repo}/releases/generate-notes`, body };
 }
 
 /** DELETE /repos/{repo}/releases/{id}. The tag is left in place. */
 export function deleteReleaseRequest(repo: string, releaseId: number): RestRequest {
-  throw new Error("not implemented");
+  return { method: "DELETE", path: `/repos/${repo}/releases/${releaseId}` };
 }
 
 /** DELETE /repos/{repo}/releases/assets/{assetId}. */
 export function deleteAssetRequest(repo: string, assetId: number): RestRequest {
-  throw new Error("not implemented");
+  return { method: "DELETE", path: `/repos/${repo}/releases/assets/${assetId}` };
 }
 
 /** GET /repos/{repo}/releases/{id}: the edit form reads asset ids from it. */
 export function getReleaseRequest(repo: string, releaseId: number): RestRequest {
-  throw new Error("not implemented");
+  return { method: "GET", path: `/repos/${repo}/releases/${releaseId}` };
 }
 
 /** Maps the REST release's `assets` to { name -> id }. */
 export function restAssetIds(body: unknown): Record<string, number> {
-  throw new Error("not implemented");
+  return Object.fromEntries(((body as any)?.assets ?? []).map((a: any) => [a.name, a.id]));
 }
 
 /** GitHub's edit page for a release (where files are attached). The tag is URL-encoded per segment. */
 export function releaseEditUrl(repo: string, tagName: string): string {
-  throw new Error("not implemented");
+  return `https://github.com/${repo}/releases/edit/${encodeTag(tagName)}`;
 }
 
 /** The tag GitHub would offer as "previous tag" for notes: the newest released, non-draft tag other than `tagName`, or undefined. */
 export function defaultPreviousTag(list: Pick<Release, "tagName" | "isDraft">[], tagName: string): string | undefined {
-  throw new Error("not implemented");
+  const rest = list.filter((r) => !r.isDraft);
+  const i = rest.findIndex((r) => r.tagName === tagName);
+  return rest[i + 1]?.tagName;
 }

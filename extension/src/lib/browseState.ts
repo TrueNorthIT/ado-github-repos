@@ -96,6 +96,15 @@ export function parse(hash: string): BrowseState {
     if (bt && BRANCH_TABS.includes(bt)) out.branchTab = bt;
     const q = (p.get("q") ?? "").trim();
     if (q) out.q = q.slice(0, 200);
+    if (p.get("tagTab") === "releases") {
+      out.tagTab = "releases";
+      const release = p.get("release") ?? "";
+      const form = p.get("releaseForm");
+      if (release) out.release = release;
+      if (form === "new" || (form === "edit" && release)) out.releaseForm = form;
+      const rp = p.get("relPage") ?? "";
+      if (/^[1-9]\d*$/.test(rp) && Number.isSafeInteger(Number(rp))) out.relPage = Number(rp);
+    }
     if (p.get("view") === "prs") {
       out.view = "prs";
       const prTab = p.get("prTab") as PrTab | null;
@@ -134,6 +143,12 @@ export function serialize(state: BrowseState): string {
   if (state.branchTab && BRANCH_TABS.includes(state.branchTab)) h += `&branchTab=${state.branchTab}`;
   const q = (state.q ?? "").trim();
   if (q) h += `&q=${encodeURIComponent(q.slice(0, 200))}`;
+  if (state.tagTab === "releases") {
+    h += "&tagTab=releases";
+    if (state.release) h += `&release=${encodeURIComponent(state.release)}`;
+    if (state.releaseForm === "new" || (state.releaseForm === "edit" && state.release)) h += `&releaseForm=${state.releaseForm}`;
+    if (state.relPage && Number.isSafeInteger(state.relPage) && state.relPage > 1) h += `&relPage=${state.relPage}`;
+  }
   if (state.view === "prs") {
     h += "&view=prs";
     if (state.prTab && PR_TABS.includes(state.prTab)) h += `&prTab=${state.prTab}`;
