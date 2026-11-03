@@ -315,6 +315,9 @@ describe("A-1 / A-2 / A-3: actionsDetailQuery fetches what the action UI needs i
     expect(q).toMatch(/startedAt completedAt checkSuite \{ workflowRun \{ workflow \{ name \} \} \}/);
     expect(q).toMatch(/StatusContext \{[^}]*createdAt/);
   });
+  it("selects the check app's name (checkSuite { app { name } }) for the accordion groups", () => {
+    expect(actionsDetailQuery({ owner: "o", name: "n", number: 1 }).query.replace(/\s+/g, " ")).toMatch(/appSuite: checkSuite \{ app \{ name \} \}/);
+  });
   it("selects statusCheckRollup { state contexts(first: N) { nodes { __typename ... } } }", () => {
     const q = norm(actionsDetailQuery(params).query);
     expect(q, "Expected statusCheckRollup { state contexts(first: ...) }").toMatch(/statusCheckRollup\s*\{\s*state\s+contexts\(first:\s*\d+\)/);

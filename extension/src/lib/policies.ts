@@ -10,6 +10,8 @@ export interface PolicyRow {
   required: boolean;
   url?: string;
   detail?: string;
+  /** Check rows: the accordion group, the Actions workflow name, else the check app's name; absent for status contexts (Other checks). */
+  group?: string;
 }
 
 /** One entry of statusCheckRollup.contexts.nodes. `isRequired` comes from isRequired(pullRequestNumber:). */
@@ -21,6 +23,8 @@ export type CheckContext =
       runSuite?: { workflowRun?: { databaseId: number } | null } | null;
       /** annotations(first: 1) { totalCount }: only the count, for the Overview row. */
       annotations?: { totalCount: number } | null;
+      /** checkSuite under an alias again, for the app name (a group for checks that are not Actions jobs). */
+      appSuite?: { app?: { name: string } | null } | null;
     }
   | { __typename: "StatusContext"; context: string; state: string; targetUrl?: string | null; isRequired: boolean; createdAt?: string | null };
 
@@ -114,7 +118,8 @@ export function policyRows(i: PolicyInput): PolicyRow[] {
   if (i.mergeStateStatus === "BEHIND") rows.push({ kind: "behind", title: "Branch is up to date with the base branch", state: "failure", required: true, detail: "This branch is behind the base branch." });
   for (const { c, title } of dedupeChecks(i.checks)) {
     const url = c.__typename === "CheckRun" ? c.detailsUrl : c.targetUrl;
-    rows.push({ kind: "check", title, state: checkState(c), required: c.isRequired, ...(url ? { url } : {}) });
+    const group = c.__typename === "CheckRun" ? workflowOf(c) ?? c.appSuite?.app?.name : undefined;
+    rows.push({ kind: "check", title, state: checkState(c), required: c.isRequired, ...(url ? { url } : {}), ...(group ? { group } : {}) });
   }
   return rows.sort((a, b) => Number(b.required) - Number(a.required) || RANK[a.state] - RANK[b.state]);
 }
