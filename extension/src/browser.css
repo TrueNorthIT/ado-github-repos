@@ -595,7 +595,7 @@
 .gh-code-edit { min-height: 420px; }
 .gh-commit-form { min-width: 0; }
 .gh-upload { gap: 8px; }
-.gh-upload-list { margin: 0; padding-left: 20px; max-height: 160px; overflow: auto; }
+.gh-upload-list { max-height: 200px; overflow: auto; }
 
 /* ---------- Releases ---------- */
 .gh-rel-card { width: 100%; box-sizing: border-box; margin-bottom: 16px; }

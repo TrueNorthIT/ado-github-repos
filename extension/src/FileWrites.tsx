@@ -6,6 +6,8 @@ import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { ContentSize } from "azure-devops-ui/Callout";
 import { Dialog } from "azure-devops-ui/Dialog";
 import { FormItem } from "azure-devops-ui/FormItem";
+import { ITableColumn, SimpleTableCell, Table } from "azure-devops-ui/Table";
+import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { RadioButton, RadioButtonGroup, RadioButtonGroupDirection } from "azure-devops-ui/RadioButton";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
@@ -222,19 +224,21 @@ export function EditPane(p: EditPaneProps) {
 
 // ---------- uploads ----------
 
-/** A file picker with the picked files listed. A plain <input type=file>: azure-devops-ui has no file picker. */
+/** A file picker with the picked files listed. The <input type=file> is native: azure-devops-ui has no file picker. */
 export function UploadPicker({ onPick, files, rejected, replaces }: { onPick: (files: File[]) => void; files: { name: string; size: number }[]; rejected: { name: string; reason: string }[]; replaces: number }) {
+  const [labelId, setLabelId] = React.useState<string>();
+  const provider = React.useMemo(() => new ArrayItemProvider(files), [files]);
+  const cols = React.useMemo<ITableColumn<{ name: string; size: number }>[]>(() => [
+    { id: "name", name: "Name", width: -100, renderCell: (_r, columnIndex, tableColumn, f) => <SimpleTableCell key="name" columnIndex={columnIndex} tableColumn={tableColumn}><span className="text-ellipsis">{f.name}</span></SimpleTableCell> },
+    { id: "size", name: "Size", width: 90, renderCell: (_r, columnIndex, tableColumn, f) => <SimpleTableCell key="size" columnIndex={columnIndex} tableColumn={tableColumn}><span className="secondary-text">{formatSize(f.size)}</span></SimpleTableCell> },
+  ], []);
   return (
     <div className="gh-upload flex-column">
-      <label className="gh-upload-label body-m font-weight-semibold" htmlFor="gh-upload-input">Files to upload</label>
-      <input id="gh-upload-input" className="gh-upload-input" type="file" multiple onChange={(e) => { onPick(Array.from(e.target.files ?? [])); }} />
-      <div className="secondary-text body-s">Up to 10 MB for each file and 20 MB in all.</div>
+      <FormItem label="Files to upload" message="Up to 10 MB for each file and 20 MB in all." emitGeneratedLabelId={setLabelId}>
+        <input className="gh-upload-input" type="file" multiple aria-labelledby={labelId} onChange={(e) => { onPick(Array.from(e.target.files ?? [])); }} />
+      </FormItem>
       {rejected.map((r) => <MessageCard key={r.name + r.reason} severity={MessageCardSeverity.Warning}>{r.reason}</MessageCard>)}
-      {files.length > 0 && (
-        <ul className="gh-upload-list" aria-label="Files to upload">
-          {files.map((f) => <li key={f.name}>{f.name} <span className="secondary-text">({formatSize(f.size)})</span></li>)}
-        </ul>
-      )}
+      {files.length > 0 && <Table<{ name: string; size: number }> className="gh-upload-list" ariaLabel="Files to upload" role="table" columns={cols} itemProvider={provider} />}
       {replaces > 0 && <MessageCard severity={MessageCardSeverity.Info}>{replaces === 1 ? "One file replaces a file with the same name." : `${replaces} files replace files with the same name.`}</MessageCard>}
     </div>
   );
