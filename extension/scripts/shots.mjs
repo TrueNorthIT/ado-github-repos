@@ -23,6 +23,7 @@ const MOCK_PAGES = {
   files: `?hub=files${REPO}`,
   commits: `?hub=commits${REPO}`,
   pushes: `?hub=pushes${REPO}`,
+  "pushes-filtered": `?hub=pushes${REPO}&pushPeriod=week`,
   branches: `?hub=branches${REPO}&branchTab=all`,
   tags: `?hub=tags${REPO}`,
   releases: `?hub=tags${REPO}&tagTab=releases`,

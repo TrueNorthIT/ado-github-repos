@@ -131,7 +131,8 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
     const ref = (u.searchParams.get("ref") ?? "").replace(/^refs\/heads\//, "");
     // Pages of 8 (not per_page) so "Load more" shows with these short fixture histories; the cursor is the offset, as an opaque string.
     const actor = u.searchParams.get("actor");
-    const all = activities(rr, ref).filter((a) => !actor || a.actor?.login === actor);
+    const days = ({ day: 1, week: 7, month: 30, quarter: 90, year: 365 } as Record<string, number>)[u.searchParams.get("time_period") ?? ""];
+    const all = activities(rr, ref).filter((a) => (!actor || a.actor?.login === actor) && (!days || Date.parse(a.timestamp) >= Date.now() - days * 864e5));
     const from = Number(u.searchParams.get("after")?.replace(/^cur/, "") || 0);
     const more = all.length > from + 8;
     const link = more ? `<https://api.github.com${u.pathname}?ref=${encodeURIComponent(u.searchParams.get("ref") ?? "")}&per_page=30&after=cur${from + 8}>; rel="next"` : undefined;

@@ -667,8 +667,8 @@ export interface PushesData {
 }
 
 /** Pushes to a branch, 30 a page, with the commit each one ended at (headline and merged PR) for its title. `next` is the cursor for the following page. */
-export const listPushes = (repo: string, branch: string, opts: { after?: string; actor?: string } = {}): Promise<PushesData> =>
-  refTtl(`pushes|${repo}|${branch}|${opts.after ?? ""}|${opts.actor ?? ""}`, async () => {
+export const listPushes = (repo: string, branch: string, opts: { after?: string; actor?: string; period?: string } = {}): Promise<PushesData> =>
+  refTtl(`pushes|${repo}|${branch}|${opts.after ?? ""}|${opts.actor ?? ""}|${opts.period ?? ""}`, async () => {
     const res = await request(pushesPath(repo, branch, 30, opts), "application/vnd.github+json");
     const next = nextActivityCursor(res.headers.get("link"));
     const acts: RestActivity[] = await res.json();

@@ -13,6 +13,7 @@ import { parseActions, type ActionsHashState } from "./lib/actionsHash";
 import { decideNav } from "./lib/dirtyGuard";
 import { parseAgainst } from "./lib/fileTabs";
 import { parseCompare, type CompareHashState } from "./lib/compareHash";
+import { applyPushFilters, parsePushFilters, type PushFilters } from "./lib/pushesHash";
 import * as React from "react";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
@@ -42,10 +43,10 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; actions: ActionsHashState | null; compare: CompareHashState | null; against: string | undefined } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; actions: ActionsHashState | null; compare: CompareHashState | null; against: string | undefined; pushFilters: PushFilters } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), actions: parseActions(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), actions: parseActions(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash), pushFilters: parsePushFilters(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
@@ -72,6 +73,8 @@ const guarded = (cur: BrowseState, next: BrowseState, proceed: () => void): bool
 const carry = (next: BrowseState, prev: string) => {
   const h = serialize(next);
   if (!next.repo || next.repo !== parse(prev).repo) return h;
+  // The Pushes filters stay while the repo does (a branch switch), as the PR list filters do.
+  if (next.view !== "prs") return applyPushFilters(h, parsePushFilters(prev));
   return next.view === "prs" ? applyListFilters(next.pr ? applyDiffHash(h, parseDiffHash(prev)) : h, parseListFilters(prev)) : h;
 };
 
