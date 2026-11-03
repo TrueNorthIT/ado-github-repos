@@ -724,3 +724,14 @@ describe("REQ-11: releaseEditUrl sends the user to GitHub's edit page to attach 
     expect(releaseEditUrl("acme/web", "v1.0-é#1"), "Expected '#' and non-ASCII to be percent-encoded").toBe("https://github.com/acme/web/releases/edit/v1.0-%C3%A9%231");
   });
 });
+
+describe("defaultPreviousTag: older than the tag, in the newest-first list", () => {
+  it("returns the release just below the tag", () => {
+    const list = [
+      { tagName: "v3.0", isDraft: false },
+      { tagName: "v2.0", isDraft: false },
+      { tagName: "v1.0", isDraft: false },
+    ];
+    expect(defaultPreviousTag(list, "v2.0"), "Expected v1.0 for v2.0, not the newer v3.0").toBe("v1.0");
+  });
+});
