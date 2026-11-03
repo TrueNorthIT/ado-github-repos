@@ -16,7 +16,9 @@ import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { FilterBar } from "azure-devops-ui/FilterBar";
-import { KeywordFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
+import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
+import { DropdownFilterBarItem } from "azure-devops-ui/Dropdown";
+import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
@@ -27,6 +29,10 @@ import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { invalidatePrs, listPrs, type PrListResult } from "./githubBrowse";
+import { applyListFilters, hasListFilters, type ListFilters } from "./lib/prListFilters";
+import { isUpdatedSinceViewed, viewedKey, type LastViewedMap } from "./lib/lastViewed";
+import { patchHash, useHashExtras } from "./hostNav";
+import { getPrefs } from "./prefs";
 import { ErrorView, RepoSwitcher } from "./Browser";
 import { useDefaultRepo } from "./RepoHub";
 import { PrPage } from "./PrPage";
@@ -54,7 +60,7 @@ function Labels({ row }: { row: PrListRow }) {
   );
 }
 
-function columns(repo: string, open: (n: number) => void): ITableColumn<PrListRow>[] {
+function columns(repo: string, open: (n: number) => void, lastViewed: LastViewedMap): ITableColumn<PrListRow>[] {
   return [
     {
       id: "avatar",
@@ -75,7 +81,8 @@ function columns(repo: string, open: (n: number) => void): ITableColumn<PrListRo
           tableColumn={tableColumn}
           line1={
             <div className="flex-row flex-center gh-pr-line1">
-              <Link className="gh-pr-title body-l" subtle removeUnderline href={serialize({ repo, view: "prs", pr: row.number })} onClick={(e) => { e.preventDefault(); open(row.number); } /* the Table does not activate rows for clicks on links (seen live in 0.15.0) */}>
+              {isUpdatedSinceViewed(row.updatedAt, lastViewed[viewedKey(repo, row.number)]) && <span className="gh-pr-unread" role="img" aria-label="Updated since you last viewed" title="Updated since you last viewed" />}
+              <Link className={`gh-pr-title body-l${isUpdatedSinceViewed(row.updatedAt, lastViewed[viewedKey(repo, row.number)]) ? " gh-pr-title-unread" : ""}`} subtle removeUnderline href={serialize({ repo, view: "prs", pr: row.number })} onClick={(e) => { e.preventDefault(); open(row.number); } /* the Table does not activate rows for clicks on links (seen live in 0.15.0) */}>
                 {row.title}
               </Link>
               <Labels row={row} />
@@ -115,8 +122,20 @@ function columns(repo: string, open: (n: number) => void): ITableColumn<PrListRo
   ];
 }
 
+/** VW-9: when this user last opened each pull request. Read when the list mounts, so coming back from a PR shows it as seen. */
+function useLastViewed(): LastViewedMap {
+  const [m, setM] = React.useState<LastViewedMap>({});
+  React.useEffect(() => {
+    let dead = false;
+    getPrefs().then((p) => !dead && setM(p.lastViewed ?? {}));
+    return () => { dead = true; };
+  }, []);
+  return m;
+}
+
 function PrTable({ rows, repo, open, label }: { rows: PrListRow[]; repo: string; open: (n: number) => void; label: string }) {
-  const cols = React.useMemo(() => columns(repo, open), [repo, open]);
+  const lastViewed = useLastViewed();
+  const cols = React.useMemo(() => columns(repo, open, lastViewed), [repo, open, lastViewed]);
   const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
   return (
     <Table<PrListRow>
@@ -136,17 +155,17 @@ function PrTable({ rows, repo, open, label }: { rows: PrListRow[]; repo: string;
 
 type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; data: PrListResult };
 
-function useList(repo: string, tab: PrTab, filter: string, cursor: string | null, reload: number, signedIn: boolean): Load {
+function useList(repo: string, tab: PrTab, filters: ListFilters, cursor: string | null, reload: number, signedIn: boolean): Load {
   const [load, setLoad] = React.useState<Load>({ t: "loading" });
   React.useEffect(() => {
     let dead = false;
     setLoad({ t: "loading" });
-    listPrs(repo, tab, filter, cursor).then(
+    listPrs(repo, tab, filters.text ?? "", cursor, filters).then(
       (data) => !dead && setLoad({ t: "ready", data }),
       (err) => !dead && setLoad({ t: "error", err })
     );
     return () => { dead = true; };
-  }, [repo, tab, filter, cursor, reload, signedIn]);
+  }, [repo, tab, JSON.stringify(filters), cursor, reload, signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
   return load;
 }
 
@@ -160,6 +179,7 @@ interface TabProps {
   closeFilter: () => void;
 }
 
+const NO_FILTERS: ListFilters = {};
 const retry = (bump: () => void) => () => { invalidatePrs(); bump(); };
 
 const Loading = () => <div className="gh-pr-loading flex-row flex-center justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading pull requests" /></div>;
@@ -183,28 +203,64 @@ class Pager extends React.Component<{ filterItemKey: string; hasPrev: boolean; h
   }
 }
 
+const DRAFT_ITEMS = [{ id: "draft", text: "Draft" }, { id: "ready", text: "Ready for review" }];
+const TEXT_ITEMS: { key: keyof ListFilters; placeholder: string; label: string }[] = [
+  { key: "text", placeholder: "Pull Request ID or title", label: "Filter pull requests" },
+  { key: "author", placeholder: "Author", label: "Author login" },
+  { key: "assignee", placeholder: "Assignee", label: "Assignee login" },
+  { key: "reviewRequested", placeholder: "Reviewer", label: "Requested reviewer login" },
+  { key: "reviewedBy", placeholder: "Reviewed by", label: "Reviewed by login" },
+  { key: "labels", placeholder: "Labels (comma separated)", label: "Labels" },
+  { key: "base", placeholder: "Target branch", label: "Target branch" },
+];
+
+/** The azure-devops-ui Filter's state for the filters, and back. Labels are one comma-separated box; draft is a single-select dropdown. */
+const toState = (f: ListFilters) => ({
+  text: { value: f.text ?? "" }, author: { value: f.author ?? "" }, assignee: { value: f.assignee ?? "" }, reviewRequested: { value: f.reviewRequested ?? "" },
+  reviewedBy: { value: f.reviewedBy ?? "" }, labels: { value: (f.labels ?? []).join(", ") }, base: { value: f.base ?? "" }, draft: { value: f.draft ? [f.draft] : [] },
+});
+function fromFilter(filter: Filter): ListFilters {
+  const v = (k: string) => (filter.getFilterItemValue<string>(k) ?? "").trim();
+  const draft = (filter.getFilterItemValue<string[]>("draft") ?? [])[0];
+  const out: ListFilters = {
+    text: v("text"), author: v("author"), assignee: v("assignee"), reviewRequested: v("reviewRequested"), reviewedBy: v("reviewedBy"), base: v("base"),
+    labels: v("labels").split(",").map((l) => l.trim()).filter(Boolean),
+    ...(draft === "draft" || draft === "ready" ? { draft } : {}),
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, x]) => (Array.isArray(x) ? x.length : !!x))) as ListFilters;
+}
+
 function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
-  const filter = React.useMemo(() => new Filter(), []);
-  const [keyword, setKeyword] = React.useState("");
+  const { filters: fromHash } = useHashExtras();
+  const filter = React.useMemo(() => { const f = new Filter(); f.setState(toState(fromHash), true); return f; }, []); // eslint-disable-line react-hooks/exhaustive-deps -- the hash only seeds it
+  const draftSelection = React.useMemo(() => new DropdownSelection(), []);
+  const [filters, setFilters] = React.useState<ListFilters>(fromHash);
   const [cursors, setCursors] = React.useState<(string | null)[]>([null]); // the cursor behind each page seen so far; the last is current
   const [reload, setReload] = React.useState(0);
   React.useEffect(() => {
+    if (fromHash.draft) draftSelection.select(DRAFT_ITEMS.findIndex((d) => d.id === fromHash.draft));
     let t: ReturnType<typeof setTimeout>;
     const onChange = () => {
       clearTimeout(t);
-      const v = filter.getFilterItemValue<string>("keyword") ?? "";
-      t = setTimeout(() => { setKeyword(v.trim()); setCursors([null]); }, DEBOUNCE_MS);
+      const next = fromFilter(filter);
+      t = setTimeout(() => {
+        setFilters(next);
+        setCursors([null]);
+        patchHash((h) => applyListFilters(h, next)); // VW-8: kept in the hash, so a reload or a link keeps them
+      }, DEBOUNCE_MS);
     };
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
-  }, [filter]);
-  const load = useList(p.repo, p.tab, keyword, cursors[cursors.length - 1], reload, p.signedIn);
+  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useList(p.repo, p.tab, filters, cursors[cursors.length - 1], reload, p.signedIn);
   const data = load.t === "ready" ? load.data : undefined;
   return (
     <>
       {p.filterOpen && (
         <FilterBar filter={filter} onDismissClicked={p.closeFilter} searchRoleAriaLabel="Filter pull requests">
-          <KeywordFilterBarItem filterItemKey="keyword" placeholder="Pull Request ID or title" />
+          <KeywordFilterBarItem filterItemKey="text" placeholder="Pull Request ID or title" />
+          {TEXT_ITEMS.slice(1).map((i) => <TextFilterBarItem key={i.key} filterItemKey={i.key} placeholder={i.placeholder} ariaLabel={i.label} />)}
+          <DropdownFilterBarItem filterItemKey="draft" placeholder="Draft or ready" items={DRAFT_ITEMS} selection={draftSelection} enforceSingleSelect showFilterBox={false} ariaLabel="Draft or ready" />
           <Pager
             filterItemKey="pager"
             hasPrev={cursors.length > 1}
@@ -216,7 +272,7 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
       )}
       {load.t === "loading" && <Loading />}
       {load.t === "error" && <Failed load={load} p={p} bump={() => setReload((n) => n + 1)} />}
-      {data && !data.rows.length && <Empty />}
+      {data && !data.rows.length && (hasListFilters(filters) ? <ZeroData iconProps={{ iconName: "Filter" }} imageAltText="" primaryText="No matching pull requests" secondaryText="Clear or change the filters to see more." /> : <Empty />)}
       {data && data.rows.length > 0 && (
         <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
           <PrTable rows={data.rows} repo={p.repo} open={p.open} label={`${p.tab} pull requests`} />
@@ -252,7 +308,7 @@ function Section({ title, rows, p }: { title: string; rows: PrListRow[]; p: TabP
 
 function MineList(p: TabProps) {
   const [reload, setReload] = React.useState(0);
-  const load = useList(p.repo, "mine", "", null, reload, p.signedIn);
+  const load = useList(p.repo, "mine", NO_FILTERS, null, reload, p.signedIn);
   const mine = load.t === "ready" ? load.data.mine : undefined;
   return (
     <>

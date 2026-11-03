@@ -455,3 +455,43 @@
 .gh-add-comment { position: absolute; z-index: 5; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; cursor: pointer; font: 700 14px/18px Segoe UI, sans-serif; text-align: center; color: #fff; background: rgba(var(--palette-primary, 0, 120, 212), 1); }
 .gh-add-comment:hover { filter: brightness(1.15); }
 .monaco-editor .gh-comment-range { background: rgba(var(--palette-primary, 0, 120, 212), .16); }
+
+/* ---------- Batch 4: PR views ---------- */
+/* Files toolbar (VW-2 to VW-6). The commit page's bar is .gh-commit-files-bar; this one also carries "Show changes from", progress and the whitespace toggle. */
+.gh-pr-files-bar { gap: 8px; box-sizing: border-box; }
+.gh-pr-files-bar .gh-changed-count { white-space: nowrap; }
+.gh-bar-label { white-space: nowrap; margin-left: 8px; }
+.gh-changes-from { min-width: 180px; max-width: 320px; }
+.gh-range-end { min-width: 140px; max-width: 240px; }
+.gh-viewed-progress { white-space: nowrap; margin-right: 8px; }
+.gh-ws-toggle { flex: none; margin-right: 8px; }
+.gh-viewed-error { margin: 0 20px 8px; }
+/* The tree's filter box and menu (VW-5) */
+.gh-tree-filter { gap: 4px; padding: 8px 8px 4px 12px; flex: 0 0 auto; }
+.gh-tree-filter-box { min-width: 0; }
+.gh-tree-filter-menu { flex: none; }
+/* File card header additions */
+.gh-viewed { flex: none; margin-left: 4px; }
+.gh-view-toggle { flex: none; }
+.gh-changed-since, .gh-ws-only { flex: none; margin-left: 8px; }
+/* Rich diffs (VW-11) */
+.gh-img-diff { gap: 16px; padding: 16px; align-items: flex-start; flex-wrap: wrap; }
+.gh-img-side { margin: 0; flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.gh-img-pic { max-width: 100%; max-height: 480px; object-fit: contain; align-self: flex-start; border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); background: repeating-conic-gradient(rgba(var(--palette-neutral-8, 0, 0, 0), .06) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+.gh-md-rendered { padding: 8px 16px 16px; }
+/* Updates tab (VW-1) */
+.gh-updates { gap: 16px; }
+.gh-updates-hint { margin: 0 0 8px; }
+.gh-updates-list, .gh-update-commits { list-style: none; margin: 0; padding: 0; }
+.gh-update { gap: 8px; padding: 10px 0; border-top: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
+.gh-update:first-child { border-top: 0; }
+.gh-update-main { min-width: 0; gap: 4px; }
+.gh-update-main > .flex-row { gap: 8px; }
+.gh-update-check { flex: none; }
+.gh-update-forced { flex: none; }
+.gh-update-commits li { padding: 1px 0; }
+.gh-update-compare-title { margin: 0 0 8px; }
+.gh-update-compare .gh-pr-files { min-height: 480px; }
+/* List: updated since you viewed (VW-9) */
+.gh-pr-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--palette-primary, 0, 120, 212), 1); }
+.gh-pr-line1 .gh-pr-title-unread { font-weight: 600; }

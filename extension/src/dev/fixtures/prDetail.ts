@@ -55,6 +55,45 @@ const PKG_BASE = `{
 `;
 const PKG_HEAD = PKG_BASE.replace("^5.8.0", "^5.9.3").replace('"build": "tsc"', '"build": "tsc --noEmit"');
 
+// Batch 4: a whitespace-only change, an SVG, a markdown file and a file GitHub sends no patch for.
+const FORMAT_BASE = `export function format(items: string[]): string {
+  const out: string[] = [];
+  for (const item of items) {
+    out.push(item.trim());
+  }
+  return out.join(", ");
+}
+`;
+const FORMAT_HEAD = `export function format(items: string[]): string {
+    const out: string[] = [];
+    for (const item of items) {
+        out.push(item.trim());
+    }
+    return out.join(", ");
+}
+`;
+const DIAGRAM_BASE = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80">
+  <rect width="200" height="80" rx="8" fill="#0078d4"/>
+  <text x="100" y="46" font-family="Segoe UI,Arial" font-size="16" fill="#fff" text-anchor="middle">Before</text>
+</svg>
+`;
+const DIAGRAM_HEAD = DIAGRAM_BASE.replace("#0078d4", "#ca5010").replace(">Before<", ">After<");
+const GUIDE_BASE = `# Guide
+
+Start here.
+
+- Install the tools
+- Run the build
+`;
+const GUIDE_HEAD = `# Guide
+
+Start here, then read **the notes**.
+
+- Install the tools
+- Run the build
+- Run the \`tests\`
+`;
+
 interface FixtureFile { path: string; status: string; additions: number; deletions: number; previous?: string; patch?: string; base?: string; head?: string }
 const diffStat = (a?: string, b?: string) => {
   const x = a ? a.split("\n") : [], y = b ? b.split("\n") : [];
@@ -69,7 +108,11 @@ const RICH: FixtureFile[] = [
   f("docs/old-notes.md", "removed", NOTES_BASE, undefined),
   f("src/lib/names.ts", "renamed", NAMING_BASE, NAMING_HEAD, "src/lib/naming.ts"),
   f("package.json", "modified", PKG_BASE, PKG_HEAD),
-  { path: "docs/img/logo.png", status: "modified", additions: 0, deletions: 0 }, // binary: no patch, no contents needed
+  { path: "docs/img/logo.png", status: "modified", additions: 0, deletions: 0 }, // an image: no patch; the picture is served by the mock (b4.ts)
+  f("src/format.ts", "modified", FORMAT_BASE, FORMAT_HEAD),
+  f("docs/img/diagram.svg", "modified", DIAGRAM_BASE, DIAGRAM_HEAD),
+  f("docs/guide.md", "modified", GUIDE_BASE, GUIDE_HEAD),
+  { path: "assets/data.bin", status: "added", additions: 12, deletions: 0 }, // binary: GitHub sends no patch
 ];
 const SMALL: FixtureFile[] = [f("package.json", "modified", PKG_BASE, PKG_HEAD)];
 // 25 tiny files for #197: cards past the 20th start collapsed.

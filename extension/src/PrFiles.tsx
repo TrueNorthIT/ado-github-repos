@@ -2,7 +2,9 @@
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import { Button } from "azure-devops-ui/Button";
+import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { Card } from "azure-devops-ui/Card";
+import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { ListSelection } from "azure-devops-ui/List";
@@ -10,12 +12,27 @@ import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
 import { Tree, ExpandableTreeCell, ITreeColumn } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
+import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
+import { ZeroData } from "azure-devops-ui/ZeroData";
 import type { PrPageData } from "./lib/prModel";
+import { resolveRange, type ChangesFrom, type RangeContext } from "./lib/commitRange";
+import { applyDiffHash, resolveSideBySide, storedSideBySide } from "./lib/diffPrefs";
+import { withViewed } from "./lib/viewedFiles";
+import { usePrefs } from "./prefs";
+import { patchHash, useHashExtras } from "./hostNav";
+import { FilesBar } from "./PrFilesBar";
 import { buildFileTree, type PrFile, type PrTreeNode } from "./lib/prFiles";
-import { classifyFile, monacoLanguage } from "./lib/fileKind";
+import { monacoLanguage } from "./lib/fileKind";
+import { BINARY_NOTICE, MAX_DIFF_BYTES, diffNotice, diffViews, renderedSides, richKind, toggleRenderedSide, type DiffView, type RenderedSide } from "./lib/richDiff";
+import { changedSinceViewed, CHANGED_SINCE_VIEWED, isCollapsedByDefault, viewedProgress, type ViewedState } from "./lib/viewedFiles";
+import { EMPTY_FILE_FILTER, filterFiles, type FileFilter } from "./lib/fileFilter";
+import { whitespaceNotice } from "./lib/diffPrefs";
+import { githubDevFileUrl } from "./lib/githubDev";
+import { ImageDiff, RenderedMarkdown } from "./PrRichDiff";
+import { TreeFilter } from "./PrFilesBar";
 import { ErrorView, loadMonaco } from "./Browser";
 import { FileIcon } from "./fileIcons";
-import { getAnnotations, getPrFiles, getRaw, invalidatePr } from "./githubBrowse";
+import { getAnnotations, getPrFiles, getRaw, getRangeContext, getRangeFiles, getViewedStates, invalidatePr, setFileViewed } from "./githubBrowse";
 import { openInRepos, useRepoHref } from "./repoHref";
 import { InlineThreads } from "./Feed";
 import { ComposerRoot, SuggestionBar } from "./ReviewUi";
@@ -30,7 +47,6 @@ import "./browser.css";
 
 /** Cards past this many start collapsed (their diffs are only fetched when opened). */
 const OPEN_CARDS = 20;
-const MAX_BYTES = 1048576;
 const NO_ANCHORS: InlineAnchor[] = [];
 const NO_IDS: string[] = [];
 const NO_FILE_THREADS = new Map<string, string[]>();
@@ -66,12 +82,12 @@ function fetchSide(repo: string, sha: string, path: string): Promise<Side> {
   let p = sides.get(key);
   if (!p) {
     p = getRaw(repo, sha, path).then((buf): Side => {
-      if (buf.byteLength > MAX_BYTES) return { ok: false, why: "larger than 1 MB" };
-      if (new Uint8Array(buf, 0, Math.min(buf.byteLength, 8000)).includes(0)) return { ok: false, why: "a binary file" };
+      if (buf.byteLength > MAX_DIFF_BYTES) return { ok: false, why: BINARY_NOTICE };
+      if (new Uint8Array(buf, 0, Math.min(buf.byteLength, 8000)).includes(0)) return { ok: false, why: BINARY_NOTICE };
       try {
         return { ok: true, text: new TextDecoder("utf-8", { fatal: true }).decode(buf) };
       } catch {
-        return { ok: false, why: "a binary file" };
+        return { ok: false, why: BINARY_NOTICE };
       }
     });
     sides.set(key, p);
@@ -96,7 +112,7 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
 
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -117,8 +133,9 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
   React.useEffect(() => {
     if (!seen) return;
     let dead = false;
-    const kind = classifyFile(file.path, 0);
-    if (kind === "binary" || kind === "image") return setBody({ t: "cant", why: `${file.path.split("/").pop()} is a binary file.` });
+    // VW-11: GitHub sends no patch for binary and very large diffs, and a known binary type needs no fetch.
+    const notice = diffNotice({ path: file.path, patch: file.patch, additions: file.additions, deletions: file.deletions });
+    if (notice) return setBody({ t: "cant", why: notice });
     const added = file.changeType === "ADDED";
     const deleted = file.changeType === "DELETED";
     Promise.all([
@@ -128,7 +145,7 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
       ([o, m]) => {
         if (dead) return;
         const bad = !o.ok ? o : !m.ok ? m : undefined;
-        setBody(bad ? { t: "cant", why: `${file.path.split("/").pop()} is ${bad.why}.` } : { t: "diff", original: (o as { text: string }).text, modified: (m as { text: string }).text, whole: added ? "added" : deleted ? "removed" : undefined });
+        setBody(bad ? { t: "cant", why: bad.why } : { t: "diff", original: (o as { text: string }).text, modified: (m as { text: string }).text, whole: added ? "added" : deleted ? "removed" : undefined });
       },
       () => !dead && setBody({ t: "error" })
     );
@@ -245,11 +262,13 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
   // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
   React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
+  // VW-4: Monaco's own option does the work, in place.
+  React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ ignoreTrimWhitespace: ignoreWhitespace }); }, [target, ignoreWhitespace]);
 
   return (
     <div ref={root} className="gh-pr-diff">
       {body.t === "wait" && <div className="gh-pr-diff-note flex-row justify-center"><Spinner size={SpinnerSize.small} ariaLabel="Loading diff" /></div>}
-      {body.t === "cant" && <div className="gh-pr-diff-note secondary-text" role="status">Can't preview: {body.why}</div>}
+      {body.t === "cant" && <div className="gh-pr-diff-note secondary-text" role="status">{body.why}</div>}
       {body.t === "error" && <div className="gh-pr-diff-note secondary-text" role="status">Could not load this file's contents.</div>}
       {body.t === "diff" && <div ref={box} className="gh-pr-diff-editor" style={{ height: height || 80 }} />}
     </div>
@@ -264,11 +283,31 @@ function AnnotationBadge({ count }: { count: number }) {
   return count ? <Pill className="gh-annotation-count" size={PillSize.compact} ariaLabel={annotationLabel(count)}>{annotationLabel(count)}</Pill> : null;
 }
 
-export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[] }) {
+/** VW-3: the viewed state of a file and the way to change it. `state` is undefined while it loads. */
+export interface ViewedCtl {
+  state: ViewedState | undefined;
+  onChange: (viewed: boolean) => void;
+}
+
+/** VW-11: the Source / Rendered toggle of a file that has a rendered view. A ButtonGroup of two subtle Buttons. */
+function ViewToggle({ views, view, setView, name }: { views: DiffView[]; view: DiffView; setView: (v: DiffView) => void; name: string }) {
+  return (
+    <ButtonGroup className="gh-view-toggle">
+      {views.map((v) => <Button key={v} subtle={v !== view} primary={v === view} text={v === "source" ? "Source" : "Rendered"} ariaPressed={v === view} ariaLabel={`${v === "source" ? "Source" : "Rendered"} view of ${name}`} onClick={() => setView(v)} />)}
+    </ButtonGroup>
+  );
+}
+
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS, viewed, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[]; viewed?: ViewedCtl; ignoreWhitespace?: boolean }) {
   const href = useRepoHref();
   const [fileComment, setFileComment] = React.useState(false);
+  const kind = richKind(file.path);
+  const views = kind ? diffViews(kind) : null;
+  const [view, setView] = React.useState<DiffView>(views?.default ?? "source");
+  const [side, setSide] = React.useState<RenderedSide>("after");
+  const ws = whitespaceNotice(file.patch, ignoreWhitespace);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
-  const view = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
+  const target = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
   return (
     <Card
       className="gh-pr-card gh-pr-file"
@@ -285,11 +324,17 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
               <span className="gh-pr-file-name body-m">{name}</span>
               <span className="gh-pr-stat body-s"><span className="gh-pr-del">-{file.deletions}</span><span className="gh-pr-add">+{file.additions}</span></span>
               <AnnotationBadge count={annotationTotal(annotations)} />
+              {changedSinceViewed(viewed?.state) && <Pill className="gh-changed-since" size={PillSize.compact} variant={PillVariant.colored} color={{ red: 202, green: 80, blue: 16 }}>{CHANGED_SINCE_VIEWED}</Pill>}
+              {ws && <Pill className="gh-ws-only" size={PillSize.compact} variant={PillVariant.outlined}>{ws}</Pill>}
             </div>
             <span className="secondary-text body-s text-ellipsis">/{file.path}{file.previousPath ? ` (renamed from /${file.previousPath})` : ""}</span>
           </div>
+          {views && views.views.length > 1 && <ViewToggle views={views.views} view={view} setView={setView} name={name} />}
+          {kind === "markdown" && view === "rendered" && renderedSides(file.changeType).length > 1 && <Button subtle iconProps={{ iconName: "Switch" }} text={side === "after" ? "After" : "Before"} ariaLabel={`Showing the ${side} version; switch`} onClick={() => setSide((x) => toggleRenderedSide(file.changeType, x))} />}
+          {viewed && <Checkbox className="gh-viewed" label="Viewed" ariaLabel={`Viewed: ${file.path}`} checked={viewed.state === "VIEWED"} onChange={(_e, v) => viewed.onChange(v)} />}
           {commenting && pr.number !== undefined && <Button subtle iconProps={{ iconName: "CommentAdd" }} text="Comment on file" ariaLabel={`Comment on ${file.path}`} ariaExpanded={fileComment} onClick={() => setFileComment(true)} />}
-          <Button text="View" ariaLabel={`View ${file.path}`} href={href(view)} onClick={openInRepos(view)} />
+          <Button subtle iconProps={{ iconName: "OpenInNewTab" }} text="github.dev" tooltipProps={{ text: "Open this file in github.dev" }} ariaLabel={`Open ${file.path} in github.dev`} href={githubDevFileUrl(repo, target.ref, file.path)} target="_blank" rel="noopener noreferrer" />
+          <Button text="View" ariaLabel={`View ${file.path}`} href={href(target)} onClick={openInRepos(target)} />
         </div>
       )}
     >
@@ -299,7 +344,9 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
           {fileComment && <ComposerRoot repo={repo} number={pr.number} target={fileTarget(file.path)} onClose={() => setFileComment(false)} />}
         </div>
       )}
-      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} />
+      {kind === "image" || (kind === "svg" && view === "rendered") ? <ImageDiff file={file} repo={repo} pr={pr} />
+        : kind === "markdown" && view === "rendered" ? <RenderedMarkdown file={file} repo={repo} pr={pr} side={toggleRenderedSide(file.changeType, side)} />
+        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} />}
     </Card>
   );
 }
@@ -367,9 +414,33 @@ export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS, an
 // ---------- the tab ----------
 
 /** The tree and the cards, with `bar` above them. Shared by the PR Files tab and commit detail. `treeHeader` sits above the tree (native's repo name row). */
-export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode; treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]> }) {
+export interface ViewedFilesCtl {
+  states: Record<string, ViewedState>;
+  onChange: (path: string, viewed: boolean) => void;
+}
+
+export function FilesView({ files: all, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS, viewed, ignoreWhitespace = false, treeFilter = false }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode | ((p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode); treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]>; viewed?: ViewedFilesCtl; ignoreWhitespace?: boolean; /** VW-5: a filter box and menu over the tree. */ treeFilter?: boolean }) {
+  const [filter, setFilter] = React.useState<FileFilter>(EMPTY_FILE_FILTER);
+  const files = React.useMemo(() => (treeFilter ? filterFiles(all, filter) : all), [all, filter, treeFilter]);
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
-  const [collapsed, setCollapsed] = React.useState(() => new Set(files.slice(OPEN_CARDS).map((f) => f.path)));
+  const [collapsed, setCollapsed] = React.useState(() => new Set(all.slice(OPEN_CARDS).map((f) => f.path)));
+  // VW-3: files already viewed start collapsed, once their states have arrived.
+  const appliedViewed = React.useRef(false);
+  React.useEffect(() => {
+    if (!viewed || appliedViewed.current) return;
+    appliedViewed.current = true;
+    setCollapsed((c) => {
+      const n = new Set(c);
+      for (const f of all) if (isCollapsedByDefault(viewed.states[f.path]) && f.path !== selected) n.add(f.path);
+      return n;
+    });
+  }, [viewed, all, selected]);
+  const progress = React.useMemo(() => (viewed ? viewedProgress(all.map((f) => f.path), viewed.states) : undefined), [viewed, all]);
+  const setViewed = (path: string, v: boolean) => {
+    // GitHub collapses a file when it is ticked as viewed and opens it again when it is unticked.
+    setCollapsed((c) => { const n = new Set(c); v ? n.add(path) : n.delete(path); return n; });
+    viewed?.onChange(path, v);
+  };
   const els = React.useRef(new Map<string, HTMLElement>());
   const annotationCounts = React.useMemo(() => {
     const m = new Map<string, number>();
@@ -386,7 +457,7 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
 
   return (
     <div className="gh-pr-files flex-column">
-      {bar}
+      {typeof bar === "function" ? bar({ shown: files.length, progress }) : bar}
       <div className="gh-shell gh-pr-files-shell">
         <Splitter
           className="bolt-page-grey"
@@ -399,6 +470,7 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
           onRenderNearElement={() => (
             <nav className="gh-left-inner flex-column" aria-label="Changed files">
               {treeHeader}
+              {treeFilter && <TreeFilter files={all} filter={filter} onChange={setFilter} />}
               <div className="gh-tree-wrap"><FileTree nodes={nodes} selected={selected} select={select} threadCounts={threadCounts} annotationCounts={annotationCounts} /></div>
             </nav>
           )}
@@ -417,6 +489,8 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
                     annotations={annotations?.byFile.get(f.path)}
                     annotationUrls={annotations?.urls}
+                    ignoreWhitespace={ignoreWhitespace}
+                    viewed={viewed && { state: viewed.states[f.path], onChange: (v) => setViewed(f.path, v) }}
                     collapsed={collapsed.has(f.path)}
                     toggle={() => setCollapsed((c) => { const n = new Set(c); n.has(f.path) ? n.delete(f.path) : n.add(f.path); return n; })}
                   />
@@ -430,9 +504,25 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
   );
 }
 
-function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; repo: string; pr: PrPageData; selected?: string; select: (path: string) => void; dark: boolean }) {
-  const feed = useFeed(repo, pr.number);
-  const threads = React.useMemo(() => feed.items.filter((i): i is ThreadItem => i.kind === "thread"), [feed.items]);
+interface LoadedProps {
+  files: PrFile[];
+  repo: string;
+  /** What the diffs compare: the PR itself, or (VW-6) another range of it, which has no threads, annotations or viewed state. */
+  ctx: DiffCtx;
+  whole: boolean;
+  selected?: string;
+  select: (path: string) => void;
+  dark: boolean;
+  sideBySide: boolean;
+  ignoreWhitespace: boolean;
+  viewed?: ViewedFilesCtl;
+  bar: (p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode;
+}
+
+function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, ignoreWhitespace, viewed, bar }: LoadedProps) {
+  const number = ctx.number ?? 0;
+  const feed = useFeed(repo, number);
+  const threads = React.useMemo(() => (whole ? feed.items.filter((i): i is ThreadItem => i.kind === "thread") : []), [feed.items, whole]);
   const anchors = React.useMemo(() => threadsByFile(threads), [threads]);
   const threadCounts = React.useMemo(() => {
     const m = new Map<string, number>();
@@ -447,20 +537,21 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
   // CI-1: the annotations arrive after the diff; if they can't be read (no Checks permission, say) the diff simply has none.
   const [contexts, setContexts] = React.useState<Awaited<ReturnType<typeof getAnnotations>>>([]);
   React.useEffect(() => {
+    if (!whole) return;
     let dead = false;
-    getAnnotations(repo, pr.number).then((c) => !dead && setContexts(c), () => {});
+    getAnnotations(repo, number).then((c) => !dead && setContexts(c), () => {});
     return () => { dead = true; };
-  }, [repo, pr.number]);
+  }, [repo, number, whole]);
   const annotations = React.useMemo<AnnotationsInfo>(() => {
     const urls = new Map<string, string>();
     for (const c of contexts) if (c.__typename === "CheckRun" && c.detailsUrl) urls.set(c.name, c.detailsUrl);
-    return { byFile: mapAnnotations(contexts, files.map((f) => f.path)).byFile, urls };
-  }, [contexts, files]);
+    return { byFile: mapAnnotations(whole ? contexts : [], files.map((f) => f.path)).byFile, urls };
+  }, [contexts, files, whole]);
   return (
     <FilesView
-      files={files} repo={repo} ctx={pr} selected={selected} select={select} dark={dark} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
-      commenting={feed.status === "ready" && !!feed.viewer.login} fileThreads={fileThreads}
-      bar={<><div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div><SuggestionBar store={feed} /></>}
+      files={files} repo={repo} ctx={ctx} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
+      commenting={whole && feed.status === "ready" && !!feed.viewer.login} fileThreads={fileThreads} viewed={viewed} treeFilter
+      bar={({ shown, progress }) => <>{bar({ shown, progress })}{whole && <SuggestionBar store={feed} />}</>}
     />
   );
 }
@@ -470,18 +561,84 @@ type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; file
 export function PrFilesTab({ repo, number, pr, selected, select, dark, signedIn, signIn, busy }: { repo: string; number: number; pr: PrPageData; selected?: string; select: (path: string) => void; dark: boolean; signedIn: boolean; signIn: () => void; busy: boolean }) {
   const [load, setLoad] = React.useState<Load>({ t: "loading" });
   const [reload, setReload] = React.useState(0);
+  const [prefs, setPrefs] = usePrefs();
+  const { diff } = useHashExtras();
+  // VW-2: the hash override, then the stored per-user default, then inline.
+  const sideBySide = resolveSideBySide(diff.sideBySide, storedSideBySide(prefs));
+  const ignoreWhitespace = !!diff.ignoreWhitespace;
+  const setSideBySide = (v: boolean) => {
+    setPrefs((p) => ({ ...p, prSideBySide: v }));
+    if (diff.sideBySide !== undefined) patchHash((h) => applyDiffHash(h, { ...diff, sideBySide: v })); // a hash override would otherwise beat the choice
+  };
+  const setIgnoreWhitespace = (v: boolean) => patchHash((h) => applyDiffHash(h, { ...diff, ignoreWhitespace: v }));
+
+  // VW-6: "Show changes from". The commits arrive on their own; until then the PR's own diff is all there is.
+  const [changes, setChanges] = React.useState<ChangesFrom>({ kind: "all" });
+  const [rangeCtx, setRangeCtx] = React.useState<RangeContext | undefined>();
+  React.useEffect(() => {
+    let dead = false;
+    getRangeContext(repo, number).then((c) => !dead && setRangeCtx(c), () => {});
+    return () => { dead = true; };
+  }, [repo, number, signedIn, reload]);
+  const range = React.useMemo(() => {
+    if (changes.kind === "all" || !rangeCtx) return null;
+    try { return resolveRange(repo, changes, rangeCtx); } catch { return null; }
+  }, [changes, rangeCtx, repo]);
+  const whole = changes.kind === "all" || !range;
+  const rangeKey = whole ? "all" : range!.path;
   React.useEffect(() => {
     let dead = false;
     setLoad({ t: "loading" });
-    getPrFiles(repo, number).then((files) => !dead && setLoad({ t: "ready", files }), (err) => !dead && setLoad({ t: "error", err }));
+    (whole ? getPrFiles(repo, number) : getRangeFiles(range!.path)).then((files) => !dead && setLoad({ t: "ready", files }), (err) => !dead && setLoad({ t: "error", err }));
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeKey stands for range
+  }, [repo, number, signedIn, reload, rangeKey]);
+
+  // VW-3: viewed states are the signed-in viewer's, and only mean something for the PR's own diff.
+  const [viewedData, setViewedData] = React.useState<{ pullRequestId: string; states: Record<string, ViewedState> } | undefined>();
+  const [viewedError, setViewedError] = React.useState(false);
+  React.useEffect(() => {
+    if (!signedIn) return setViewedData(undefined);
+    let dead = false;
+    getViewedStates(repo, number).then((d) => !dead && setViewedData(d.pullRequestId ? d : undefined), () => !dead && setViewedData(undefined));
     return () => { dead = true; };
   }, [repo, number, signedIn, reload]);
-  if (load.t === "loading") return <div className="page-content page-content-top gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading changed files" /></div>;
+  const viewed = React.useMemo<ViewedFilesCtl | undefined>(() => {
+    if (!viewedData || !whole) return undefined;
+    return {
+      states: viewedData.states,
+      onChange: (path, v) => {
+        const was = viewedData.states[path];
+        setViewedError(false);
+        setViewedData((d) => d && { ...d, states: withViewed(d.states, path, v) });
+        setFileViewed(viewedData.pullRequestId, path, v).catch(() => {
+          setViewedData((d) => d && { ...d, states: { ...d.states, [path]: was ?? "UNVIEWED" } });
+          setViewedError(true);
+        });
+      },
+    };
+  }, [viewedData, whole]);
+
+  const ctx: DiffCtx = whole ? { baseSha: pr.baseSha, headSha: pr.headSha, number: pr.number, baseRef: pr.baseRef } : { baseSha: range!.base, headSha: range!.head };
+  const total = load.t === "ready" ? load.files.length : 0;
+  const bar = (p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => (
+    <>
+      <FilesBar
+        count={total} shown={load.t === "ready" ? p.shown : 0}
+        range={rangeCtx && rangeCtx.commits.length ? { ctx: rangeCtx, value: changes, onChange: setChanges } : undefined}
+        sideBySide={sideBySide} setSideBySide={setSideBySide} ignoreWhitespace={ignoreWhitespace} setIgnoreWhitespace={setIgnoreWhitespace} progress={p.progress}
+      />
+      {viewedError && <MessageCard className="gh-viewed-error" severity={MessageCardSeverity.Error} onDismiss={() => setViewedError(false)}>GitHub did not accept that change to the viewed state. It has been put back.</MessageCard>}
+    </>
+  );
+  if (load.t === "loading") return <div className="gh-pr-files flex-column">{bar({ shown: 0 })}<div className="page-content page-content-top gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading changed files" /></div></div>;
   if (load.t === "error")
     return (
       <div className="page-content page-content-top">
         <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request's files" permission="Pull requests" />
       </div>
     );
-  return <Loaded files={load.files} repo={repo} pr={pr} selected={selected} select={select} dark={dark} />;
+  if (!load.files.length)
+    return <div className="gh-pr-files flex-column">{bar({ shown: 0 })}<ZeroData iconProps={{ iconName: "Page" }} imageAltText="" primaryText="No files changed" secondaryText={whole ? "This pull request does not change any files." : "Nothing changed in this range."} /></div>;
+  return <Loaded key={rangeKey} files={load.files} repo={repo} ctx={ctx} whole={whole} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} viewed={viewed} bar={bar} />;
 }

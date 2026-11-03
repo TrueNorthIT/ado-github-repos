@@ -28,6 +28,9 @@ import { openInRepos, useRepoHref } from "./repoHref";
 import { watchTheme } from "./theme";
 import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
+import { PrUpdatesTab } from "./PrUpdates";
+import { recordPrViewed } from "./prefs";
+import { viewedKey } from "./lib/lastViewed";
 import { ActivityFeed } from "./Feed";
 import { feedStore, useFeed } from "./feedStore";
 import { ReactionBar } from "./CommentParts";
@@ -43,6 +46,7 @@ import "./browser.css";
 const PAGES: { id: PrPageId; name: string }[] = [
   { id: "overview", name: "Overview" },
   { id: "files", name: "Files" },
+  { id: "updates", name: "Updates" },
   { id: "commits", name: "Commits" },
 ];
 
@@ -515,6 +519,8 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
     return () => offs.forEach((off) => off());
   }, [repo, n]);
 
+  // VW-9: opening a pull request notes the time, so the list can mark it again once it changes.
+  React.useEffect(() => { if (load.t === "ready") void recordPrViewed(viewedKey(repo, n)); }, [repo, n, load.t === "ready"]); // eslint-disable-line react-hooks/exhaustive-deps
   const actions = useActions(repo, n);
   const edit = useEdit(repo, n, actions.version);
   const [ui, setUi] = React.useState<Ui>({});
@@ -556,6 +562,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
       )}
       {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
+      {pr && page === "updates" && <PrUpdatesTab repo={repo} number={n} pr={pr} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </>
   );
