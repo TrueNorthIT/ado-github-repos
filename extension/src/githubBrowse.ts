@@ -43,7 +43,7 @@ const MAX_BRANCHES = 1000;
 export type GhErrorKind = "auth" | "access" | "rateLimit" | "other";
 
 export class GhError extends Error {
-  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date, /** GitHub's own message, when a mutation was refused. */ public detail?: string) {
+  constructor(public kind: GhErrorKind, public status = 0, public resetAt?: Date, /** GitHub's own message, when a mutation was refused. */ public detail?: string, /** The failed response's body `message` (reads and writes), for the Security page's availability(). */ public apiMessage?: string) {
     super(`${kind} (${status})`);
   }
 }
@@ -56,6 +56,16 @@ async function token(force = false): Promise<string> {
   if (force || !cached || tokenAction(cached) !== "use") cached = await getTokens();
   if (!cached) throw new GhError("auth", 401);
   return cached.accessToken;
+}
+
+/** The `message` of a GitHub error body, or undefined when there is none. */
+async function bodyMessage(res: Response): Promise<string | undefined> {
+  try {
+    const m = (await res.json())?.message;
+    return typeof m === "string" ? m : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
@@ -77,15 +87,22 @@ async function request(url: string, accept: string, retry = true, body?: string,
   }
   if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
     const reset = Number(res.headers.get("x-ratelimit-reset"));
-    throw new GhError("rateLimit", 403, reset ? new Date(reset * 1000) : undefined);
+    throw new GhError("rateLimit", 403, reset ? new Date(reset * 1000) : undefined, undefined, await bodyMessage(res));
   }
-  if (res.status === 403 || res.status === 404) throw new GhError("access", res.status);
-  throw new GhError("other", res.status);
+  const apiMessage = await bodyMessage(res);
+  if (res.status === 403 || res.status === 404) throw new GhError("access", res.status, undefined, undefined, apiMessage);
+  throw new GhError("other", res.status, undefined, undefined, apiMessage);
 }
 
 /** A REST call described as data (lib/restRequest.ts). GitHub answers a re-run with 201 and no body, so nothing is parsed. */
 export async function rest(r: RestRequest): Promise<void> {
   await request(r.path, "application/vnd.github+json", true, r.body ? JSON.stringify(r.body) : undefined, r.method);
+}
+
+/** A GET of a security-alerts request: the parsed body and the Link header (for paging). */
+export async function restJson<T = any>(r: RestRequest): Promise<{ body: T; link: string | null }> {
+  const res = await request(r.path, "application/vnd.github+json", true, undefined, r.method);
+  return { body: await res.json(), link: res.headers.get("link") };
 }
 
 const json = async <T>(url: string): Promise<T> => (await request(url, "application/vnd.github+json")).json();
@@ -827,3 +844,8 @@ export const getCompareFiles = (repo: string, base: string, head: string) =>
     }
     return { files: out, mergeBase };
   });
+
+/** GitHub-flavoured markdown rendered to HTML by GitHub (POST /markdown), for the Security page's advisory text. Run the result through prepareMarkdownHtml. */
+export async function renderMarkdown(repo: string, text: string): Promise<string> {
+  return (await request("/markdown", "text/html", true, JSON.stringify({ text, mode: "gfm", context: repo }))).text();
+}

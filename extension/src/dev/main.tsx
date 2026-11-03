@@ -20,7 +20,7 @@ window.open = (url?: string | URL, ...rest: any[]) => {
   return popup as unknown as Window;
 };
 
-const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly", "refsFail", "queued", "copilotRefused", "readOnlyViewer", "editFails", "noProjectsAccess", "pendingReview", "suggestions", "editedComment", "minimisedComment", "reactions", "viewedFails", "noReview"];
+const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly", "refsFail", "queued", "copilotRefused", "readOnlyViewer", "editFails", "noProjectsAccess", "pendingReview", "suggestions", "editedComment", "minimisedComment", "reactions", "viewedFails", "noReview", "dependabotDisabled", "codeNoAnalysis", "secretNoPermission", "dismissFails"];
 
 function toolbar() {
   const bar = document.createElement("div");
@@ -44,7 +44,7 @@ function toolbar() {
   hub.setAttribute("aria-label", "Hub");
   hub.style.cssText = "font:inherit;background:#555;color:#fff;border:1px solid #777";
   const cur = new URLSearchParams(location.search).get("hub") ?? "repos";
-  for (const h of MOCK_HUBS) hub.add(new Option(h === "repos" ? "Files" : h === "prs" ? "Pull requests" : h[0].toUpperCase() + h.slice(1), h, false, h === cur));
+  for (const h of MOCK_HUBS) hub.add(new Option(h === "repos" ? "Files" : h === "prs" ? "Pull requests" : h === "security" ? "Advanced Security" : h[0].toUpperCase() + h.slice(1), h, false, h === cur));
   hub.onchange = () => { const u = new URL(location.href); u.searchParams.set("hub", hub.value); location.href = u.href; };
   const label = document.createElement("label");
   label.append("Scenario ");

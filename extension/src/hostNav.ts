@@ -7,6 +7,7 @@ import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPrefs";
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
 import { parseNewPr, type NewPrHashState } from "./lib/newPrHash";
+import { parseSecurity, type SecurityHashState } from "./lib/securityHash";
 import * as React from "react";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
@@ -32,10 +33,10 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
@@ -110,7 +111,7 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   };
 }
 
-export type HubId = "files" | "commits" | "pushes" | "branches" | "tags" | "prs";
+export type HubId = "files" | "commits" | "pushes" | "branches" | "tags" | "prs" | "security";
 /** The contribution id of each hub, as in vss-extension.json. Files keeps the original id so old links survive. */
 export const HUB_CONTRIBUTION: Record<HubId, string> = {
   files: "github-repos-hub",
@@ -119,12 +120,13 @@ export const HUB_CONTRIBUTION: Record<HubId, string> = {
   branches: "github-repos-branches-hub",
   tags: "github-repos-tags-hub",
   prs: "github-repos-prs-hub",
+  security: "github-repos-security-hub",
 };
 const HUB_SUFFIX = /github-repos(?:-[a-z]+)?-hub$/;
 
 /** Which hub this page is, from the contribution id (every hub loads the same hub.html). */
 export const currentHub = (contributionId: string = SDK.getContributionId()): HubId =>
-  (/github-repos-(commits|pushes|branches|tags|prs)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
+  (/github-repos-(commits|pushes|branches|tags|prs|security)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
 
 /** Another hub's URL for a state: the current contribution id with its hub suffix swapped. */
 export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState | string) =>
