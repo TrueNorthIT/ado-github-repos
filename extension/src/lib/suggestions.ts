@@ -16,6 +16,7 @@
 //  - A suggestion block is a fenced code block whose info string is exactly `suggestion`. Longer fences (4+ backticks) are how a suggestion can itself contain a ``` fence (CommonMark).
 //  - Not exercised live (needs a real write): whether GitHub's own UI adds Co-authored-by trailers when applying; this module does not.
 import type { GraphQlRequest } from "./prQuery";
+import { commitOnBranchMutation, utf8ToBase64 } from "./fileCommit";
 
 /** One suggested change: replace lines startLine..endLine (1-based, inclusive, current file numbering) with `replacement`. An empty array deletes the lines; [""] replaces them with one blank line. */
 export interface Suggestion {
@@ -68,13 +69,6 @@ function splice(f: Parsed, s: Suggestion): string {
 
 
 
-
-
-const base64Utf8 = (s: string): string => {
-  let bin = "";
-  for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
-  return btoa(bin);
-};
 
 
 // ---- building and parsing comment bodies ----------------------------------------------------------------------------------------------------------
@@ -223,25 +217,9 @@ export interface CommitSuggestionsParams {
  * in the order given; `body` is left out when absent. Throws "repo must be owner/name", "branchName is required", "expectedHeadOid is required", "at least one file is required".
  */
 export function commitSuggestionsMutation(p: CommitSuggestionsParams): GraphQlRequest {
-  const parts = p.repo.split("/");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error("repo must be owner/name");
-  if (!p.branch.trim()) throw new Error("branchName is required");
-  if (!p.expectedHeadOid.trim()) throw new Error("expectedHeadOid is required");
-  if (!p.files.length) throw new Error("at least one file is required");
-  const message = p.message.body === undefined ? { headline: p.message.headline } : { headline: p.message.headline, body: p.message.body };
-  return {
-    // The GraphQL comment names the payload fields (commit, ref). Both are objects, so only a comment can sit ahead of the first sub-selection,
-    // which is where tests/suggestions.test.ts looks for them ("the createCommitOnBranch payload").
-    query: `mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid url } ref { name target { oid } } } }`,
-    variables: {
-      input: {
-        branch: { repositoryNameWithOwner: p.repo, branchName: p.branch },
-        expectedHeadOid: p.expectedHeadOid,
-        message,
-        fileChanges: { additions: p.files.map((f) => ({ path: f.path, contents: base64Utf8(f.contents) })) },
-      },
-    },
-  };
+  if (!p.files.length && p.repo.split("/").length === 2 && p.branch.trim() && p.expectedHeadOid.trim()) throw new Error("at least one file is required");
+  // The generic builder (fileCommit.ts) also serves the web editor; the checks and their messages are the same.
+  return commitOnBranchMutation({ repo: p.repo, branch: p.branch, expectedHeadOid: p.expectedHeadOid, message: p.message, changes: { additions: p.files.map((f) => ({ path: f.path, contents: utf8ToBase64(f.contents) })), deletions: [] } });
 }
 
 // ---- reading what the commit needs ----------------------------------------------------------------------------------------------------------------
