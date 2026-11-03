@@ -28,7 +28,7 @@ import { gotoHash, patchHash, useHashExtras } from "./hostNav";
 import { filterBranches } from "./lib/branchSwitch";
 import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import { availability } from "./lib/securityAvailability";
-import { alertDetailHash, applySecurity, kindForTab, serializeSecurity, tabForKind, type SecTab, type SecurityHashState } from "./lib/securityHash";
+import { alertDetailHash, applySecurity, kindForTab, serializeSecurity, tabForKind, type SecretValidity, type SecTab, type SecurityHashState } from "./lib/securityHash";
 import { filterRows, severityPill, type AlertInstance, type AlertRow, type SecretLocation, type AlertState, type Severity } from "./lib/securityModel";
 import { dismissReasons, MAX_DISMISS_COMMENT } from "./lib/securityRequests";
 import type { AlertCount } from "./lib/securityCounts";
@@ -44,6 +44,12 @@ const TABS: { id: SecTab; name: string }[] = [
 ];
 const STATES: { id: StateFilter; text: string }[] = [{ id: "open", text: "Open" }, { id: "closed", text: "Closed" }, { id: "dismissed", text: "Dismissed" }, { id: "fixed", text: "Fixed" }];
 const SEVERITIES: RatedSeverity[] = ["Critical", "High", "Medium", "Low", "Note"];
+/** The ecosystems the Dependabot alerts list filters on (REST `ecosystem`). */
+const ECOSYSTEMS: { id: string; text: string }[] = [
+  { id: "composer", text: "Composer" }, { id: "go", text: "Go" }, { id: "maven", text: "Maven" }, { id: "npm", text: "npm" }, { id: "nuget", text: "NuGet" },
+  { id: "pip", text: "pip" }, { id: "pub", text: "Pub" }, { id: "rubygems", text: "RubyGems" }, { id: "rust", text: "Rust" },
+];
+const VALIDITIES: { id: SecretValidity; text: string }[] = [{ id: "active", text: "Active" }, { id: "inactive", text: "Inactive" }, { id: "unknown", text: "Unknown" }];
 const DEBOUNCE_MS = 300;
 const STATE_TEXT: Record<AlertState, string> = { Open: "Open", Dismissed: "Dismissed", Fixed: "Fixed", Resolved: "Resolved", AutoDismissed: "Auto-dismissed" };
 
@@ -124,6 +130,7 @@ class BranchItem extends React.Component<{ filterItemKey: string; repo: string; 
 }
 
 const sevSelection = (s?: string) => { const d = new DropdownSelection(); if (s) d.select(SEVERITIES.indexOf(s as RatedSeverity)); return d; };
+const pickSelection = (items: { id: string }[], v?: string) => { const d = new DropdownSelection(); const i = items.findIndex((x) => x.id === v); if (i >= 0) d.select(i); return d; };
 const stateSelection = (s: StateFilter) => { const d = new DropdownSelection(); d.select(STATES.findIndex((x) => x.id === s)); return d; };
 
 function columns(kind: AlertKind, repo: string, open: (n: number) => void): ITableColumn<AlertRow>[] {
@@ -159,12 +166,14 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   const tab = tabForKind(kind);
   const filter = React.useMemo(() => {
     const f = new Filter();
-    f.setState({ text: { value: seed?.text ?? "" }, state: { value: [seed?.state ?? "open"] }, severity: { value: seed?.severity ? [seed.severity] : [] }, tool: { value: seed?.tool ?? "" }, rule: { value: seed?.rule ?? "" } }, true);
+    f.setState({ text: { value: seed?.text ?? "" }, state: { value: [seed?.state ?? "open"] }, severity: { value: seed?.severity ? [seed.severity] : [] }, tool: { value: seed?.tool ?? "" }, rule: { value: seed?.rule ?? "" }, ecosystem: { value: seed?.ecosystem ? [seed.ecosystem] : [] }, package: { value: seed?.package ?? "" }, validity: { value: seed?.validity ? [seed.validity] : [] } }, true);
     return f;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- the hash only seeds it
   const stateSel = React.useMemo(() => stateSelection(seed?.state ?? "open"), []); // eslint-disable-line react-hooks/exhaustive-deps
   const sevSel = React.useMemo(() => sevSelection(seed?.severity), []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [applied, setApplied] = React.useState({ state: (seed?.state ?? "open") as StateFilter, severity: seed?.severity, branch: seed?.branch ?? "", tool: seed?.tool ?? "", rule: seed?.rule ?? "", text: seed?.text ?? "" });
+  const ecoSel = React.useMemo(() => pickSelection(ECOSYSTEMS, seed?.ecosystem), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const valSel = React.useMemo(() => pickSelection(VALIDITIES, seed?.validity), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [applied, setApplied] = React.useState({ state: (seed?.state ?? "open") as StateFilter, severity: seed?.severity, branch: seed?.branch ?? "", tool: seed?.tool ?? "", rule: seed?.rule ?? "", text: seed?.text ?? "", ecosystem: seed?.ecosystem ?? "", package: seed?.package ?? "", validity: seed?.validity as SecretValidity | undefined });
   const [load, setLoad] = React.useState<Load>({ t: "loading" });
   const [more, setMore] = React.useState<{ busy: boolean; err: boolean }>({ busy: false, err: false });
   const [reload, setReload] = React.useState(0);
@@ -172,7 +181,7 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   // Typing is debounced; every change is kept in the hash so a reload or a link keeps it.
   const commit = React.useCallback((next: typeof applied) => {
     setApplied(next);
-    patchHash((h) => applySecurity(h, { tab, state: next.state === "open" ? undefined : next.state, severity: next.severity, branch: next.branch, tool: next.tool, rule: next.rule, text: next.text }));
+    patchHash((h) => applySecurity(h, { tab, state: next.state === "open" ? undefined : next.state, severity: next.severity, branch: next.branch, tool: next.tool, rule: next.rule, text: next.text, ecosystem: next.ecosystem, package: next.package, validity: next.validity }));
   }, [tab]);
   const latest = React.useRef(applied);
   latest.current = applied;
@@ -187,6 +196,9 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
           state: ((filter.getFilterItemValue<string[]>("state") ?? [])[0] as StateFilter | undefined) ?? "open",
           severity: (filter.getFilterItemValue<string[]>("severity") ?? [])[0] as RatedSeverity | undefined,
           tool: v("tool"), rule: v("rule"), text: v("text"),
+          ecosystem: (filter.getFilterItemValue<string[]>("ecosystem") ?? [])[0] ?? "",
+          package: v("package"),
+          validity: (filter.getFilterItemValue<string[]>("validity") ?? [])[0] as SecretValidity | undefined,
         });
       }, DEBOUNCE_MS);
     };
@@ -195,7 +207,11 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   }, [filter, commit]);
 
   // text and rule are applied to the loaded rows (GitHub cannot search these endpoints); the rest goes to the server.
-  const server: SecurityFilters = React.useMemo(() => ({ state: applied.state, severity: kind === "secret" ? undefined : applied.severity, branch: kind === "code" ? applied.branch || undefined : undefined, tool: kind === "code" ? applied.tool || undefined : undefined }), [applied, kind]);
+  const server: SecurityFilters = React.useMemo(() => ({ state: applied.state, severity: kind === "secret" ? undefined : applied.severity, branch: kind === "code" ? applied.branch || undefined : undefined, tool: kind === "code" ? applied.tool || undefined : undefined,
+    // Dependabot takes ecosystem and package, secret scanning takes validity (securityRequests.ts drops them for the other sources anyway).
+    ecosystem: kind === "dependabot" ? applied.ecosystem || undefined : undefined,
+    package: kind === "dependabot" ? applied.package || undefined : undefined,
+    validity: kind === "secret" ? applied.validity : undefined }), [applied, kind]);
   const serverKey = JSON.stringify(server);
   React.useEffect(() => {
     let dead = false;
@@ -219,7 +235,7 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   const cols = React.useMemo(() => columns(kind, repo, open), [kind, repo, open]);
   const rows = React.useMemo(() => (load.t === "ready" ? filterRows(load.page.rows, { text: applied.text, rule: kind === "code" ? applied.rule : undefined }) : []), [load, applied.text, applied.rule, kind]);
   const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
-  const filtered = applied.text || applied.rule || applied.severity || applied.branch || applied.tool || applied.state !== "open";
+  const filtered = applied.text || applied.rule || applied.severity || applied.branch || applied.tool || applied.state !== "open" || (kind === "dependabot" && (applied.ecosystem || applied.package)) || (kind === "secret" && applied.validity);
 
   return (
     <>
@@ -230,6 +246,9 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
         {kind === "code" && <BranchItem filterItemKey="branch" repo={repo} branch={applied.branch} onPick={(b) => commit({ ...latest.current, branch: b })} />}
         {kind === "code" && <TextFilterBarItem filterItemKey="tool" placeholder="Tool" ariaLabel="Tool" />}
         {kind === "code" && <TextFilterBarItem filterItemKey="rule" placeholder="Rule" ariaLabel="Rule" />}
+        {kind === "dependabot" && <DropdownFilterBarItem filterItemKey="ecosystem" placeholder="Ecosystem" items={ECOSYSTEMS} selection={ecoSel} enforceSingleSelect showFilterBox={false} ariaLabel="Ecosystem" />}
+        {kind === "dependabot" && <TextFilterBarItem filterItemKey="package" placeholder="Package" ariaLabel="Package name" />}
+        {kind === "secret" && <DropdownFilterBarItem filterItemKey="validity" placeholder="Validity" items={VALIDITIES} selection={valSel} enforceSingleSelect showFilterBox={false} ariaLabel="Validity" />}
       </FilterBar>
       {load.t === "loading" && (
         <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>

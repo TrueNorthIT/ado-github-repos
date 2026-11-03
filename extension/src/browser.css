@@ -644,6 +644,7 @@
 .gh-act-wf-head + .bolt-messagecard, .gh-act-wf-head ~ .bolt-messagecard { margin-bottom: 12px; }
 .gh-act-more { margin: 16px 0; }
 .gh-act-dispatch { gap: 16px; }
+.gh-act-sched-icon { margin-right: 8px; }
 .gh-act-line2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Actions: ADO Pipelines' spacing (measured on dev.azure.com/dnceng-public, 2026-11-03).

@@ -406,3 +406,27 @@ export function jobGraph(jobs: Job[], defs: WorkflowJobDef[] | null): JobGroup[]
   }
   return cols;
 }
+
+// ---------- workflow and run housekeeping ----------
+
+/** PUT .../actions/workflows/{id}/enable or /disable. No body; GitHub answers 204. */
+export function setWorkflowEnabledRequest(repo: string, workflowId: number, enabled: boolean): RestRequest {
+  return { method: "PUT", path: `${A(repo)}/workflows/${workflowId}/${enabled ? "enable" : "disable"}` };
+}
+
+/** DELETE .../actions/runs/{id} (the run with its logs and artifacts) or .../actions/runs/{id}/logs (only the logs). GitHub answers 204. */
+export function deleteRunRequest(repo: string, runId: number, logsOnly = false): RestRequest {
+  return { method: "DELETE", path: `${A(repo)}/runs/${runId}${logsOnly ? "/logs" : ""}` };
+}
+
+/** The `on.schedule[].cron` strings of a workflow file, trimmed, in file order; [] when it has none. Throws on invalid YAML. */
+export function parseScheduleCrons(yamlText: string): string[] {
+  const doc = asRaw(load(yamlText));
+  const on = doc.on ?? doc.true; // a YAML 1.1 reader turns the key `on` into true
+  if (!on || typeof on !== "object" || Array.isArray(on)) return [];
+  const sched = (on as Raw).schedule;
+  return (Array.isArray(sched) ? sched : [])
+    .map((s: unknown) => asRaw(s).cron)
+    .filter((c: unknown): c is string => typeof c === "string" && c.trim() !== "")
+    .map((c: string) => c.trim());
+}

@@ -9,7 +9,7 @@ import { Icon } from "azure-devops-ui/Icon";
 import { Tab, TabBar } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { Link } from "azure-devops-ui/Link";
-import { MenuButton, MoreButton } from "azure-devops-ui/Menu";
+import { MenuButton, MenuItemType, MoreButton } from "azure-devops-ui/Menu";
 import { ITableColumn, SimpleTableCell, Table, TwoLineTableCell } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
@@ -30,7 +30,7 @@ import { commitDateText } from "./lib/dateText";
 import { openInHub, useHubHref } from "./repoHref";
 import { GhError } from "./githubBrowse";
 import { LogView } from "./ActionsLog";
-import { RunStatusIcon, RUN_STATE_TEXT } from "./ActionsUi";
+import { DeleteRunDialog, RunStatusIcon, RUN_STATE_TEXT, type DeleteTarget } from "./ActionsUi";
 import "./actionsRun.css";
 
 export interface RunPageProps {
@@ -181,6 +181,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   const [tab, setTab] = React.useState<"stages" | "jobs">("stages");
   const [failure, setFailure] = React.useState<string>();
   const [reviewing, setReviewing] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<DeleteTarget>();
   const latest = run.attempt === data.latestAttempt;
   const failed = jobs.some((j) => j.state === "failed");
   const approvable = data.pending.filter((p) => p.canApprove);
@@ -213,6 +214,12 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
     ...(write && primary?.id === "review" ? [{ ...rerunItem, disabled: isActive(run.state) }] : []),
     ...(write && isActive(run.state) ? [{ id: "cancel", text: "Cancel run", iconProps: { iconName: "Cancel" }, onActivate: () => void act("cancel the run", () => cancelRun(repo, run.id)) }] : []),
     { id: "github", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(run.htmlUrl, "_blank", "noopener,noreferrer") },
+    // Native Pipelines: "Delete" on a run. GitHub refuses to delete a run (or its logs) while it is still going.
+    ...(canWrite ? [
+      { id: "sep", itemType: MenuItemType.Divider },
+      { id: "deleteLogs", text: "Delete logs", iconProps: { iconName: "Delete" }, disabled: isActive(run.state), onActivate: () => setDeleting({ id: run.id, runNumber: run.runNumber, title: run.title, logsOnly: true }) },
+      { id: "delete", text: "Delete run", iconProps: { iconName: "Delete" }, disabled: isActive(run.state), onActivate: () => setDeleting({ id: run.id, runNumber: run.runNumber, title: run.title, logsOnly: false }) },
+    ] : []),
   ];
   const items = [
     ...(primary ? [primary] : []),
@@ -313,6 +320,19 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
         </Card>
         </>}
       </div>
+      {deleting && (
+        <DeleteRunDialog
+          repo={repo}
+          target={deleting}
+          onClose={() => setDeleting(undefined)}
+          onDeleted={() => {
+            const logsOnly = deleting.logsOnly;
+            setDeleting(undefined);
+            if (logsOnly) void data.reload();
+            else go({ workflow: run.workflowId }); // back to the workflow's runs, which no longer list it
+          }}
+        />
+      )}
       {reviewing && <ReviewPanel repo={repo} runId={run.id} pending={approvable} close={() => setReviewing(false)} done={() => { setReviewing(false); void data.reload(); setTimeout(() => void data.quietReload(), 1500); }} />}
     </div>
   );

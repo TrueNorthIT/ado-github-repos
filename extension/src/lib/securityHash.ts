@@ -12,6 +12,8 @@
 //  - secState is open | closed | dismissed | fixed; secSeverity is written lower-case (critical | high | medium | low | note) and read back as Critical ... Note; "none" is not a filter. Anything else is dropped.
 //  - secBranch, secTool and secRule are capped at 255 characters, secText at 200; all are trimmed and blank ones dropped.
 //  - parseSecurity is null unless the hash has view=security AND a valid repo (browseState's own rule); it never throws. A missing secState means "the page's default" (Open); the hash does not store defaults.
+//  - Added later: secEcosystem (max 50) and secPackage (max 255) for Dependabot, secValidity (active | inactive | unknown) for secrets, written after secText.
+//    The hash keeps them whatever the tab; the page sends each only to the source that takes it.
 //  - applySecurity keeps the other segments verbatim and in order, drops every earlier `view` and every key of this module, and appends `view=security` then the module's keys in the order above.
 import type { AlertKind, RatedSeverity, StateFilter } from "./securityTypes";
 
@@ -29,14 +31,23 @@ export interface SecurityHashState {
   tool?: string;
   rule?: string;
   text?: string;
+  /** Dependabot only: a package ecosystem (npm, pip, ...). */
+  ecosystem?: string;
+  /** Dependabot only: a package name. */
+  package?: string;
+  /** Secret scanning only. */
+  validity?: SecretValidity;
 }
+
+export type SecretValidity = "active" | "inactive" | "unknown";
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const TABS: SecTab[] = ["dependencies", "code", "secrets"];
 const STATES: StateFilter[] = ["open", "closed", "dismissed", "fixed"];
 const SEVERITIES: RatedSeverity[] = ["Critical", "High", "Medium", "Low", "Note"];
-const KEYS = ["view", "secTab", "alert", "secState", "secSeverity", "secBranch", "secTool", "secRule", "secText"];
-const CAPS = { branch: 255, tool: 255, rule: 255, text: 200 } as const;
+const KEYS = ["view", "secTab", "alert", "secState", "secSeverity", "secBranch", "secTool", "secRule", "secText", "secEcosystem", "secPackage", "secValidity"];
+const CAPS = { branch: 255, tool: 255, rule: 255, text: 200, ecosystem: 50, package: 255 } as const;
+const VALIDITIES: SecretValidity[] = ["active", "inactive", "unknown"];
 
 /** The Security state of a hash, or null (see the decisions above). */
 export function parseSecurity(hash: string): SecurityHashState | null {
@@ -54,10 +65,12 @@ export function parseSecurity(hash: string): SecurityHashState | null {
   if (STATES.includes(state)) out.state = state;
   const sev = SEVERITIES.find((s) => s.toLowerCase() === p.get("secSeverity"));
   if (sev) out.severity = sev;
-  for (const [k, key] of [["branch", "secBranch"], ["tool", "secTool"], ["rule", "secRule"], ["text", "secText"]] as const) {
+  for (const [k, key] of [["branch", "secBranch"], ["tool", "secTool"], ["rule", "secRule"], ["text", "secText"], ["ecosystem", "secEcosystem"], ["package", "secPackage"]] as const) {
     const v = (p.get(key) ?? "").trim().slice(0, CAPS[k]);
     if (v) out[k] = v;
   }
+  const validity = p.get("secValidity") as SecretValidity;
+  if (VALIDITIES.includes(validity)) out.validity = validity;
   return out;
 }
 
@@ -85,6 +98,9 @@ export function applySecurity(hash: string, s: Omit<SecurityHashState, "repo">):
   add("secTool", s.tool?.trim().slice(0, CAPS.tool));
   add("secRule", s.rule?.trim().slice(0, CAPS.rule));
   add("secText", s.text?.trim().slice(0, CAPS.text));
+  add("secEcosystem", s.ecosystem?.trim().slice(0, CAPS.ecosystem));
+  add("secPackage", s.package?.trim().slice(0, CAPS.package));
+  add("secValidity", s.validity && VALIDITIES.includes(s.validity) ? s.validity : undefined);
   return "#" + kept.join("&");
 }
 

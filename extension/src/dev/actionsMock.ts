@@ -1,5 +1,6 @@
 // __TN_MOCK__ Mock REST answers for the Actions lists (workflows, runs, dispatch, environments) and the workflow files (/contents/.github/workflows/*).
-// Only truenorthit/github-repos has workflows. Workflows: 101 CI, 102 publish (workflow_dispatch with an input of every type), 103 legacy (disabled).
+// Only truenorthit/github-repos has workflows. Workflows: 101 CI (two schedules), 102 publish (workflow_dispatch with an input of every type), 103 legacy (disabled; enable/disable work).
+// Environments staging and production with deployments (see below); scenario `noEnvironments` has none. Runs and their logs can be deleted.
 // Runs 5001-5032, newest first. 5001 is in progress and finishes ~25s after the page loads (live refresh); 5002 queued; 5003 waiting.
 // Scenarios: `dispatchFails` answers 422 with GitHub's message; `readOnly` is handled in mockFetch (permissions.push false).
 // actions-runs: run ids 9001-9099 and job ids 90000+ are theirs (actionsRunMock.ts); WORKFLOW_YAML is exported for the job graph.
@@ -16,6 +17,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 3 * * MON-FRI"
+    - cron: "30 */6 * * SAT,SUN"
 
 jobs:
   validate:
@@ -172,6 +176,78 @@ function matches(r: ReturnType<typeof rawRun>, q: URLSearchParams): boolean {
   return true;
 }
 
+// ---------- enable/disable, delete run and logs ----------
+// Scenario `actionsFail` answers 403 to these too. A run still going (5001-5003) answers 409, as GitHub refuses to delete one.
+
+/** Runs deleted in this page load (the lists and the run page leave them out). */
+export const deletedRuns = new Set<number>();
+/** Runs whose logs were deleted (the log view then answers 410). */
+export const deletedLogs = new Set<number>();
+
+function housekeepingRest(rest: string, init: RequestInit | undefined, sc: string): Response | undefined {
+  const method = init?.method ?? "GET";
+  const toggle = /^\/actions\/workflows\/(\d+)\/(enable|disable)$/.exec(rest);
+  if (toggle && method === "PUT") {
+    const wf = WORKFLOWS.find((w) => w.id === Number(toggle[1]));
+    if (!wf) return json({ message: "Not Found" }, 404);
+    if (sc === "actionsFail") return json({ message: "Resource not accessible by integration" }, 403);
+    wf.state = toggle[2] === "enable" ? "active" : "disabled_manually";
+    return new Response(null, { status: 204 });
+  }
+  const del = /^\/actions\/runs\/(\d+)(\/logs)?$/.exec(rest);
+  if (del && method === "DELETE") {
+    const id = Number(del[1]);
+    if (deletedRuns.has(id)) return json({ message: "Not Found" }, 404);
+    if (sc === "actionsFail") return json({ message: "Resource not accessible by integration" }, 403);
+    if (id >= 5001 && id <= 5003 && !(id === 5001 && Date.now() - LOADED > 25e3)) return json({ message: "Cannot delete a workflow run that is in progress" }, 409);
+    (del[2] ? deletedLogs : deletedRuns).add(id);
+    return new Response(null, { status: 204 });
+  }
+  return undefined;
+}
+
+// ---------- environments and deployments ----------
+// staging (a branch policy) and production (required reviewers, a wait timer, protected branches). Deployments link to runs of the lists mock
+// through their status's log_url: 5003 (waiting), 5007 (Release 1.2.0), 5012 (failed publish), 5015 (1.1.0), 5028 (1.0.0); 814 is an outside
+// preview deployment whose status points elsewhere, so it has no run link.
+
+const ENVIRONMENTS = [
+  { id: 1, name: "staging", protection_rules: [{ id: 11, type: "branch_policy" }], deployment_branch_policy: { protected_branches: false, custom_branch_policies: true } },
+  {
+    id: 2, name: "production",
+    protection_rules: [{ id: 21, type: "required_reviewers", reviewers: [{ type: "User", reviewer: { login: "JoePittsy" } }] }, { id: 22, type: "wait_timer", wait_timer: 5 }],
+    deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+  },
+].map((e) => ({ ...e, node_id: `EN_${e.id}`, html_url: `https://github.com/${REPO}/deployments/activity_log?environments_filter=${e.name}`, created_at: new Date(LOADED - 200 * 86400e3).toISOString(), updated_at: new Date(LOADED - 10 * 86400e3).toISOString() }));
+
+interface MockDeployment { id: number; environment: string; ref: string; run?: number; ago: number; creator: string; status?: string; description?: string; target?: string; url?: string; task?: string }
+const DEPLOYMENTS: MockDeployment[] = [
+  { id: 811, environment: "staging", ref: "main", run: 5003, ago: 9, creator: "JoePittsy", status: "waiting", description: "Waiting for review" },
+  { id: 814, environment: "staging", ref: "feature/preview", ago: 50, creator: "preview-bot", status: "success", description: "Preview ready", target: "https://preview.example.com/build/814", url: "https://feature-preview.example.com", task: "deploy:preview" },
+  { id: 812, environment: "staging", ref: "main", run: 5012, ago: 1700, creator: "JoePittsy", status: "failure", description: "Deployment failed" },
+  { id: 813, environment: "staging", ref: "v1.2.0", run: 5007, ago: 302, creator: "JoePittsy", status: "inactive", url: "https://staging.example.com" },
+  { id: 801, environment: "production", ref: "v1.2.0", run: 5007, ago: 296, creator: "JoePittsy", status: "success", description: "Deployed 1.2.0", url: "https://app.example.com" },
+  { id: 802, environment: "production", ref: "v1.1.0", run: 5015, ago: 3995, creator: "JoePittsy", status: "inactive" },
+  { id: 803, environment: "production", ref: "v1.0.0", run: 5028, ago: 23995, creator: "ann", status: "inactive" },
+  { id: 804, environment: "production", ref: "v0.9.0", ago: 30000, creator: "ann" }, // never got a status
+];
+
+const rawDeployment = (d: MockDeployment) => ({
+  id: d.id, node_id: `DE_${d.id}`, sha: sha(d.id), ref: d.ref, task: d.task ?? "deploy", environment: d.environment, description: null, payload: {},
+  creator: { login: d.creator, id: 1, avatar_url: avatar(d.creator), type: "User" },
+  created_at: new Date(LOADED - d.ago * MIN).toISOString(), updated_at: new Date(LOADED - d.ago * MIN + 60e3).toISOString(),
+  url: `https://api.github.com/repos/${REPO}/deployments/${d.id}`,
+});
+const rawStatus = (d: MockDeployment) => {
+  const runUrl = d.run ? `https://github.com/${REPO}/actions/runs/${d.run}/job/${d.run * 100}` : "";
+  return {
+    id: d.id * 10, state: d.status, description: d.description ?? "", environment: d.environment,
+    log_url: runUrl || d.target || "", target_url: runUrl || d.target || "", environment_url: d.url ?? "",
+    creator: { login: "github-actions[bot]", id: 2, avatar_url: avatar("github-actions"), type: "Bot" },
+    created_at: new Date(LOADED - d.ago * MIN + 120e3).toISOString(),
+  };
+};
+
 /** Answers the Actions list endpoints, dispatch, environments and the workflow files; undefined for anything else. `rest` is the path after /repos/{owner}/{name}. */
 export function actionsRest(repo: string, rest: string, u: URL, init: RequestInit | undefined, sc: string): Response | undefined {
   if (repo.toLowerCase() !== REPO) return undefined;
@@ -181,7 +257,7 @@ export function actionsRest(repo: string, rest: string, u: URL, init: RequestIni
   if (runs && (init?.method ?? "GET") === "GET") {
     const wf = runs[1] ? Number(runs[1]) : undefined;
     if (wf !== undefined && !WORKFLOWS.some((w) => w.id === wf)) return json({ message: "Not Found" }, 404);
-    const all = [...dispatched.filter((d) => d.created <= Date.now()), ...baseRuns()].filter((r) => wf === undefined || r.spec.wf === wf).map(rawRun).filter((r) => matches(r, q)).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    const all = [...dispatched.filter((d) => d.created <= Date.now()), ...baseRuns()].filter((r) => !deletedRuns.has(r.id)).filter((r) => wf === undefined || r.spec.wf === wf).map(rawRun).filter((r) => matches(r, q)).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
     const per = Number(q.get("per_page") || 30), page = Number(q.get("page") || 1);
     const more = page * per < all.length;
     return json({ total_count: all.length, workflow_runs: all.slice((page - 1) * per, page * per) }, 200, more ? { link: `<https://api.github.com/repositories/1/actions/runs?per_page=${per}&page=${page + 1}>; rel="next"` } : {});
@@ -197,7 +273,21 @@ export function actionsRest(repo: string, rest: string, u: URL, init: RequestIni
     dispatched.push({ id, created: Date.now() + 2000, spec: S(wf.id, "queued", null, "workflow_dispatch", String(body.ref), "mock-user", wf.name, 0, 0) });
     return new Response(null, { status: 204 });
   }
-  if (rest === "/environments") return json({ total_count: 2, environments: [{ id: 1, name: "staging" }, { id: 2, name: "production" }] });
+  const housekeeping = housekeepingRest(rest, init, sc);
+  if (housekeeping) return housekeeping;
+  if (rest === "/environments") return sc === "noEnvironments" ? json({ total_count: 0, environments: [] }) : json({ total_count: ENVIRONMENTS.length, environments: ENVIRONMENTS });
+  if (rest === "/deployments" && (init?.method ?? "GET") === "GET") {
+    const env = q.get("environment");
+    const all = DEPLOYMENTS.filter((d) => !env || d.environment === env).map(rawDeployment);
+    const per = Number(q.get("per_page") || 30), page = Number(q.get("page") || 1);
+    const more = page * per < all.length;
+    return json(all.slice((page - 1) * per, page * per), 200, more ? { link: `<https://api.github.com/repositories/1/deployments?environment=${encodeURIComponent(env ?? "")}&per_page=${per}&page=${page + 1}>; rel="next"` } : {});
+  }
+  const statuses = /^\/deployments\/(\d+)\/statuses$/.exec(rest);
+  if (statuses) {
+    const d = DEPLOYMENTS.find((x) => x.id === Number(statuses[1]));
+    return d ? json(d.status ? [rawStatus(d)] : []) : json({ message: "Not Found" }, 404);
+  }
   const file = /^\/contents\/(\.github\/workflows\/[^/]+)$/.exec(rest);
   if (file && WORKFLOW_YAML[decodeURIComponent(file[1])]) return new Response(WORKFLOW_YAML[decodeURIComponent(file[1])], { headers: { "Content-Type": "application/octet-stream" } });
   return undefined;

@@ -59,6 +59,7 @@ function toolbar() {
 }
 
 SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
+SCENARIOS.push("noEnvironments"); // Actions > Environments with none
 toolbar();
 import("./fakeHeader").then((m) => m.fakeHeader());
 import("../index");

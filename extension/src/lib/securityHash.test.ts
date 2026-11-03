@@ -143,3 +143,27 @@ describe("AS-5: entry points and tab names", () => {
     expect([kindForTab("dependencies"), kindForTab("code"), kindForTab("secrets")], "Expected dependabot, code, secret").toEqual(["dependabot", "code", "secret"]);
   });
 });
+
+describe("Dependabot ecosystem and package, secret validity", () => {
+  it("writes them after secText, in order", () => {
+    expect(serializeSecurity({ repo: REPO, tab: "dependencies", text: "x", ecosystem: "npm", package: "@scope/pkg name" })).toBe(`#${ENC}&view=security&secTab=dependencies&secText=x&secEcosystem=npm&secPackage=%40scope%2Fpkg%20name`);
+    expect(serializeSecurity({ repo: REPO, tab: "secrets", validity: "active" })).toBe(`#${ENC}&view=security&secTab=secrets&secValidity=active`);
+  });
+
+  it("reads them back", () => {
+    expect(parseSecurity(`#${ENC}&view=security&secTab=dependencies&secEcosystem=pip&secPackage=%40scope%2Fpkg`)).toEqual({ repo: REPO, tab: "dependencies", ecosystem: "pip", package: "@scope/pkg" });
+    for (const v of ["active", "inactive", "unknown"] as const) expect(parseSecurity(`#${ENC}&view=security&secValidity=${v}`)?.validity).toBe(v);
+  });
+
+  it("drops an unknown validity, blank values, and caps the lengths", () => {
+    expect(parseSecurity(`#${ENC}&view=security&secValidity=revoked`)).toEqual({ repo: REPO });
+    expect(serializeSecurity({ repo: REPO, validity: "bogus" as never, ecosystem: "  ", package: "" })).toBe(`#${ENC}&view=security`);
+    const p = parseSecurity(`#${ENC}&view=security&secEcosystem=${"e".repeat(80)}&secPackage=${"p".repeat(300)}`);
+    expect(p?.ecosystem).toHaveLength(50);
+    expect(p?.package).toHaveLength(255);
+  });
+
+  it("applySecurity replaces earlier values and keeps other segments", () => {
+    expect(applySecurity(`#${ENC}&secEcosystem=npm&x=1&secValidity=active`, { ecosystem: "nuget" })).toBe(`#${ENC}&x=1&view=security&secEcosystem=nuget`);
+  });
+});

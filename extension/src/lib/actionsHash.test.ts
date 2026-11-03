@@ -358,3 +358,31 @@ describe("ACT-17: alongside browseState and the other hash modules", () => {
     expect(parseListFilters(hash), "Expected the PR filters to be untouched by the Actions keys").toEqual({ author: "ada", text: "pr text", base: "main" });
   });
 });
+
+describe("Environments tab: actTab=environments and actEnv", () => {
+  it("writes and reads the tab and an environment", () => {
+    expect(serializeActions({ repo: REPO, tab: "environments" })).toBe(`${base}&actTab=environments`);
+    expect(serializeActions({ repo: REPO, tab: "environments", env: "staging & qa" })).toBe(`${base}&actTab=environments&actEnv=staging%20%26%20qa`);
+    expect(parseActions(`${base}&actTab=environments&actEnv=staging%20%26%20qa`)).toEqual({ repo: REPO, tab: "environments", env: "staging & qa" });
+  });
+
+  it("writes and reads actEnv only with tab=environments", () => {
+    expect(serializeActions({ repo: REPO, env: "prod" })).toBe(base);
+    expect(serializeActions({ repo: REPO, tab: "runs", env: "prod" })).toBe(`${base}&actTab=runs`);
+    expect(parseActions(`${base}&actEnv=prod`)).toEqual({ repo: REPO });
+    expect(parseActions(`${base}&actTab=runs&actEnv=prod`)).toEqual({ repo: REPO, tab: "runs" });
+  });
+
+  it("drops actEnv beside a workflow or a run, and a blank one", () => {
+    expect(parseActions(`${base}&actTab=environments&actWorkflow=5&actEnv=prod`)).toEqual({ repo: REPO, tab: "environments", workflow: 5 });
+    expect(parseActions(`${base}&actTab=environments&actRun=5&actEnv=prod`)).toEqual({ repo: REPO, tab: "environments", run: 5 });
+    expect(parseActions(`${base}&actTab=environments&actEnv=%20%20`)).toEqual({ repo: REPO, tab: "environments" });
+  });
+
+  it("caps the name at 255 characters and round-trips through applyActions", () => {
+    const long = "e".repeat(300);
+    expect(parseActions(`${base}&actTab=environments&actEnv=${long}`)?.env).toHaveLength(255);
+    const h = applyActions("#repo=octo%2Fdemo&view=actions&actTab=environments&actEnv=old&other=1", { tab: "environments", env: "new" });
+    expect(h).toBe("#repo=octo%2Fdemo&other=1&view=actions&actTab=environments&actEnv=new");
+  });
+});

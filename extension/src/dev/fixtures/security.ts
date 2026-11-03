@@ -159,7 +159,7 @@ export function securityRest(rest: string, u: URL, init: RequestInit | undefined
     rows = rows.filter((a) => (!state.length || (state[0] === "closed" ? CODE_CLOSED.includes(a.state) : state.includes(a.state))) && (!severity.length || severity.includes(codeSev(a))) && (!ref || instancesOf(a).some((i) => i.ref === ref)) && (!tool || a.tool.name === tool));
   } else {
     const resolution = csv(u, "resolution");
-    rows = rows.filter((a) => (!state.length || state.includes(a.state)) && (!resolution.length || resolution.includes(a.resolution)) && (!u.searchParams.get("secret_type") || a.secret_type === u.searchParams.get("secret_type")));
+    rows = rows.filter((a) => (!state.length || state.includes(a.state)) && (!resolution.length || resolution.includes(a.resolution)) && (!u.searchParams.get("secret_type") || a.secret_type === u.searchParams.get("secret_type")) && (!u.searchParams.get("validity") || a.validity === u.searchParams.get("validity")));
     if (u.searchParams.get("hide_secret") !== "true") rows = rows.map((a) => ({ ...a, secret: LITERAL }));
   }
   const page = num(u, "page", 1);
