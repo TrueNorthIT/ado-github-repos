@@ -564,3 +564,13 @@
 .gh-compare-pickers .gh-topbar { padding: 0; }
 .gh-compare-label { margin-right: 8px; font-weight: 600; }
 .gh-compare-summary { padding-bottom: 4px; }
+
+/* Web edits: the editable pane, the Commit dialog and the upload picker. */
+.gh-edit { flex: 1 1 auto; gap: 8px; min-height: 420px; }
+.gh-edit-bar { gap: 12px; }
+.gh-edit-path { min-width: 320px; max-width: 640px; }
+.gh-edit-card { flex: 1 1 0; min-height: 420px; display: flex; flex-direction: column; border: 1px solid var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); background: var(--callout-background-color, #fff); }
+.gh-code-edit { min-height: 420px; }
+.gh-commit-form { min-width: 0; }
+.gh-upload { gap: 8px; }
+.gh-upload-list { margin: 0; padding-left: 20px; max-height: 160px; overflow: auto; }

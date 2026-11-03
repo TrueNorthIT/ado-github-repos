@@ -12,6 +12,7 @@ import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rang
 import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
 import { securityFile, securityMarkdown, securityRest } from "./fixtures/security";
 import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
+import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -42,6 +43,8 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  const wr = writesGraphql(query, variables, sc); // the web editor: write context, commits, new branches (before everything that also knows createRef or ref()s)
+  if (wr) return wr;
   const np = newPrGraphql(query, variables, sc); // batch 5: the New pull request page (before the generic mutation and pullRequests routes)
   if (np) return json(np);
   const b4 = b4Graphql(query, variables, sc); // batch 4: updates, viewed files, commit ranges (before the generic commits and timeline routes)
@@ -164,6 +167,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (c) {
     const ref = u.searchParams.get("ref") ?? "";
     const cpath = c[1].split("/").map(decodeURIComponent).join("/");
+    const wrote = writtenFile(repo.fullName, cpath); // bytes written through the editor, an upload or a rename
+    if (wrote) return accept.includes("vnd.github.html") && /\.md$/.test(cpath) ? new Response(renderMd(new TextDecoder().decode(wrote)), { headers: { "Content-Type": "text/html" } }) : new Response(wrote as BodyInit, { headers: { "Content-Type": "application/octet-stream" } });
     if (cpath === "docs/img/logo.png" && /^(ba5e|4ead)/.test(ref)) return new Response(logoBytes(ref), { headers: { "Content-Type": "application/octet-stream" } });
     // Commit oids named by the Updates and "Show changes from" fixtures hold the base or the head text of the PR's files.
     const secFile = securityFile(ref, cpath);

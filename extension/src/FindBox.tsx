@@ -40,11 +40,11 @@ export function FindBox({ crumbs, paths, partial, onPick }: { crumbs: Crumb[]; p
   React.useEffect(() => {
     if (open) input.current?.focus();
   }, [open]);
-  // "t" opens the finder from anywhere that isn't a text field or the code viewer.
+  // "t" opens the finder from anywhere that isn't a text field, the code viewer or behind a dialog.
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.key !== "t" || e.ctrlKey || e.metaKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], .monaco-editor")) return;
+      if (e.key !== "t" || e.ctrlKey || e.metaKey || e.altKey || document.querySelector(".bolt-dialog") || el?.closest("input, textarea, select, [contenteditable], .monaco-editor")) return;
       e.preventDefault();
       start();
     };

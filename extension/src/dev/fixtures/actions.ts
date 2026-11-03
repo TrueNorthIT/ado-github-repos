@@ -28,7 +28,7 @@ const GREEN = [run("build", "SUCCESS", true), run("unit tests", "SUCCESS", true)
 interface Spec {
   title: string;
   author?: string;
-  state?: "OPEN" | "CLOSED";
+  state?: "OPEN" | "CLOSED" | "MERGED";
   isDraft?: boolean;
   mergeStateStatus: string;
   reviewDecision: string | null;
@@ -55,6 +55,7 @@ const SPECS: Record<number, Spec> = {
   308: { title: "Squash only: the repository allows nothing else", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { merge: false, rebase: false } },
   309: { title: "Branch cleanup: the repository deletes merged branches", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { deleteOnMerge: true } },
   310: { title: "Settling: GitHub is still working out mergeability", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, unknownFetches: 2 },
+  316: { title: "Merged: a completed pull request you can revert", state: "MERGED", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI },
   312: {
     title: "CI: failed jobs with annotations, deployments and signed commits", mergeStateStatus: "BLOCKED", reviewDecision: "APPROVED", body: WI, checks: ciChecks(),
   },
@@ -103,21 +104,22 @@ const specOf = (n: number) => SPECS[n];
 // Register the fixtures as ordinary open and closed pull requests, newest first, so they head the Active list.
 const template = PRS.find((p) => p.node.number === 199)!;
 const authorOf = (login: string) => PRS.find((p) => p.node.author?.login === login)!.node.author;
-Object.keys(SPECS).map(Number).sort((a, b) => b - a).forEach((n, i) => {
-  const s = SPECS[n];
+function register(n: number, s: Spec, i: number) {
   const state = s.state ?? "OPEN";
   const pr: FixturePr = {
     reviewRequested: [],
     node: {
       ...template.node, number: n, title: s.title, url: `https://github.com/${PR_REPO}/pull/${n}`, state, isDraft: !!s.isDraft,
-      createdAt: iso((i + 1) * 20 * MIN), updatedAt: iso((i + 1) * 10 * MIN), mergedAt: null, closedAt: state === "CLOSED" ? iso(5 * MIN) : null,
+      createdAt: iso((i + 1) * 20 * MIN), updatedAt: iso((i + 1) * 10 * MIN), mergedAt: state === "MERGED" ? iso(5 * MIN) : null, closedAt: state === "CLOSED" ? iso(5 * MIN) : null,
       baseRefName: "main", author: authorOf(s.author ?? "ann"), labels: { nodes: [] }, reviewThreads: { totalCount: 0, nodes: [] }, comments: { totalCount: 0 },
       body: s.body ?? "", headRefName: `feature/pr-${n}`, mergeable: s.mergeStateStatus === "DIRTY" ? "CONFLICTING" : "MERGEABLE",
     },
   };
   PRS.unshift(pr);
   live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0, checks: s.checks.map((c) => ({ ...c })), rerunLeft: 0, queue: s.queue?.queued || (n === 313 && scenario() === "queued") ? { ticks: 0 } : null, copilotPending: false });
-});
+}
+Object.keys(SPECS).map(Number).sort((a, b) => b - a).forEach((n, i) => register(n, SPECS[n], i));
+let nextRevert = 900;
 PRS.sort((a, b) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt));
 
 /** Each fetch moves the fixtures along: re-run jobs finish, a queued pull request advances and is merged after a few fetches. */
@@ -158,7 +160,7 @@ export function actionsNode(n: number) {
   const entry = l.queue && { position: Math.max(1, 3 - Math.floor(l.queue.ticks / 2)), state: "QUEUED", estimatedTimeToMerge: Math.max(1, 3 - Math.floor(l.queue.ticks / 2)) * 240 };
   return {
     mergeCommitAllowed: st.merge ?? true, squashMergeAllowed: st.squash ?? true, rebaseMergeAllowed: st.rebase ?? true,
-    autoMergeAllowed: !!st.autoMerge, deleteBranchOnMerge: !!st.deleteOnMerge, viewerPermission: "ADMIN",
+    autoMergeAllowed: !!st.autoMerge, deleteBranchOnMerge: !!st.deleteOnMerge, viewerPermission: scenario() === "readOnlyViewer" ? "READ" : "ADMIN",
     defaultBranchRef: { name: "main" },
     pullRequest: {
       id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED", mergeStateStatus, reviewDecision: l.reviewDecision,
@@ -190,7 +192,7 @@ export function mergeMessages(n: number) {
 type Result = { code: number } | { data: unknown } | { errors: { type?: string; message: string }[] };
 const num = (id: unknown) => Number(String(id).replace(/^\D+/, ""));
 const fail = (message: string): Result => ({ errors: [{ message }] });
-const MUTATIONS = /\b(addPullRequestReview|dismissPullRequestReview|mergePullRequest|enablePullRequestAutoMerge|disablePullRequestAutoMerge|deleteRef|closePullRequest|reopenPullRequest|convertPullRequestToDraft|markPullRequestReadyForReview|updateSubscription|updatePullRequest|updatePullRequestBranch|enqueuePullRequest|dequeuePullRequest|requestCopilotCodeReview)\(input: \$input\)/;
+const MUTATIONS = /\b(addPullRequestReview|dismissPullRequestReview|mergePullRequest|enablePullRequestAutoMerge|disablePullRequestAutoMerge|deleteRef|closePullRequest|reopenPullRequest|convertPullRequestToDraft|markPullRequestReadyForReview|updateSubscription|updatePullRequest|updatePullRequestBranch|enqueuePullRequest|dequeuePullRequest|requestCopilotCodeReview|revertPullRequest)\(input: \$input\)/;
 
 /** Applies an action mutation to the fixtures. undefined when `query` is not one of ours (the feed's mutations fall through). `scenario` "actionsFail" refuses them all. */
 export function actionsMutation(query: string, variables: Record<string, any>, scenario: string): Result | undefined {
@@ -262,6 +264,14 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
     case "dequeuePullRequest":
       l.queue = null;
       return { data: { dequeuePullRequest: { mergeQueueEntry: null } } };
+    case "revertPullRequest": {
+      if (p.node.state !== "MERGED") return fail("Pull request is not merged");
+      const m = nextRevert++;
+      SPECS[m] = { title: input.title ?? `Revert "${p.node.title}"`, isDraft: !!input.draft, mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: input.body ?? "" };
+      register(m, SPECS[m], 0);
+      PRS.sort((a, b) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt));
+      return { data: { revertPullRequest: { pullRequest: pr(), revertPullRequest: { id: `PR_${m}`, number: m, url: `https://github.com/${PR_REPO}/pull/${m}` } } } };
+    }
     case "requestCopilotCodeReview":
       if (scenario === "copilotRefused") return { data: { requestCopilotCodeReview: { success: false, failureReason: "NO_QUOTA_REMAINING", reviewRequest: null, pullRequest: { id: `PR_${n}` } } } };
       l.copilotPending = true;

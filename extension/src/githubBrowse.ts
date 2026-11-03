@@ -23,6 +23,7 @@ import { isPushActivity, mapActivity, nextActivityCursor, mapPushHeads, pushExpa
 import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, type AheadBehind, type Branch } from "./lib/branches";
 import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
 import { deleteRefMutation } from "./lib/actionsQuery";
+import { mapWriteContext, writeContextQuery, type WriteContext } from "./lib/fileCommit";
 import { mapRestCommit, type RestCommit } from "./lib/restCommit";
 import { blameQuery, mapBlame, type BlameRange } from "./lib/blame";
 import { mergeCompare, type BranchCompare, type RestComparePage } from "./lib/branchCompare";
@@ -140,6 +141,19 @@ const memo = <T>(m: Map<string, Promise<T>>, key: string, make: () => Promise<T>
   if (!p) m.set(key, (p = make().catch((e) => (m.delete(key), Promise.reject(e)))));
   return p;
 };
+
+/** Drops the cached trees and folder commits of every ref: a file write changes them. */
+export const invalidateBrowse = () => {
+  trees.clear();
+  folderTrees.clear();
+  commits.clear();
+};
+
+/** The viewer's permission and the head commit of `branch`, for committing a web edit. headOid is null when `branch` is not a branch (a tag or a commit). Not cached: it is the head the edit is made against. */
+export async function getWriteContext(repo: string, branch: string): Promise<WriteContext> {
+  const [owner, name] = repo.split("/");
+  return mapWriteContext(await graphql(writeContextQuery({ owner, name, branch })));
+}
 
 export const clearCache = () => {
   trees.clear();
