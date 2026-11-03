@@ -70,7 +70,7 @@ const nav = {
   setHash: (h: string) => { location.hash = h; },
   replaceHash: (h: string) => { history.replaceState(null, "", "#" + h.replace(/^#+/, "")); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host adds the "#" itself; the host does notify
   // The real host loads the other hub's page; mock mode swaps the ?hub= switch and keeps the hash.
-  navigate: (u: string) => { const n = new URL(location.href); n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
+  navigate: (u: string) => { const n = new URL(location.href); n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
