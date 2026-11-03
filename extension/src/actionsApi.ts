@@ -82,3 +82,74 @@ export function useCanWriteActions(repo: string): boolean {
 }
 
 // ---------- run page (actions-runs) ----------
+
+import { restBlob, restText } from "./githubBrowse";
+import {
+  annotationsRequest,
+  artifactZipPath,
+  cancelRequest,
+  getRunRequest,
+  jobLogsPath,
+  listArtifactsRequest,
+  listJobsRequest,
+  pendingDeploymentsRequest,
+  rerunRequest,
+  reviewDeploymentsRequest,
+  toAnnotation,
+  toArtifact,
+  toJob,
+  toPendingDeployment,
+  type Annotation,
+  type Artifact,
+  type Job,
+  type PendingDeployment,
+} from "./lib/workflows";
+
+export async function getRun(repo: string, runId: number, attempt?: number): Promise<WorkflowRun> {
+  return toRun((await restJson(getRunRequest(repo, runId, attempt))).body);
+}
+
+export async function listJobs(repo: string, runId: number, attempt?: number): Promise<Job[]> {
+  const out: Job[] = [];
+  for (let page: number | undefined = 1; page && out.length < 1000; ) {
+    const { body, link } = await restJson(listJobsRequest(repo, runId, attempt, page));
+    out.push(...(body.jobs ?? []).map(toJob));
+    page = nextPage(link);
+  }
+  return out;
+}
+
+export async function listArtifacts(repo: string, runId: number): Promise<Artifact[]> {
+  return ((await restJson(listArtifactsRequest(repo, runId))).body.artifacts ?? []).map(toArtifact);
+}
+
+export async function listJobAnnotations(repo: string, jobId: number): Promise<Annotation[]> {
+  return ((await restJson(annotationsRequest(repo, jobId))).body ?? []).map(toAnnotation);
+}
+
+/** Pending deployment reviews; [] when there are none or the viewer cannot see them. */
+export async function listPendingDeployments(repo: string, runId: number): Promise<PendingDeployment[]> {
+  try {
+    return ((await restJson(pendingDeploymentsRequest(repo, runId))).body ?? []).map(toPendingDeployment);
+  } catch {
+    return [];
+  }
+}
+
+/** The workflow file at the run's commit, or null when it cannot be read (the graph then falls back to a flat list). */
+export async function getWorkflowYaml(repo: string, sha: string, path: string): Promise<string | null> {
+  try {
+    return new TextDecoder().decode(await getRaw(repo, sha, path));
+  } catch {
+    return null;
+  }
+}
+
+export const getJobLog = (repo: string, jobId: number) => restText(jobLogsPath(repo, jobId));
+export const downloadArtifact = (repo: string, artifactId: number) => restBlob(artifactZipPath(repo, artifactId));
+export const rerunAll = (repo: string, runId: number) => rest(rerunRequest(repo, { runId }));
+export const rerunFailed = (repo: string, runId: number) => rest(rerunRequest(repo, { runId, failedOnly: true }));
+export const rerunJob = (repo: string, jobId: number) => rest(rerunRequest(repo, { jobId }));
+export const cancelRun = (repo: string, runId: number) => rest(cancelRequest(repo, runId));
+export const reviewDeployments = (repo: string, runId: number, ids: number[], state: "approved" | "rejected", comment: string) =>
+  rest(reviewDeploymentsRequest(repo, runId, ids, state, comment));
