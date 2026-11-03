@@ -15,7 +15,6 @@ import { VssPersona } from "azure-devops-ui/VssPersona";
 import { Ago } from "azure-devops-ui/Ago";
 import { AgoFormat } from "azure-devops-ui/Utilities/Date";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
-import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
 import type { ChecksSummary, Mergeable, PrPageData, PrReviewer, PrStatus, ReviewState } from "./lib/prModel";
 import { commitUrl } from "./lib/commits";
@@ -35,6 +34,8 @@ import { feedStore } from "./feedStore";
 import { actionStore, useActions, type ActionStore } from "./actionStore";
 import { PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
 import { SignaturePill } from "./Signature";
+import { ClosingIssueAdd, DescriptionEditor, EditableTitle, EditError, IssueRow, LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButton, WorkItemsAdd, addItem, dueText, sameReviewer, useEdit, workItemInBody, type EditData } from "./PrEdit";
+import { toLabelOption } from "./lib/labels";
 import { latestDeployments, type DeploymentRow, type DeploymentTone } from "./lib/deployments";
 import type { CommitSignature } from "./lib/signatures";
 import "./browser.css";
@@ -110,14 +111,18 @@ function MergeCard({ pr }: { pr: PrPageData }) {
   );
 }
 
-function Description({ pr, repo }: { pr: PrPageData; repo: string }) {
+function Description({ pr, repo, edit, store }: { pr: PrPageData; repo: string; edit?: EditData; store: ActionStore }) {
   const [owner, name] = repo.split("/");
+  const [editing, setEditing] = React.useState(false);
+  const canEdit = !!edit?.perms.body;
+  const items = canEdit && !editing ? [{ id: "edit", important: true, iconProps: { iconName: "Edit" }, tooltipProps: { text: "Edit description" }, ariaLabel: "Edit description", disabled: store.busy, onActivate: () => (store.dismissEditError(), setEditing(true)) }] : undefined;
   // GitHub's bodyHTML goes through the same sanitiser as the README; repo-relative images are fetched with the token by Markdown.
   const prepared = React.useMemo(() => (pr.bodyHtml.trim() ? prepareMarkdownHtml(pr.bodyHtml, { owner, name, ref: pr.baseRef, dir: "" }) : null), [pr.bodyHtml, owner, name, pr.baseRef]);
   const go = React.useCallback((s: BrowseState) => void openRepoHub(s), []);
   return (
-    <Card className="gh-pr-card gh-pr-desc" headerClassName="gh-pr-desc-header" contentProps={{ className: "gh-pr-desc-content", contentPadding: false }} titleProps={{ text: "Description", size: TitleSize.Medium, ariaLevel: 2 }}>
-      {prepared ? <Markdown prepared={prepared} repo={repo} refName={pr.baseRef} go={go} /> : <span className="secondary-text">No description</span>}
+    <Card className="gh-pr-card gh-pr-desc" headerClassName="gh-pr-desc-header" contentProps={{ className: "gh-pr-desc-content", contentPadding: false }} titleProps={{ text: "Description", size: TitleSize.Medium, ariaLevel: 2 }} headerCommandBarItems={items}>
+      {editing && edit ? <DescriptionEditor body={edit.node.body ?? ""} edit={edit} store={store} onDone={() => setEditing(false)} />
+        : prepared ? <Markdown prepared={prepared} repo={repo} refName={pr.baseRef} go={go} /> : <span className="secondary-text">No description</span>}
     </Card>
   );
 }
@@ -140,25 +145,39 @@ const REVIEW: Record<ReviewState, { text: string; icon: React.ReactNode }> = {
   PENDING: { text: "Waiting", icon: <Icon iconName="Clock" ariaLabel="Waiting for review" /> },
 };
 
-function Reviewers({ list, store }: { list: PrReviewer[]; store: ActionStore }) {
+function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: ActionStore; edit?: EditData; repo: string }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = !!edit?.perms.reviewers;
   // CI-7: GitHub has no field that says whether Copilot code review is on, so it is offered and GitHub's own reason is shown if refused.
   const copilot = store.view?.copilot;
-  const items = copilot?.offered ? [{ id: "copilot", important: false, text: "Request Copilot review", iconProps: { iconName: "Contact" }, disabled: store.busy, onActivate: () => void store.requestCopilotReview() }] : undefined;
+  const items = [
+    ...(canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : []),
+    ...(copilot?.offered ? [{ id: "copilot", important: false, text: "Request Copilot review", iconProps: { iconName: "Contact" }, disabled: store.busy, onActivate: () => void store.requestCopilotReview() }] : []),
+  ];
   return (
-    <Section title="Reviewers" commandBarItems={items}>
+    <Section title="Reviewers" commandBarItems={items.length ? items : undefined}>
+      <EditError store={store} field="reviewers" />
+      {adding && edit && (
+        <PeopleAdd repo={repo} kind="reviewers" authorLogin={edit.node.author?.login} current={edit.reviewers.map((r) => ({ kind: r.kind === "team" ? "team" : "user", login: r.kind === "team" ? r.name : r.login }))} onClose={() => setAdding(false)} onPick={(c) => (setAdding(false), void store.addReviewers(edit.node.id, [c]))} />
+      )}
       {store.copilotMessage && <MessageCard className="gh-pr-copilot-msg" severity={MessageCardSeverity.Warning} onDismiss={() => store.dismissCopilot()}>{store.copilotMessage}</MessageCard>}
       {list.length ? (
         <>
         <div className="gh-pr-sublabel body-s secondary-text font-weight-semibold">Requested</div>
         <ul className="gh-pr-list">
-          {list.map((r) => (
-            <li key={r.login} className="flex-row flex-center">
-              <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
-              <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
-              <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
-              {REVIEW[r.state].icon}
-            </li>
-          ))}
+          {list.map((r) => {
+            const requested = edit?.reviewers.find((q) => sameReviewer(q, r.login));
+            return (
+              <li key={r.login} className="gh-pr-row flex-row flex-center">
+                <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
+                <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
+                {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
+                <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
+                {REVIEW[r.state].icon}
+                {canEdit && requested && <RemoveButton label={`Remove reviewer ${reviewerName(r.login)}`} disabled={store.busy} onClick={() => void store.removeReviewer(requested)} />}
+              </li>
+            );
+          })}
         </ul>
         </>
       ) : (
@@ -168,15 +187,18 @@ function Reviewers({ list, store }: { list: PrReviewer[]; store: ActionStore }) 
   );
 }
 
-function Labels({ pr }: { pr: PrPageData }) {
+function Labels({ pr, store, edit, repo }: { pr: PrPageData; store: ActionStore; edit?: EditData; repo: string }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = !!edit?.perms.labels;
+  // The edit node knows the label ids; until it loads (or if it fails) the page's own labels show read-only.
+  const labels = edit ? edit.node.labels.nodes.map(toLabelOption) : pr.labels.map((l) => toLabelOption({ id: l.name, name: l.name, color: l.color }));
   return (
-    <Section title="Tags">
-      {pr.labels.length ? (
+    <Section title="Tags" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+      <EditError store={store} field="labels" />
+      {adding && edit && <LabelsAdd repo={repo} applied={labels.map((l) => l.id)} onClose={() => setAdding(false)} onPick={(l) => (setAdding(false), void store.addLabel(edit.node.id, l.id))} />}
+      {labels.length ? (
         <div className="flex-row flex-wrap gh-pr-labels">
-          {pr.labels.map((l) => {
-            const color = parseColor(`#${l.color}`);
-            return <Pill key={l.name} className="gh-pr-pill" size={PillSize.regular} variant={color ? PillVariant.colored : PillVariant.standard} color={color}>{l.name}</Pill>;
-          })}
+          {labels.map((l) => <LabelPill key={l.id} l={l} disabled={store.busy} onRemove={canEdit ? () => void store.removeLabel(edit!.node.id, l.id) : undefined} />)}
         </div>
       ) : (
         <Well>No tags</Well>
@@ -214,30 +236,133 @@ function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
     : <span className="gh-pr-wi-icon gh-pr-wi-dot" style={{ background: color }} aria-hidden="true" />;
 }
 
-function WorkItemRow({ w, r }: { w: WorkItemRef; r: WorkItemsResult }) {
-  if (!w.found) return <li className="secondary-text">AB#{w.id}: not found or no access</li>;
+function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; remove?: { removable: boolean; busy: boolean; onRemove: () => void } }) {
+  const x = remove && <RemoveButton label={`Remove work item ${w.id}`} disabled={!remove.removable || remove.busy} reason={remove.removable ? undefined : "Mentioned only in a commit message, so it can't be removed here. Edit the commit message instead."} onClick={remove.onRemove} />;
+  if (!w.found) return <li className="gh-pr-row flex-row flex-center"><span className="secondary-text gh-pr-grow">AB#{w.id}: not found or no access</span>{x}</li>;
   return (
-    <li className="flex-column gh-pr-wi">
+    <li className="gh-pr-row flex-row gh-pr-wi-row">
+      <div className="flex-column gh-pr-wi gh-pr-grow">
       <span className="flex-row flex-center">
         <TypeIcon type={w.type} r={r} />
         <span className="secondary-text body-s">{w.type} #{w.id}</span>
       </span>
       <Link className="gh-pr-wi-title" href={r.url(w.id)} target="_blank" rel="noopener noreferrer">{w.title ?? `#${w.id}`}</Link>
       {w.state && <span className="secondary-text body-s">{w.state}</span>}
+      </div>
+      {x}
     </li>
   );
 }
 
 /** `version` is the action store's: completing the work items refetches them. */
-function WorkItems({ ids, version }: { ids: number[]; version: number }) {
+function WorkItems({ ids, version, store, edit }: { ids: number[]; version: number; store: ActionStore; edit?: EditData }) {
   const wi = useWorkItems(ids, version);
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = !!edit?.perms.workItems;
   let body: React.ReactNode;
   if (!ids.length) body = <Well>No work items</Well>;
   else if (wi.t === "loading") body = <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />;
   else if (wi.t === "denied") body = <span className="secondary-text">Work items need the extension's work item permission.</span>;
   else if (wi.t === "error") body = <span className="secondary-text">Work items could not be loaded.</span>;
-  else body = <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} />)}</ul>;
-  return <Section title="Work items">{body}</Section>;
+  else body = <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={canEdit ? { removable: workItemInBody(edit!.node, w.id), busy: store.busy, onRemove: () => void store.removeWorkItem(edit!.node.id, w.id) } : undefined} />)}</ul>;
+  return (
+    <Section title="Work items" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+      <EditError store={store} field="workItems" />
+      {adding && edit && <WorkItemsAdd linked={ids} onClose={() => setAdding(false)} onPick={(w) => (setAdding(false), void store.addWorkItem(edit.node.id, w.id))} />}
+      {body}
+    </Section>
+  );
+}
+
+// ---------- GitHub-only sections (ED-5 to ED-8): hidden when empty and read-only ----------
+
+function Assignees({ store, edit, repo }: { store: ActionStore; edit: EditData; repo: string }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = edit.perms.assignees;
+  const list = edit.node.assignees.nodes;
+  if (!list.length && !canEdit) return null;
+  return (
+    <Section title="Assignees" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+      <EditError store={store} field="assignees" />
+      {adding && <PeopleAdd repo={repo} kind="assignees" current={list.map((a) => ({ kind: "user" as const, login: a.login }))} onClose={() => setAdding(false)} onPick={(c) => (setAdding(false), void store.addAssignee(edit.node.id, c))} />}
+      {list.length ? (
+        <ul className="gh-pr-list">
+          {list.map((a) => (
+            <li key={a.id} className="gh-pr-row flex-row flex-center">
+              <VssPersona imageUrl={a.avatarUrl} displayName={a.name || a.login} size="small" suppressPersonaCard showInitialsOnImageError />
+              <span className="gh-pr-grow text-ellipsis">{a.name || a.login}</span>
+              {canEdit && <RemoveButton label={`Remove assignee ${a.name || a.login}`} disabled={store.busy} onClick={() => void store.removeAssignee(edit.node.id, a.id)} />}
+            </li>
+          ))}
+        </ul>
+      ) : <Well>No assignees</Well>}
+    </Section>
+  );
+}
+
+function Milestone({ store, edit, repo }: { store: ActionStore; edit: EditData; repo: string }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = edit.perms.milestone;
+  const m = edit.node.milestone;
+  if (!m && !canEdit) return null;
+  return (
+    <Section title="Milestone" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, m ? "Change" : "Add") : undefined}>
+      <EditError store={store} field="milestone" />
+      {adding && <MilestoneAdd repo={repo} onClose={() => setAdding(false)} onPick={(o) => (setAdding(false), void store.setMilestone(edit.node.id, o.id))} />}
+      {m ? (
+        <div className="gh-pr-row flex-row flex-center">
+          <Icon iconName="Flag" className="secondary-text" ariaHidden />
+          <span className="gh-pr-grow flex-column">
+            <span className="text-ellipsis">{m.title}</span>
+            <span className="secondary-text body-s">{dueText(m.dueOn ? new Date(m.dueOn) : null)}</span>
+          </span>
+          {canEdit && <RemoveButton label={`Clear milestone ${m.title}`} disabled={store.busy} onClick={() => void store.setMilestone(edit.node.id, null)} />}
+        </div>
+      ) : <Well>No milestone</Well>}
+    </Section>
+  );
+}
+
+function Projects({ store, edit, repo }: { store: ActionStore; edit: EditData; repo: string }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = edit.perms.projects;
+  const rows = edit.projects;
+  if (!rows || (!rows.length && !canEdit)) return null; // null: GitHub refuses Projects for this sign-in
+  return (
+    <Section title="Projects" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
+      <EditError store={store} field="projects" />
+      {adding && <ProjectsAdd repo={repo} attached={rows.map((r) => r.projectId)} onClose={() => setAdding(false)} onPick={(p) => (setAdding(false), void store.addProject(edit.node.id, p.id))} />}
+      {rows.length ? (
+        <ul className="gh-pr-list">
+          {rows.map((r) => (
+            <li key={r.itemId} className="gh-pr-row flex-row flex-center">
+              <Icon iconName="ProjectCollection" className="secondary-text" ariaHidden />
+              <span className="gh-pr-grow flex-column">
+                <Link className="text-ellipsis" href={r.url} target="_blank" rel="noopener noreferrer">{r.title}</Link>
+                {r.status && <span className="secondary-text body-s">Status: {r.status}</span>}
+              </span>
+              {canEdit && <RemoveButton label={`Remove from project ${r.title}`} disabled={store.busy} onClick={() => void store.removeProject(r.projectId, r.itemId)} />}
+            </li>
+          ))}
+        </ul>
+      ) : <Well>No projects</Well>}
+    </Section>
+  );
+}
+
+function LinkedIssues({ store, edit }: { store: ActionStore; edit: EditData }) {
+  const [adding, setAdding] = React.useState(false);
+  const canEdit = edit.perms.closingIssues;
+  if (!edit.linked.length && !canEdit) return null;
+  return (
+    <Section title="Linked issues" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add closing issue") : undefined}>
+      <EditError store={store} field="closingIssues" />
+      {adding && <ClosingIssueAdd busy={store.busy} onClose={() => setAdding(false)} onAdd={(n) => (setAdding(false), void store.addClosingIssue(edit.node.id, n))} />}
+      {edit.linked.length ? (
+        <ul className="gh-pr-list">{edit.linked.map((i) => <IssueRow key={i.number} i={i} canRemove={canEdit} onRemove={() => void store.removeClosingIssue(edit.node.id, i.number)} />)}</ul>
+      ) : <Well>No linked issues</Well>}
+    </Section>
+  );
 }
 
 // ---------- deployments (CI-5) ----------
@@ -276,19 +401,23 @@ function Deployments({ repo, number, version }: { repo: string; number: number; 
   );
 }
 
-function Overview({ pr, repo, prTab, openFile, signIn, busy, actions }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean; actions: ActionStore }) {
+function Overview({ pr, repo, prTab, openFile, signIn, busy, actions, edit }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean; actions: ActionStore; edit?: EditData }) {
   return (
     <div className="gh-pr-overview">
       <div className="gh-pr-main">
         {PoliciesCard({ store: actions }) ?? <MergeCard pr={pr} />}
-        <Description pr={pr} repo={repo} />
+        <Description pr={pr} repo={repo} edit={edit} store={actions} />
         <ActivityFeed repo={repo} number={pr.number} baseRef={pr.baseRef} prTab={prTab} openFile={openFile} signIn={signIn} busy={busy} />
       </div>
       <div className="gh-pr-aside">
         <Deployments repo={repo} number={pr.number} version={actions.version} />
-        <Reviewers list={pr.reviewers} store={actions} />
-        <Labels pr={pr} />
-        <WorkItems ids={pr.workItemIds} version={actions.version} />
+        <Reviewers list={pr.reviewers} store={actions} edit={edit} repo={repo} />
+        <Labels pr={pr} store={actions} edit={edit} repo={repo} />
+        <WorkItems ids={pr.workItemIds} version={actions.version} store={actions} edit={edit} />
+        {edit && <Assignees store={actions} edit={edit} repo={repo} />}
+        {edit && <Milestone store={actions} edit={edit} repo={repo} />}
+        {edit && <Projects store={actions} edit={edit} repo={repo} />}
+        {edit && <LinkedIssues store={actions} edit={edit} />}
       </div>
     </div>
   );
@@ -385,6 +514,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
   }, [repo, n]);
 
   const actions = useActions(repo, n);
+  const edit = useEdit(repo, n, actions.version);
   const [ui, setUi] = React.useState<Ui>({});
   const page: PrPageId = state.prPage ?? "overview";
   const list: BrowseState = { repo, view: "prs", prTab: listTab };
@@ -397,7 +527,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
     <>
       <Header
         className="gh-pr-header"
-        title={pr?.title ?? `Pull request #${n}`}
+        title={pr ? <EditableTitle title={pr.title} canEdit={!!edit?.perms.title} store={actions} edit={edit} /> : `Pull request #${n}`}
         titleSize={TitleSize.Large /* 21px; see Browser.tsx. Weight is set to native's 400 in browser.css */}
         titleAriaLevel={1}
         commandBarItems={prCommandItems(actions, url, openItem, restItems, setUi)}
@@ -422,7 +552,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
           <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request" permission="Pull requests" />
         </div>
       )}
-      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} /></div>}
+      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </>

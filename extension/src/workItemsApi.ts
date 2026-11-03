@@ -1,6 +1,7 @@
 // Azure Boards lookups for the PR page (PR-7), through the ADO access token like connections.ts.
-import { PermissionError, get, getProjectCtx, patch } from "./connections";
+import { PermissionError, get, getProjectCtx, patch, post } from "./connections";
 import { completeWorkItemPatch, completeWorkItemUrl, planCompletion, workItemStatesUrl, type WorkItemStatesResponse } from "./lib/completeWorkItems";
+import { parseWiqlIds, parseWorkItemId, wiqlTitleQuery, wiqlUrl } from "./lib/workItemSearch";
 import { parseWorkItems, workItemsUrl, workItemUrl, type WorkItemRef } from "./lib/workItems";
 
 export interface WorkItemType { color?: string; iconUrl?: string }
@@ -39,4 +40,15 @@ export async function completeWorkItems(items: WorkItemRef[]): Promise<Completio
     }
   }
   return { updated: plan.updates.length - failed, skipped: plan.skipped.length, failed };
+}
+
+const SEARCH_TOP = 10;
+
+/** ED-4: work items to link. An id (or AB#id) looks that item up; anything else is a title search (WIQL) in the current project. Items ADO does not return are left out. */
+export async function searchWorkItems(text: string): Promise<WorkItemRef[]> {
+  const { org, project } = await getProjectCtx();
+  const id = parseWorkItemId(text);
+  const ids = id ? [id] : text.trim() ? parseWiqlIds(await post(wiqlUrl(org, project, SEARCH_TOP), wiqlTitleQuery(text))) : [];
+  if (!ids.length) return [];
+  return parseWorkItems(ids, await get<{ value?: never[] }>(workItemsUrl(org, ids))).filter((w) => w.found);
 }

@@ -7,7 +7,7 @@ export const ME = "mock-user";
 
 const COLORS = ["#0078d4", "#8764b8", "#2f7d32", "#ca5010", "#b4009e", "#038387"];
 /** A data: avatar, so mock mode never calls out to avatars.githubusercontent.com. */
-const avatar = (login: string) => {
+export const avatar = (login: string) => {
   const c = COLORS[[...login].reduce((h, ch) => h + ch.charCodeAt(0), 0) % COLORS.length];
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${c}"/><text x="32" y="42" font-family="Segoe UI,Arial" font-size="28" fill="#fff" text-anchor="middle">${login[0].toUpperCase()}</text></svg>`)}`;
 };

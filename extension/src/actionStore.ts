@@ -3,7 +3,7 @@
 // optimistic changes are rolled back on failure, and a success drops the cached page and list so they refetch.
 import * as React from "react";
 import { PermissionError } from "./connections";
-import { GhError, getActions, invalidateActions, invalidatePrPage, invalidatePrs, mutate, rest } from "./githubBrowse";
+import { GhError, getActions, getBodyNow, invalidateActions, invalidatePrPage, invalidatePrs, mutate, rest } from "./githubBrowse";
 import {
   closePullRequestMutation, convertToDraftMutation, deleteRefMutation, disableAutoMergeMutation, enableAutoMergeMutation, markReadyForReviewMutation,
   mergePullRequestMutation, reopenPullRequestMutation, updateBaseMutation, type MergeMethod,
@@ -19,6 +19,11 @@ import type { StateActionId } from "./lib/stateActions";
 import { voteMutation, type VoteId } from "./lib/votes";
 import type { WorkItemRef } from "./lib/workItems";
 import { completeWorkItems } from "./workItemsApi";
+import { addClosingIssueToBody, addWorkItemToBody, removeClosingIssueFromBody, removeWorkItemFromBody, updatePullRequestMutation, type EditField, type UpdatePullRequestInput } from "./lib/prEdit";
+import { addAssigneesMutation, removeAssigneesMutation, removeReviewRequestsRequest, requestReviewsMutation, type Candidate, type RequestedReviewer } from "./lib/reviewerSearch";
+import { addLabelsMutation, removeLabelsMutation } from "./lib/labels";
+import { setMilestoneMutation } from "./lib/milestones";
+import { addProjectItemMutation, deleteProjectItemMutation } from "./lib/projects";
 
 const STALE_MS = 30_000;
 
@@ -72,6 +77,8 @@ export class ActionStore {
   copilotMessage?: string;
   /** failureReason of that answer; copilotAvailability hides the option for the permanent ones. */
   copilotReason?: string | null;
+  /** Set when an edit (batch 2) failed: shown in the panel of that field. */
+  editError?: { field: EditField; text: string };
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private loadedAt = 0;
@@ -140,15 +147,19 @@ export class ActionStore {
     this.error = this.notice = undefined;
     this.emit();
   }
+  dismissEditError() {
+    this.editError = undefined;
+    this.emit();
+  }
 
   /**
    * Queues `task` behind the previous call for this PR. `task` throws to fail; it may return a notice for a partial failure.
    * `optimistic` runs at once and `rollback` undoes it if the task throws. Resolves true on success.
    */
-  private run(task: () => Promise<string | void>, optimistic?: () => void, rollback?: () => void): Promise<boolean> {
+  private run(task: () => Promise<string | void>, optimistic?: () => void, rollback?: () => void, field?: EditField): Promise<boolean> {
     this.pending++;
     this.busy = true;
-    this.error = this.notice = undefined;
+    this.error = this.notice = this.editError = undefined;
     optimistic?.();
     this.emit();
     const step = async (): Promise<boolean> => {
@@ -157,7 +168,8 @@ export class ActionStore {
         return true;
       } catch (e) {
         rollback?.();
-        this.error = actionErrorText(e);
+        if (field) this.editError = { field, text: actionErrorText(e) };
+        else this.error = actionErrorText(e);
         return false;
       }
     };
@@ -293,6 +305,67 @@ export class ActionStore {
   dismissCopilot() {
     this.copilotMessage = undefined;
     this.emit();
+  }
+
+  // ---------- batch 2: editing a pull request. Each write is queued like the actions above; its error shows in its own panel, and the page refetches on success. ----------
+
+  /** Title and / or description (lib/prEdit.ts planTitleBodyUpdate has already validated them). */
+  saveTitleBody(input: UpdatePullRequestInput) {
+    return this.run(async () => void (await mutate(updatePullRequestMutation(input))), undefined, undefined, input.title !== undefined ? "title" : "body");
+  }
+  addReviewers(prId: string, picked: Candidate[]) {
+    const ids = (kind: Candidate["kind"]) => picked.filter((c) => c.kind === kind).map((c) => c.id);
+    return this.run(async () => void (await mutate(requestReviewsMutation({ pullRequestId: prId, userIds: ids("user"), teamIds: ids("team") }))), undefined, undefined, "reviewers");
+  }
+  removeReviewer(r: RequestedReviewer) {
+    return this.run(async () => rest(removeReviewRequestsRequest(this.repo, this.number, r.kind === "team" ? { teams: [r.login] } : { users: [r.login] })), undefined, undefined, "reviewers");
+  }
+  addAssignee(prId: string, c: Candidate) {
+    return this.run(async () => void (await mutate(addAssigneesMutation(prId, [c.id]))), undefined, undefined, "assignees");
+  }
+  removeAssignee(prId: string, userId: string) {
+    return this.run(async () => void (await mutate(removeAssigneesMutation(prId, [userId]))), undefined, undefined, "assignees");
+  }
+  addLabel(prId: string, labelId: string) {
+    return this.run(async () => void (await mutate(addLabelsMutation(prId, [labelId]))), undefined, undefined, "labels");
+  }
+  removeLabel(prId: string, labelId: string) {
+    return this.run(async () => void (await mutate(removeLabelsMutation(prId, [labelId]))), undefined, undefined, "labels");
+  }
+  /** null clears the milestone. */
+  setMilestone(prId: string, milestoneId: string | null) {
+    return this.run(async () => void (await mutate(setMilestoneMutation(prId, milestoneId))), undefined, undefined, "milestone");
+  }
+  addProject(prId: string, projectId: string) {
+    return this.run(async () => void (await mutate(addProjectItemMutation({ projectId, contentId: prId }))), undefined, undefined, "projects");
+  }
+  removeProject(projectId: string, itemId: string) {
+    return this.run(async () => void (await mutate(deleteProjectItemMutation({ projectId, itemId }))), undefined, undefined, "projects");
+  }
+  /** Body edits read the description when their turn comes (not when the button was pressed), so queued edits stack instead of overwriting each other. */
+  private editBody(field: EditField, prId: string, change: (body: string) => string) {
+    return this.run(
+      async () => {
+        const body = await getBodyNow(this.repo, this.number);
+        const next = change(body);
+        if (next !== body) await mutate(updatePullRequestMutation({ pullRequestId: prId, body: next }));
+      },
+      undefined,
+      undefined,
+      field
+    );
+  }
+  addWorkItem(prId: string, id: number) {
+    return this.editBody("workItems", prId, (b) => addWorkItemToBody(b, id));
+  }
+  removeWorkItem(prId: string, id: number) {
+    return this.editBody("workItems", prId, (b) => removeWorkItemFromBody(b, id));
+  }
+  addClosingIssue(prId: string, n: number) {
+    return this.editBody("closingIssues", prId, (b) => addClosingIssueToBody(b, n));
+  }
+  removeClosingIssue(prId: string, n: number) {
+    return this.editBody("closingIssues", prId, (b) => removeClosingIssueFromBody(b, n));
   }
 
   changeTarget(branch: string) {
