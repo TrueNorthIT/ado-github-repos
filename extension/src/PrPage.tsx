@@ -134,7 +134,7 @@ function Description({ pr, repo, edit, store }: { pr: PrPageData; repo: string; 
 }
 
 /** A right-column section: native draws these straight on the page background (no card), title 17px/400 (Header, TitleSize.Medium). */
-function Section({ title, children, commandBarItems }: { title: string; children: React.ReactNode; commandBarItems?: any[] }) {
+export function Section({ title, children, commandBarItems }: { title: string; children: React.ReactNode; commandBarItems?: any[] }) {
   return (
     <section className="gh-pr-section">
       <Header title={title} titleSize={TitleSize.Medium} titleAriaLevel={2} commandBarItems={commandBarItems} />
@@ -142,7 +142,7 @@ function Section({ title, children, commandBarItems }: { title: string; children
     </section>
   );
 }
-const Well = ({ children }: { children: React.ReactNode }) => <div className="gh-pr-well">{children}</div>;
+export const Well = ({ children }: { children: React.ReactNode }) => <div className="gh-pr-well">{children}</div>;
 
 const REVIEW: Record<ReviewState, { text: string; icon: React.ReactNode }> = {
   APPROVED: { text: "Approved", icon: <Status {...Statuses.Success} size={StatusSize.m} ariaLabel="Approved" /> },
@@ -217,7 +217,7 @@ function Labels({ pr, store, edit, repo }: { pr: PrPageData; store: ActionStore;
 
 type Wi = { t: "loading" } | { t: "denied" } | { t: "error" } | { t: "ready"; r: WorkItemsResult };
 
-function useWorkItems(ids: number[], version = 0): Wi {
+export function useWorkItems(ids: number[], version = 0): Wi {
   const [wi, setWi] = React.useState<Wi>({ t: "loading" });
   const key = ids.join(",");
   React.useEffect(() => {
@@ -242,7 +242,7 @@ function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
     : <span className="gh-pr-wi-icon gh-pr-wi-dot" style={{ background: color }} aria-hidden="true" />;
 }
 
-function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; remove?: { removable: boolean; pinned: boolean; busy: boolean; onRemove: () => void } }) {
+export function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; remove?: { removable: boolean; pinned: boolean; busy: boolean; onRemove: () => void } }) {
   const x = remove && <RemoveButton label={`Remove work item ${w.id}`} disabled={!remove.removable || remove.busy} reason={remove.removable ? undefined : remove.pinned ? "Also mentioned in the title or a commit message, so it stays linked. Edit those to unlink it." : "Not mentioned in the description, so it can't be removed here."} onClick={remove.onRemove} />;
   if (!w.found) return <li className="gh-pr-row flex-row flex-center"><span className="secondary-text gh-pr-grow">AB#{w.id}: not found or no access</span>{x}</li>;
   return (

@@ -9,7 +9,7 @@ import { hubClick } from "./Browser";
 export function useHubHref() {
   const [ctx, setCtx] = React.useState<{ org: string; project: string }>();
   React.useEffect(() => { void loadProject().then((p) => setCtx(p.ctx), () => {}); }, []);
-  return React.useCallback((hub: HubId, s: BrowseState) => (ctx ? hubHref(ctx, hub, s) : serialize(s)), [ctx]);
+  return React.useCallback((hub: HubId, s: BrowseState | string) => (ctx ? hubHref(ctx, hub, s) : typeof s === "string" ? s : serialize(s)), [ctx]);
 }
 
 /** Hrefs into the Repositories (Files) hub. Plain until the project context is known. */
@@ -20,4 +20,4 @@ export function useRepoHref() {
 }
 export const openInRepos = (s: BrowseState) => (e?: React.MouseEvent | React.KeyboardEvent) => hubClick(() => void openRepoHub(s))(e);
 /** Plain clicks open another hub; modified clicks keep the link's own behaviour. */
-export const openInHub = (hub: HubId, s: BrowseState) => (e?: React.MouseEvent | React.KeyboardEvent) => hubClick(() => void openHub(hub, s))(e);
+export const openInHub = (hub: HubId, s: BrowseState | string) => (e?: React.MouseEvent | React.KeyboardEvent) => hubClick(() => void openHub(hub, s))(e);

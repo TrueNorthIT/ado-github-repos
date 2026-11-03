@@ -9,6 +9,7 @@ import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, merg
 import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from "./fixtures/edit";
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rangeData, renderMd, searchTerms, setViewed, sideOfOid, updatesData, viewedData } from "./fixtures/b4";
+import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
 import { refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -40,6 +41,8 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  const np = newPrGraphql(query, variables, sc); // batch 5: the New pull request page (before the generic mutation and pullRequests routes)
+  if (np) return json(np);
   const b4 = b4Graphql(query, variables, sc); // batch 4: updates, viewed files, commit ranges (before the generic commits and timeline routes)
   if (b4) return b4;
   const cm = commentsGraphql(query, variables, sc); // batch 3: comment metadata, new threads, pending reviews, suggestions, reactions
@@ -145,7 +148,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
-  if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
+  if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
   if (refsAnswer) return refsAnswer;
   const reviewers = /^\/pulls\/(\d+)\/requested_reviewers$/.exec(rest);

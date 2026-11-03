@@ -31,7 +31,9 @@ import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { invalidatePrs, listPrs, type PrListResult } from "./githubBrowse";
 import { applyListFilters, hasListFilters, type ListFilters } from "./lib/prListFilters";
 import { isUpdatedSinceViewed, viewedKey, type LastViewedMap } from "./lib/lastViewed";
-import { patchHash, useHashExtras } from "./hostNav";
+import { gotoHash, patchHash, useHashExtras } from "./hostNav";
+import { prListNewPrHash } from "./lib/newPrHash";
+import { NewPullRequest } from "./NewPullRequest";
 import { getPrefs } from "./prefs";
 import { ErrorView, RepoSwitcher } from "./Browser";
 import { useDefaultRepo } from "./RepoHub";
@@ -345,6 +347,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
   // Fill the default repo into the hash (no history entry) so the header breadcrumb and a reload agree with the page.
   React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo, view: "prs", prTab: state.prTab }, "ifEmpty"); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   const tab: PrTab = state.prTab ?? "mine";
+  const { newPr } = useHashExtras(); // BrowseState drops view=newpr, so the page is routed on its own parse of the hash
   const [filterOpen, setFilterOpen] = React.useState(true);
   const goPr = React.useCallback((s: BrowseState) => go({ ...s, view: "prs" }), [go]);
   const open = React.useCallback((n: number) => repo && goPr({ repo, prTab: tab, pr: n }), [goPr, repo, tab]);
@@ -355,6 +358,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     renderButton: () => <RepoSwitcher compact repo={repo!} openTick={openSwitch} onPick={(r) => goPr(to(r))} />,
   });
   const openOnGitHub = (href: string) => ({ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href, target: "_blank", important: true });
+  const newPrItem = (r: string) => ({ id: "new", text: "New pull request", iconProps: { iconName: "Add" }, isPrimary: true, important: true, onActivate: () => gotoHash(prListNewPrHash(r)) });
   const extra = commandBarItems.map((c) => ({ ...c, important: false }));
 
   let body: React.ReactNode;
@@ -364,6 +368,8 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     ) : (
       <Loading />
     );
+  } else if (newPr && newPr.repo === repo && !state.pr) {
+    body = <NewPullRequest key={repo} repo={repo} entry={newPr} go={go} signedIn={signedIn} signIn={doSignIn} busy={busy} />;
   } else if (state.pr) {
     body = (
       <PrPage
@@ -381,7 +387,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     const p: TabProps = { repo, open, signedIn, signIn: doSignIn, busy, filterOpen, closeFilter: () => setFilterOpen(false) };
     body = (
       <>
-        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[switcher((r) => ({ repo: r, prTab: tab })), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]} />
+        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[newPrItem(repo), switcher((r) => ({ repo: r, prTab: tab })), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]} />
         <TabBar
           ariaLabel="Pull request lists"
           selectedTabId={tab}
