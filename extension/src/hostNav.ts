@@ -4,6 +4,9 @@ import type { IHostNavigationService } from "azure-devops-extension-api/Common/C
 import { BrowseState, parse, serialize } from "./lib/browseState";
 import { getProjectCtx } from "./connections";
 import { onRepoMessage, post, sibling } from "./lib/repoChannel";
+import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPrefs";
+import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
+import * as React from "react";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
 const NAV_SERVICE = "ms.vss-features.host-navigation-service";
@@ -20,6 +23,29 @@ export async function readInitialHash(get: () => Promise<string>, waitMs = 400):
   return get();
 }
 
+// VW-2/4/8: the diff (sbs, ws) and list-filter keys are owned by diffPrefs and prListFilters, and BrowseState does not carry them. They are read from, and written
+// to, the raw hash here; navigating inside the same repo keeps them (the diff keys while a PR is open, the filters while the PR hub is).
+let rawHash = "";
+let patcher: ((fn: (hash: string) => string) => void) | undefined;
+const listeners = new Set<() => void>();
+const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
+
+/** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters } {
+  const [, tick] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
+export const patchHash = (fn: (hash: string) => string) => patcher?.(fn);
+
+const carry = (next: BrowseState, prev: string) => {
+  const h = serialize(next);
+  if (!next.repo || next.repo !== parse(prev).repo) return h;
+  return next.view === "prs" ? applyListFilters(next.pr ? applyDiffHash(h, parseDiffHash(prev)) : h, parseListFilters(prev)) : h;
+};
+
 export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState, replace?: boolean) => void> {
   const svc = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
   let current: BrowseState = {};
@@ -34,7 +60,14 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     if (m.type === "tn-gh-hello") post(source, { type: "tn-gh-repo", repo: current.repo });
   });
 
+  patcher = (fn) => {
+    const h = fn(rawHash || "#");
+    svc.replaceHash(h.slice(1));
+    setRaw(h);
+  };
+
   const emit = (h: string) => {
+    setRaw(h);
     const s = parse(h);
     if (s.switch) svc.replaceHash(serialize({ ...s, switch: false }).slice(1)); // no leading "#": replaceHash adds its own. One-shot: clear the flag so reload/back do not reopen it
     announce(s);
@@ -44,9 +77,11 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   emit(await readInitialHash(() => svc.getHash()));
   svc.onHashChanged(emit);
   return (s, replace) => {
-    if (replace) svc.replaceHash(serialize(s).slice(1)); // e.g. the PR hub filling in its default repo: no extra history entry
-    else svc.setHash(serialize(s));
-    const next = parse(serialize(s));
+    const h = carry(s, rawHash);
+    setRaw(h);
+    if (replace) svc.replaceHash(h.slice(1)); // e.g. the PR hub filling in its default repo: no extra history entry
+    else svc.setHash(h);
+    const next = parse(h);
     announce(next);
     onChange(next); // do not rely on the host echoing programmatic changes back
   };

@@ -12,8 +12,7 @@ import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { Table, ITableColumn, TwoLineTableCell } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
 import type { ChecksSummary, Mergeable, PrPageData, PrReviewer, PrStatus, ReviewState } from "./lib/prModel";
@@ -396,7 +395,7 @@ function Deployments({ repo, number, version }: { repo: string; number: number; 
               <span className="body-m font-weight-semibold text-ellipsis">{r.environment}</span>
               {r.url && /^https?:\/\//i.test(r.url) && <Link className="body-s text-ellipsis" href={r.url} target="_blank" rel="noopener noreferrer" ariaLabel={`Open ${r.environment} deployment: ${r.url}`}>{hostOf(r.url)}</Link>}
             </div>
-            <span className="secondary-text body-s"><Ago date={new Date(r.updatedAt)} format={AgoFormat.Compact} /></span>
+            <span className="secondary-text body-s"><RelDate date={r.updatedAt} /></span>
           </li>
         ))}
       </ul>
@@ -446,7 +445,7 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
               <Link className="monospaced-xs secondary-text" href={commitUrl(repo, c.sha)} target="_blank" rel="noopener noreferrer" subtle ariaLabel={`Commit ${c.shortSha} on GitHub`}>{c.shortSha}</Link>
               <VssPersona imageUrl={c.avatar} displayName={c.author} size="extra-small" suppressPersonaCard showInitialsOnImageError />
               <span>{c.author}</span>
-              <Ago date={c.date} format={AgoFormat.Extended} />
+              <RelDate date={c.date} />
               <SignaturePill signature={c.signature} />
             </span>
           }

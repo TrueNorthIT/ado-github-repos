@@ -89,6 +89,8 @@ export interface PrListRow {
   };
   dateVerb: "Created" | "Updated" | "Completed" | "Abandoned";
   date: Date;
+  /** The PR's own updatedAt (ISO), for "updated since you viewed" (VW-9). */
+  updatedAt: string;
   /** `${dateVerb} ${relativeTime(date, now)}` using tokens.ts relativeTime, e.g. "Created 3 hours ago". */
   dateText: string;
 }
@@ -177,6 +179,7 @@ export function toListRow(node: PrListNode, now: number): PrListRow {
       : { total: node.comments?.totalCount ?? 0, resolved: 0, active: false, threaded },
     dateVerb,
     date,
+    updatedAt: node.updatedAt,
     dateText: `${dateVerb} ${relativeTime(iso, now)}`,
   };
 }

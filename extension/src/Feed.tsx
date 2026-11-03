@@ -1,7 +1,6 @@
 // The PR activity feed (AF-1 to AF-5, AF-7): composer, review-thread and comment cards, and event rows, on a dotted timeline.
 // ThreadCard is also what the Files diff puts under a commented line (AF-6).
 import * as React from "react";
-import { Ago } from "azure-devops-ui/Ago";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Dropdown, DropdownExpandableButton } from "azure-devops-ui/Dropdown";
@@ -10,7 +9,7 @@ import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { VssPersona } from "azure-devops-ui/VssPersona";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { commitUrl, shortSha } from "./lib/commits";
 import { counts, filterFeed, type CommentItem, type EventItem, type EventType, type FeedComment, type FeedFilter, type ThreadItem } from "./lib/feedModel";
@@ -26,7 +25,7 @@ import { ErrorView, Markdown, hubClick } from "./Browser";
 const Avatar = ({ url, name, size }: { url: string; name: string; size: "small" }) => (
   <VssPersona imageUrl={url} displayName={name} size={size} suppressPersonaCard showInitialsOnImageError />
 );
-const When = ({ date }: { date: Date }) => <Ago className="gh-feed-time secondary-text body-s" date={date} format={AgoFormat.Extended} />;
+const When = ({ date }: { date: Date }) => <RelDate className="gh-feed-time secondary-text body-s" date={date} />;
 
 /** A comment's GitHub HTML, through the same sanitiser as the README and the PR description. */
 function Body({ html, repo, baseRef }: { html: string; repo: string; baseRef: string }) {

@@ -11,8 +11,7 @@ import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Table, ITableColumn, SimpleTableCell, TwoLineTableCell, renderEmptyCell } from "azure-devops-ui/Table";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { VssPersona } from "azure-devops-ui/VssPersona";
@@ -108,7 +107,7 @@ function columns(repo: string, open: (n: number) => void): ITableColumn<PrListRo
       width: 190,
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="status" columnIndex={columnIndex} tableColumn={tableColumn}>
-          <span className="secondary-text">{row.dateVerb} <Ago date={row.date} format={AgoFormat.Compact} /></span>
+          <span className="secondary-text">{row.dateVerb} <RelDate date={row.date} /></span>
         </SimpleTableCell>
       ),
     },
