@@ -13,11 +13,10 @@
 //    exercised live (it needs a real write). Treated as UTF-16-agnostic: count Unicode code points, not UTF-16 units.
 //  - pullRequest.reviewRequests.nodes[].requestedReviewer can be null with asCodeOwner true (seen live on cli/cli#14846: a team the viewer cannot see).
 import type { GraphQlRequest } from "./prQuery";
+import { findWorkItemIds, maskCode } from "./workItems";
 
 export const MAX_TITLE_LENGTH = 256;
 export const MAX_BODY_LENGTH = 65536;
-
-const NOT_IMPLEMENTED = () => new Error("Not implemented");
 
 // ---- ED-1: edit title and description -------------------------------------------------------------------------------------------------------------
 
@@ -44,8 +43,23 @@ export interface PrEditNode {
  * ... on Bot { id login avatarUrl } } } }, assignees(first: 20), labels(first: 50) { nodes { id name color description } }, milestone { id number title dueOn state }
  * and closingIssuesReferences(first: 20) { nodes { number title state url } }. Variables { owner, name, number }.
  */
-export function prEditQuery(_p: { owner: string; name: string; number: number }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function prEditQuery(p: { owner: string; name: string; number: number }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id state title body author { login }
+      viewerCanUpdate viewerCanLabel viewerCanAssign
+      reviewRequests(first: 50) { nodes { asCodeOwner requestedReviewer { __typename ... on User { id login name avatarUrl } ... on Team { id slug name avatarUrl } ... on Bot { id login avatarUrl } } } }
+      assignees(first: 20) { nodes { id login name avatarUrl } }
+      labels(first: 50) { nodes { id name color description } }
+      milestone { id number title dueOn state }
+      closingIssuesReferences(first: 20) { nodes { number title state url } }
+    }
+  }
+}`,
+    variables: { owner: p.owner, name: p.name, number: p.number },
+  };
 }
 
 export interface UpdatePullRequestInput {
@@ -60,8 +74,13 @@ export interface UpdatePullRequestInput {
  * `mutation($input: UpdatePullRequestInput!) { updatePullRequest(input: $input) { pullRequest { id title body milestone { id number title dueOn } } } }`.
  * variables.input carries pullRequestId plus exactly the keys that are not undefined (null is kept). Throws "pullRequestId is required" when it is blank.
  */
-export function updatePullRequestMutation(_input: UpdatePullRequestInput): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function updatePullRequestMutation(input: UpdatePullRequestInput): GraphQlRequest {
+  if (!input.pullRequestId.trim()) throw new Error("pullRequestId is required");
+  const sent = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
+  return {
+    query: `mutation($input: UpdatePullRequestInput!) { updatePullRequest(input: $input) { pullRequest { id title body milestone { id number title dueOn } } } }`,
+    variables: { input: sent },
+  };
 }
 
 export type TitleBodyPlan =
@@ -76,8 +95,60 @@ export type TitleBodyPlan =
  *    null current body counting as "": omitted.
  *  - an invalid field refuses the whole plan (no partial update). A field left undefined is neither validated nor sent.
  */
-export function planTitleBodyUpdate(_pullRequestId: string, _current: { title: string; body?: string | null }, _edit: { title?: string; body?: string }): TitleBodyPlan {
-  throw NOT_IMPLEMENTED();
+export function planTitleBodyUpdate(pullRequestId: string, current: { title: string; body?: string | null }, edit: { title?: string; body?: string }): TitleBodyPlan {
+  const input: { pullRequestId: string; title?: string; body?: string } = { pullRequestId };
+  if (edit.title !== undefined) {
+    const title = edit.title.trim();
+    if (!title) return { ok: false, field: "title", error: "Title is required" };
+    if (codePoints(title) > MAX_TITLE_LENGTH) return { ok: false, field: "title", error: `Title is too long (maximum is ${MAX_TITLE_LENGTH} characters)` };
+    if (title !== current.title.trim()) input.title = title;
+  }
+  if (edit.body !== undefined) {
+    if (codePoints(edit.body) > MAX_BODY_LENGTH) return { ok: false, field: "body", error: `Description is too long (maximum is ${MAX_BODY_LENGTH} characters)` };
+    const lf = (s: string) => s.replace(/\r\n/g, "\n");
+    if (lf(edit.body) !== lf(current.body ?? "")) input.body = edit.body;
+  }
+  return { ok: true, input: input.title === undefined && input.body === undefined ? null : input };
+}
+
+// ---- shared body-editing helpers --------------------------------------------------------------------------------------------------------------------
+
+const codePoints = (s: string) => [...s].length;
+const blank = (l: string) => /^\s*$/.test(l);
+const eolOf = (b: string) => (b.includes("\r\n") ? "\r\n" : "\n");
+const KEYWORD = "(?:closes?|closed|fix(?:es|ed)?|resolve[sd]?)";
+const CLOSING_RE = new RegExp(`(?<!\\w)${KEYWORD}:?[ \\t]+#(\\d+)(?!\\w)`, "gi");
+const CLOSING_LINE_RE = new RegExp(`^[ \\t]*(?:[-*][ \\t]+)?${KEYWORD}:?[ \\t]+#(\\d+)[ \\t]*\\r?$`, "i");
+
+/** Appends `line`: onto a trailing line matching `joinable` (after `join`), else after a blank line. */
+function appendLine(body: string | null | undefined, line: string, joinable: RegExp, join: string): string {
+  const b = body ?? "";
+  const eol = eolOf(b);
+  const trimmed = b.trimEnd();
+  if (!trimmed) return line;
+  const last = trimmed.slice(trimmed.lastIndexOf("\n") + 1);
+  return joinable.test(last) ? trimmed + join + line : trimmed + eol + eol + line;
+}
+
+/**
+ * Deletes the lines in `del` and joins the rest with "\n" (the "\r" of a CRLF stays on its line). A deleted line takes one blank neighbour with it when it would otherwise leave two
+ * blank lines in a row (or a blank first line), and a deletion at the end also drops the blank lines before it.
+ */
+function dropLines(lines: string[], del: Set<number>): string {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!del.has(i)) {
+      out.push(lines[i]);
+      continue;
+    }
+    if (lines.slice(i + 1).every((l, k) => blank(l) || del.has(i + 1 + k))) {
+      while (out.length && blank(out[out.length - 1])) out.pop();
+      break;
+    }
+    const prev = out[out.length - 1];
+    if ((prev === undefined || blank(prev)) && blank(lines[i + 1])) i++;
+  }
+  return out.join("\n");
 }
 
 // ---- ED-4: work items in the body -----------------------------------------------------------------------------------------------------------------
@@ -90,8 +161,10 @@ export function planTitleBodyUpdate(_pullRequestId: string, _current: { title: s
  *  - new line breaks match the body: "\r\n" when the body uses CRLF, else "\n".
  * Throws "work item id must be a positive integer" for 0, negatives and non-integers.
  */
-export function addWorkItemToBody(_body: string | null | undefined, _id: number): string {
-  throw NOT_IMPLEMENTED();
+export function addWorkItemToBody(body: string | null | undefined, id: number): string {
+  if (!Number.isInteger(id) || id <= 0) throw new Error("work item id must be a positive integer");
+  if (findWorkItemIds(body).includes(id)) return body as string;
+  return appendLine(body, `AB#${id}`, /^\s*AB#\d+(?:\s+AB#\d+)*\s*$/i, " ");
 }
 
 /**
@@ -100,8 +173,28 @@ export function addWorkItemToBody(_body: string | null | undefined, _id: number)
  *  - a line left empty by the removal is deleted, and so is one blank line if that would leave two in a row; a body that then ends in blank lines is trimmed at the end.
  *  - id absent: returns the body unchanged, byte for byte. null / undefined gives "".
  */
-export function removeWorkItemFromBody(_body: string | null | undefined, _id: number): string {
-  throw NOT_IMPLEMENTED();
+export function removeWorkItemFromBody(body: string | null | undefined, id: number): string {
+  const b = body ?? "";
+  const lines = b.split("\n");
+  const maskedLines = maskCode(b).split("\n");
+  const del = new Set<number>();
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const hits = [...maskedLines[i].matchAll(/(?<!\w)AB#(\d+)(?!\w)/gi)].filter((m) => Number(m[1]) === id);
+    if (!hits.length) continue;
+    changed = true;
+    let line = lines[i];
+    for (const m of hits.reverse()) {
+      let start = m.index!;
+      let end = start + m[0].length;
+      while (start > 0 && line[start - 1] === " ") start--;
+      if (start === 0) while (line[end] === " ") end++;
+      line = line.slice(0, start) + line.slice(end);
+    }
+    lines[i] = line;
+    if (blank(line)) del.add(i);
+  }
+  return changed ? dropLines(lines, del) : b;
 }
 
 // ---- ED-8: linked issues ---------------------------------------------------------------------------------------------------------------------------
@@ -117,29 +210,40 @@ export interface LinkedIssue {
  * Issue numbers the body closes with GitHub's keywords: close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved (case-insensitive), then an optional ":", spaces, and "#n".
  * Whole words only ("prefixes #5" is not "fixes #5"); same-repository "#n" only (not "owner/repo#5"); not inside code spans or fences. Unique, first-seen order.
  */
-export function findClosingIssueNumbers(_body: string | null | undefined): number[] {
-  throw NOT_IMPLEMENTED();
+export function findClosingIssueNumbers(body: string | null | undefined): number[] {
+  const seen = new Set<number>();
+  for (const m of maskCode(body ?? "").matchAll(CLOSING_RE)) seen.add(Number(m[1]));
+  return [...seen];
 }
 
 /**
  * Adds "Closes #n". Already closed by any keyword: body unchanged. The line goes straight under an existing trailing keyword line ("Closes #1\nCloses #2": each reference needs its own keyword),
  * otherwise after a blank line like addWorkItemToBody. Same line-break rules as addWorkItemToBody. Throws "issue number must be a positive integer" for 0, negatives and non-integers.
  */
-export function addClosingIssueToBody(_body: string | null | undefined, _issueNumber: number): string {
-  throw NOT_IMPLEMENTED();
+export function addClosingIssueToBody(body: string | null | undefined, issueNumber: number): string {
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) throw new Error("issue number must be a positive integer");
+  if (findClosingIssueNumbers(body).includes(issueNumber)) return body as string;
+  return appendLine(body, `Closes #${issueNumber}`, CLOSING_LINE_RE, eolOf(body ?? ""));
 }
 
 /**
  * A keyword line we can parse: the whole line is [list marker "- " or "* "] KEYWORD [":"] " #n" and nothing else (case-insensitive). Removing deletes that line (and tidies blank lines like
  * removeWorkItemFromBody). Prose ("This closes #12 and more"), several references on one line and anything else is left alone: the body comes back unchanged.
  */
-export function removeClosingIssueFromBody(_body: string | null | undefined, _issueNumber: number): string {
-  throw NOT_IMPLEMENTED();
+export function removeClosingIssueFromBody(body: string | null | undefined, issueNumber: number): string {
+  const b = body ?? "";
+  const del = new Set<number>();
+  maskCode(b)
+    .split("\n")
+    .forEach((l, i) => {
+      if (Number(l.match(CLOSING_LINE_RE)?.[1]) === issueNumber) del.add(i);
+    });
+  return del.size ? dropLines(b.split("\n"), del) : b;
 }
 
 /** true when removeClosingIssueFromBody would change the body, i.e. a parsable keyword line for the issue exists. */
-export function isClosingIssueRemovable(_body: string | null | undefined, _issueNumber: number): boolean {
-  throw NOT_IMPLEMENTED();
+export function isClosingIssueRemovable(body: string | null | undefined, issueNumber: number): boolean {
+  return removeClosingIssueFromBody(body, issueNumber) !== (body ?? "");
 }
 
 export interface LinkedIssueRow extends LinkedIssue {
@@ -148,8 +252,8 @@ export interface LinkedIssueRow extends LinkedIssue {
 }
 
 /** closingIssuesReferences nodes in order, each with `removable` from isClosingIssueRemovable(body, number). Missing nodes give []. */
-export function toLinkedIssueRows(_nodes: LinkedIssue[] | null | undefined, _body: string | null | undefined): LinkedIssueRow[] {
-  throw NOT_IMPLEMENTED();
+export function toLinkedIssueRows(nodes: LinkedIssue[] | null | undefined, body: string | null | undefined): LinkedIssueRow[] {
+  return (nodes ?? []).map((n) => ({ ...n, removable: isClosingIssueRemovable(body, n.number) }));
 }
 
 // ---- ED-9: permissions ------------------------------------------------------------------------------------------------------------------------------
@@ -172,6 +276,18 @@ export interface EditContext {
  *  - labels: viewerCanLabel (the more specific flag decides), in any state.
  *  - projects: viewerCanUpdate, in any state.
  */
-export function editPermissions(_c: EditContext): Record<EditField, boolean> {
-  throw NOT_IMPLEMENTED();
+export function editPermissions(c: EditContext): Record<EditField, boolean> {
+  const open = c.state === "OPEN";
+  const edit = open && c.viewerCanUpdate;
+  return {
+    title: edit,
+    body: edit,
+    reviewers: edit,
+    milestone: edit,
+    workItems: edit,
+    closingIssues: edit,
+    assignees: open && (c.viewerCanAssign ?? c.viewerCanUpdate),
+    labels: c.viewerCanLabel ?? c.viewerCanUpdate,
+    projects: c.viewerCanUpdate,
+  };
 }

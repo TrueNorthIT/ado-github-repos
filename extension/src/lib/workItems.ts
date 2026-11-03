@@ -49,3 +49,9 @@ export function parseWorkItems(ids: number[], body: { value?: ({ id: number; fie
     return { id, found: true, title: str(w.fields?.["System.Title"]), state: str(w.fields?.["System.State"]), type: str(w.fields?.["System.WorkItemType"]) };
   });
 }
+
+/** `text` with code (fences, inline code) and link destinations blanked to spaces: same length and line breaks, so a position in the result is a position in the original. */
+export function maskCode(text: string): string {
+  const blank = (m: string) => m.replace(/[^\n]/g, " ");
+  return text.replace(FENCE, blank).replace(INLINE_CODE, blank).replace(LINK_DEST, blank);
+}

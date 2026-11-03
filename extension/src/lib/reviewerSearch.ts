@@ -17,11 +17,11 @@
 //  - Assigning: addAssigneesToAssignable(input: { assignableId: ID!, assigneeIds: [ID!] }) and removeAssigneesFromAssignable(input: { assignableId: ID!, assigneeIds: [ID!]! }); payload `assignable`.
 import type { GraphQlRequest } from "./prQuery";
 import type { RestRequest } from "./restRequest";
+import { fuzzyFind } from "./fuzzy";
+import { reviewerName } from "./copilotReview";
 
 /** How many results one search request asks for. */
 export const SEARCH_PAGE = 20;
-
-const NOT_IMPLEMENTED = () => new Error("Not implemented");
 
 export interface Candidate {
   kind: "user" | "team";
@@ -38,26 +38,40 @@ export interface Candidate {
  * `query($owner: String!, $name: String!, $query: String)` over repository(owner: $owner, name: $name) { assignableUsers(query: $query, first: 20) { nodes { id login name avatarUrl } } }.
  * Serves reviewers and assignees. Variables { owner, name, query }: the query is trimmed, and null when blank (null lists everyone). Nothing user-supplied goes in the text.
  */
-export function userSearchQuery(_p: { owner: string; name: string; query: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function userSearchQuery(p: { owner: string; name: string; query: string }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $query: String) {
+  repository(owner: $owner, name: $name) { assignableUsers(query: $query, first: ${SEARCH_PAGE}) { nodes{ id login name avatarUrl } } }
+}`,
+    variables: { owner: p.owner, name: p.name, query: p.query.trim() || null },
+  };
 }
 
 /**
  * `query($org: String!, $query: String)` over organization(login: $org) { teams(query: $query, first: 20) { nodes { id slug name avatarUrl } } }.
  * Variables { org, query } with the same trimming rule. Only for repositories owned by an organisation.
  */
-export function teamSearchQuery(_p: { org: string; query: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function teamSearchQuery(p: { org: string; query: string }): GraphQlRequest {
+  return {
+    query: `query($org: String!, $query: String) {
+  organization(login: $org) { teams(query: $query, first: ${SEARCH_PAGE}) { nodes{ id slug name avatarUrl } } }
+}`,
+    variables: { org: p.org, query: p.query.trim() || null },
+  };
 }
 
 /** data.repository.assignableUsers.nodes as user Candidates (in order). Missing data, nulls and null nodes give []. */
-export function userCandidates(_data: { repository?: { assignableUsers?: { nodes?: ({ id: string; login: string; name?: string | null; avatarUrl?: string } | null)[] } | null } | null } | null | undefined): Candidate[] {
-  throw NOT_IMPLEMENTED();
+export function userCandidates(data: { repository?: { assignableUsers?: { nodes?: ({ id: string; login: string; name?: string | null; avatarUrl?: string } | null)[] } | null } | null } | null | undefined): Candidate[] {
+  const out: Candidate[] = [];
+  for (const n of data?.repository?.assignableUsers?.nodes ?? []) if (n) out.push({ kind: "user", id: n.id, login: n.login, name: n.name, avatarUrl: n.avatarUrl });
+  return out;
 }
 
 /** data.organization.teams.nodes as team Candidates: login is the slug. Missing data (for example a user-owned repository), nulls and null nodes give []. */
-export function teamCandidates(_data: { organization?: { teams?: { nodes?: ({ id: string; slug: string; name?: string | null; avatarUrl?: string } | null)[] } | null } | null } | null | undefined): Candidate[] {
-  throw NOT_IMPLEMENTED();
+export function teamCandidates(data: { organization?: { teams?: { nodes?: ({ id: string; slug: string; name?: string | null; avatarUrl?: string } | null)[] } | null } | null } | null | undefined): Candidate[] {
+  const out: Candidate[] = [];
+  for (const n of data?.organization?.teams?.nodes ?? []) if (n) out.push({ kind: "team", id: n.id, login: n.slug, name: n.name, avatarUrl: n.avatarUrl });
+  return out;
 }
 
 export interface RankOptions {
@@ -77,8 +91,30 @@ export interface RankOptions {
  *  - a blank query keeps everything, alphabetical by login (users before teams on a tie).
  *  - at most `limit` results.
  */
-export function rankCandidates(_candidates: Candidate[], _query: string, _opts?: RankOptions): Candidate[] {
-  throw NOT_IMPLEMENTED();
+export function rankCandidates(candidates: Candidate[], query: string, opts?: RankOptions): Candidate[] {
+  const q = query.trim().toLowerCase();
+  const author = opts?.authorLogin?.toLowerCase();
+  const current = (opts?.current ?? []).map((c) => ({ kind: c.kind, login: c.login.toLowerCase() }));
+  const requested = (c: Candidate) =>
+    current.some((r) => r.kind === c.kind && (r.login === c.login.toLowerCase() || (c.kind === "team" && r.login === (c.name ?? "").toLowerCase())));
+  const tier = (c: Candidate) => {
+    const l = c.login.toLowerCase();
+    if (!q) return 0;
+    if (l === q) return 1;
+    if (l.startsWith(q)) return 2;
+    return fuzzyFind([c.login, c.name ?? ""].filter(Boolean), q, 1).length ? 3 : 4;
+  };
+  return candidates
+    .filter((c) => !(c.kind === "user" && author && c.login.toLowerCase() === author) && !requested(c))
+    .map((c) => ({ c, t: tier(c) }))
+    .filter((x) => x.t < 4)
+    .sort((a, b) => {
+      const la = a.c.login.toLowerCase();
+      const lb = b.c.login.toLowerCase();
+      return a.t - b.t || (a.t === 0 ? 0 : la.length - lb.length) || (la < lb ? -1 : la > lb ? 1 : 0) || (a.c.kind === b.c.kind ? 0 : a.c.kind === "user" ? -1 : 1);
+    })
+    .slice(0, opts?.limit ?? 10)
+    .map((x) => x.c);
 }
 
 /**
@@ -86,16 +122,25 @@ export function rankCandidates(_candidates: Candidate[], _query: string, _opts?:
  * variables.input is { pullRequestId, userIds?, teamIds?, union: true }; an empty or missing id list is left out. Throws "pullRequestId is required" for a blank id and
  * "at least one reviewer is required" when both lists are empty.
  */
-export function requestReviewsMutation(_p: { pullRequestId: string; userIds?: string[]; teamIds?: string[] }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function requestReviewsMutation(p: { pullRequestId: string; userIds?: string[]; teamIds?: string[] }): GraphQlRequest {
+  if (!p.pullRequestId.trim()) throw new Error("pullRequestId is required");
+  const input: Record<string, unknown> = { pullRequestId: p.pullRequestId };
+  if (p.userIds?.length) input.userIds = p.userIds;
+  if (p.teamIds?.length) input.teamIds = p.teamIds;
+  if (!input.userIds && !input.teamIds) throw new Error("at least one reviewer is required");
+  input.union = true;
+  return { query: `mutation($input: RequestReviewsInput!) { requestReviews(input: $input) { pullRequest{ id } } }`, variables: { input } };
 }
 
 /**
  * REST removal: { method: "DELETE", path: `/repos/${repo}/pulls/${number}/requested_reviewers`, body: { reviewers: users, team_reviewers?: teams } } where `repo` is "owner/name", users are logins
  * and teams are slugs. `reviewers` is always present ([] when only teams are removed); `team_reviewers` only when non-empty. Throws "at least one reviewer is required" when both are empty.
  */
-export function removeReviewRequestsRequest(_repo: string, _number: number, _p: { users?: string[]; teams?: string[] }): RestRequest {
-  throw NOT_IMPLEMENTED();
+export function removeReviewRequestsRequest(repo: string, number: number, p: { users?: string[]; teams?: string[] }): RestRequest {
+  const users = p.users ?? [];
+  const teams = p.teams ?? [];
+  if (!users.length && !teams.length) throw new Error("at least one reviewer is required");
+  return { method: "DELETE", path: `/repos/${repo}/pulls/${number}/requested_reviewers`, body: { reviewers: users, ...(teams.length ? { team_reviewers: teams } : {}) } };
 }
 
 export interface RequestedReviewer {
@@ -113,16 +158,35 @@ export interface RequestedReviewer {
 }
 
 /** PullRequest.reviewRequests.nodes as rows, in order. Nodes whose requestedReviewer is null (an invisible team) or of another type (Mannequin) are dropped. */
-export function toRequestedReviewers(_nodes: { asCodeOwner?: boolean | null; requestedReviewer: { __typename: string; id?: string; login?: string; slug?: string; name?: string | null; avatarUrl?: string } | null }[] | null | undefined): RequestedReviewer[] {
-  throw NOT_IMPLEMENTED();
+export function toRequestedReviewers(nodes: { asCodeOwner?: boolean | null; requestedReviewer: { __typename: string; id?: string; login?: string; slug?: string; name?: string | null; avatarUrl?: string } | null }[] | null | undefined): RequestedReviewer[] {
+  const out: RequestedReviewer[] = [];
+  for (const n of nodes ?? []) {
+    const r = n.requestedReviewer;
+    if (!r) continue;
+    const codeOwner = !!n.asCodeOwner;
+    const base = { id: r.id ?? "", avatarUrl: r.avatarUrl, codeOwner, ...(codeOwner ? { badge: "Code owner" as const } : {}) };
+    if (r.__typename === "User") out.push({ kind: "user", login: r.login ?? "", name: r.name || r.login || "", ...base });
+    else if (r.__typename === "Team") out.push({ kind: "team", login: r.slug ?? "", name: r.name || r.slug || "", ...base });
+    else if (r.__typename === "Bot") out.push({ kind: "bot", login: r.login ?? "", name: reviewerName(r.login ?? ""), ...base });
+  }
+  return out;
+}
+
+function assigneesMutation(inputType: string, field: string, assignableId: string, assigneeIds: string[]): GraphQlRequest {
+  if (!assignableId.trim()) throw new Error("assignableId is required");
+  if (!assigneeIds.length) throw new Error("at least one assignee is required");
+  return {
+    query: `mutation($input: ${inputType}!) { ${field}(input: $input) { assignable { ... on PullRequest{ id assignees(first: 20) { nodes{ id login name avatarUrl } } } } } }`,
+    variables: { input: { assignableId, assigneeIds } },
+  };
 }
 
 /** `mutation($input: AddAssigneesToAssignableInput!) { addAssigneesToAssignable(input: $input) { assignable { ... on PullRequest { id assignees(first: 20) { nodes { id login name avatarUrl } } } } } }`. Input { assignableId, assigneeIds }. Throws "assignableId is required" / "at least one assignee is required". */
-export function addAssigneesMutation(_assignableId: string, _assigneeIds: string[]): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function addAssigneesMutation(assignableId: string, assigneeIds: string[]): GraphQlRequest {
+  return assigneesMutation("AddAssigneesToAssignableInput", "addAssigneesToAssignable", assignableId, assigneeIds);
 }
 
 /** `mutation($input: RemoveAssigneesFromAssignableInput!) { removeAssigneesFromAssignable(input: $input) { assignable { ... on PullRequest { id assignees(first: 20) { nodes { id login name avatarUrl } } } } } }`. Same guards. */
-export function removeAssigneesMutation(_assignableId: string, _assigneeIds: string[]): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function removeAssigneesMutation(assignableId: string, assigneeIds: string[]): GraphQlRequest {
+  return assigneesMutation("RemoveAssigneesFromAssignableInput", "removeAssigneesFromAssignable", assignableId, assigneeIds);
 }

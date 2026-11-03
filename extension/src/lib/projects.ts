@@ -1,12 +1,12 @@
 // Batch 2, Projects (v2) (ED-7). STUBS: the developer implements them.
 //
 // Schema facts (checked live with `gh api graphql`; mutations were run with bogus node ids):
-//  - PullRequest.projectItems(first: Int, includeArchived: Boolean) { nodes { id project { id title url closed } fieldValueByName(name: "Status") { __typename ... on ProjectV2ItemFieldSingleSelectValue { name } } } }.
+//  - PullRequest.projectItems(first: Int, includeArchived: Boolean) { nodes{ id project { id title url closed } fieldValueByName(name: "Status") { __typename ... on ProjectV2ItemFieldSingleSelectValue { name } } } }.
 //    ProjectV2Item has id, project, fieldValueByName, fieldValues, content, isArchived. fieldValueByName returns a union, so a project with no Status field gives null and other field types have no `name`.
 //  - SCOPES: every ProjectV2 field needs the `read:project` scope on a classic token (a GitHub App needs the organisation Projects permission, read for listing and read/write for edits).
 //    Without it GitHub answers INSUFFICIENT_SCOPES per field (seen live), and the whole query fails. That is why projectItemsQuery is separate from prEdit.ts prEditQuery: a viewer without the scope
 //    must still get the rest of the page. The mutations need the `project` scope (seen live). The shapes below passed validation (a wrong field name gives "undefinedField" instead; scope errors appear only for valid queries).
-//  - Organization.projectsV2(query: String, orderBy, minPermissionLevel: ProjectV2PermissionLevel (READ | WRITE | ADMIN), first: Int) { nodes { id title url closed number } } and
+//  - Organization.projectsV2(query: String, orderBy, minPermissionLevel: ProjectV2PermissionLevel (READ | WRITE | ADMIN), first: Int) { nodes{ id title url closed number } } and
 //    Repository.projectsV2(same arguments) "List of projects linked to this repository". `query`: "A project to search for". Organization lookups fail with NOT_FOUND for user-owned repositories,
 //    so org and repository searches are separate requests. minPermissionLevel: WRITE keeps the picker to projects the viewer can add to.
 //  - mutation addProjectV2ItemById(input: { projectId: ID!, contentId: ID! }) payload `item { id }` (contentId is the pull request's node id).
@@ -15,14 +15,21 @@ import type { GraphQlRequest } from "./prQuery";
 
 export const SEARCH_PAGE = 20;
 
-const NOT_IMPLEMENTED = () => new Error("Not implemented");
-
 /**
- * `query($owner: String!, $name: String!, $number: Int!)` over repository(owner: $owner, name: $name) { pullRequest(number: $number) { projectItems(first: 20) { nodes { id project { id title url closed }
+ * `query($owner: String!, $name: String!, $number: Int!)` over repository(owner: $owner, name: $name) { pullRequest(number: $number) { projectItems(first: 20) { nodes{ id project { id title url closed }
  * fieldValueByName(name: "Status") { __typename ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } }. Variables { owner, name, number }.
  */
-export function projectItemsQuery(_p: { owner: string; name: string; number: number }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function projectItemsQuery(p: { owner: string; name: string; number: number }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      projectItems(first: ${SEARCH_PAGE}) { nodes{ id project { id title url closed } fieldValueByName(name: "Status") { __typename ... on ProjectV2ItemFieldSingleSelectValue { name } } } }
+    }
+  }
+}`,
+    variables: { owner: p.owner, name: p.name, number: p.number },
+  };
 }
 
 export interface ProjectRow {
@@ -38,22 +45,45 @@ export interface ProjectRow {
 
 /** projectItems nodes as rows, in order. Null nodes and items whose project is null (not visible to the viewer) are dropped. Missing input gives []. */
 export function toProjectRows(
-  _nodes:
+  nodes:
     | ({ id: string; project: { id: string; title: string; url: string; closed: boolean } | null; fieldValueByName?: { __typename?: string; name?: string } | null } | null)[]
     | null
     | undefined,
 ): ProjectRow[] {
-  throw NOT_IMPLEMENTED();
+  const rows: ProjectRow[] = [];
+  for (const n of nodes ?? []) {
+    if (!n?.project) continue;
+    const f = n.fieldValueByName;
+    rows.push({
+      itemId: n.id,
+      projectId: n.project.id,
+      title: n.project.title,
+      url: n.project.url,
+      status: f?.__typename === "ProjectV2ItemFieldSingleSelectValue" && typeof f.name === "string" ? f.name : null,
+      closed: n.project.closed,
+    });
+  }
+  return rows;
 }
 
-/** `query($owner: String!, $name: String!, $query: String)` over repository(owner: $owner, name: $name) { projectsV2(query: $query, first: 20, minPermissionLevel: WRITE) { nodes { id title url closed number } } }. Query trimmed, null when blank. */
-export function repoProjectsQuery(_p: { owner: string; name: string; query: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+/** `query($owner: String!, $name: String!, $query: String)` over repository(owner: $owner, name: $name) { projectsV2(query: $query, first: 20, minPermissionLevel: WRITE) { nodes{ id title url closed number } } }. Query trimmed, null when blank. */
+export function repoProjectsQuery(p: { owner: string; name: string; query: string }): GraphQlRequest {
+  return {
+    query: `query($owner: String!, $name: String!, $query: String) {
+  repository(owner: $owner, name: $name) { projectsV2(query: $query, first: ${SEARCH_PAGE}, minPermissionLevel: WRITE) { nodes{ id title url closed number } } }
+}`,
+    variables: { owner: p.owner, name: p.name, query: p.query.trim() || null },
+  };
 }
 
-/** `query($org: String!, $query: String)` over organization(login: $org) { projectsV2(query: $query, first: 20, minPermissionLevel: WRITE) { nodes { id title url closed number } } }. Query trimmed, null when blank. */
-export function orgProjectsQuery(_p: { org: string; query: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+/** `query($org: String!, $query: String)` over organization(login: $org) { projectsV2(query: $query, first: 20, minPermissionLevel: WRITE) { nodes{ id title url closed number } } }. Query trimmed, null when blank. */
+export function orgProjectsQuery(p: { org: string; query: string }): GraphQlRequest {
+  return {
+    query: `query($org: String!, $query: String) {
+  organization(login: $org) { projectsV2(query: $query, first: ${SEARCH_PAGE}, minPermissionLevel: WRITE) { nodes{ id title url closed number } } }
+}`,
+    variables: { org: p.org, query: p.query.trim() || null },
+  };
 }
 
 export interface ProjectOption {
@@ -67,19 +97,30 @@ export interface ProjectOption {
  * Closed projects, projects whose id is in `attachedProjectIds`, and null nodes are left out.
  */
 export function mergeProjectOptions(
-  _repoNodes: ({ id: string; title: string; url: string; closed: boolean } | null)[] | null | undefined,
-  _orgNodes: ({ id: string; title: string; url: string; closed: boolean } | null)[] | null | undefined,
-  _attachedProjectIds: string[],
+  repoNodes: ({ id: string; title: string; url: string; closed: boolean } | null)[] | null | undefined,
+  orgNodes: ({ id: string; title: string; url: string; closed: boolean } | null)[] | null | undefined,
+  attachedProjectIds: string[],
 ): ProjectOption[] {
-  throw NOT_IMPLEMENTED();
+  const skip = new Set(attachedProjectIds);
+  const out: ProjectOption[] = [];
+  for (const n of [...(repoNodes ?? []), ...(orgNodes ?? [])]) {
+    if (!n || n.closed || skip.has(n.id)) continue;
+    skip.add(n.id); // also dedupes a project found by both searches
+    out.push({ id: n.id, title: n.title, url: n.url });
+  }
+  return out;
 }
 
-/** `mutation($input: AddProjectV2ItemByIdInput!) { addProjectV2ItemById(input: $input) { item { id } } }`. Input { projectId, contentId }. Throws "projectId is required" / "contentId is required" when blank. */
-export function addProjectItemMutation(_p: { projectId: string; contentId: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+/** `mutation($input: AddProjectV2ItemByIdInput!) { addProjectV2ItemById(input: $input) { item{ id } } }`. Input { projectId, contentId }. Throws "projectId is required" / "contentId is required" when blank. */
+export function addProjectItemMutation(p: { projectId: string; contentId: string }): GraphQlRequest {
+  if (!p.projectId.trim()) throw new Error("projectId is required");
+  if (!p.contentId.trim()) throw new Error("contentId is required");
+  return { query: `mutation($input: AddProjectV2ItemByIdInput!) { addProjectV2ItemById(input: $input) { item{ id } } }`, variables: { input: { projectId: p.projectId, contentId: p.contentId } } };
 }
 
 /** `mutation($input: DeleteProjectV2ItemInput!) { deleteProjectV2Item(input: $input) { deletedItemId } }`. Input { projectId, itemId }. Throws "projectId is required" / "itemId is required" when blank. */
-export function deleteProjectItemMutation(_p: { projectId: string; itemId: string }): GraphQlRequest {
-  throw NOT_IMPLEMENTED();
+export function deleteProjectItemMutation(p: { projectId: string; itemId: string }): GraphQlRequest {
+  if (!p.projectId.trim()) throw new Error("projectId is required");
+  if (!p.itemId.trim()) throw new Error("itemId is required");
+  return { query: `mutation($input: DeleteProjectV2ItemInput!) { deleteProjectV2Item(input: $input) { deletedItemId } }`, variables: { input: { projectId: p.projectId, itemId: p.itemId } } };
 }
