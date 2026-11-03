@@ -59,7 +59,10 @@ async function token(force = false): Promise<string> {
 async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url.startsWith("http") ? url : API + url, { method, body, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
+    // The raw and html representations of a file share one ETag (the blob sha). Through the HTTP cache, an html request after a
+    // raw one revalidated, got 304 and was handed the cached raw text, so "Rendered" markdown showed source (seen live in 0.28.0).
+    const cache: RequestCache = /\.(raw|html)\b/.test(accept) ? "no-store" : "default";
+    res = await fetch(url.startsWith("http") ? url : API + url, { method, body, cache, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
   } catch (e) {
     if (e instanceof GhError) throw e;
     throw new GhError("other");
