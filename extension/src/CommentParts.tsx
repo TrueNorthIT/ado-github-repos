@@ -1,14 +1,13 @@
 // The parts of a comment beyond its text (CM-2, CM-4 to CM-7): the pending pill, Edited label and history, the ⋯ menu, collapsed (hidden) comments,
 // the edit box, suggested changes with Apply and Add to batch, and the reaction bar. State is in feedStore.ts; the rules are in lib/*.
 import * as React from "react";
-import { Ago } from "azure-devops-ui/Ago";
 import { Button } from "azure-devops-ui/Button";
 import { Dialog } from "azure-devops-ui/Dialog";
 import { MenuButton, MoreButton, MenuItemType, type IMenuItem } from "azure-devops-ui/Menu";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { CommentBox } from "./CommentBox";
 import { graphql } from "./githubBrowse";
 import type { FeedComment, ThreadItem } from "./lib/feedModel";
@@ -51,7 +50,7 @@ function HistoryDialog({ id, close }: { id: string; close: () => void }) {
             <li key={i} className="gh-history-item">
               <div className="gh-history-head flex-row flex-center">
                 <span className="font-weight-semibold">{r.editor}</span>
-                <span className="secondary-text">{r.isCreation ? "wrote this" : "edited this"} <Ago date={r.editedAt} format={AgoFormat.Extended} /></span>
+                <span className="secondary-text">{r.isCreation ? "wrote this" : "edited this"} <RelDate date={r.editedAt} /></span>
                 {r.isCreation && <Pill size={PillSize.compact} variant={PillVariant.outlined}>Original</Pill>}
               </div>
               {r.deleted || r.body === null ? <span className="secondary-text">GitHub removed this version's content.</span> : <pre className="gh-history-body">{r.body}</pre>}

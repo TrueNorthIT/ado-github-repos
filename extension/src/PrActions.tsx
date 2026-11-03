@@ -1,5 +1,7 @@
 // Acting on a pull request (batch 1): the header's Approve and Complete split buttons, the ⋯ items, the Complete panel,
 // the vote and target-branch dialogs, and the policies card. State lives in actionStore.ts; this file only draws it.
+import { conflictState } from "./lib/conflicts";
+import { githubDevPrUrl } from "./lib/githubDev";
 import * as React from "react";
 import { ContentSize } from "azure-devops-ui/Callout";
 import { Card } from "azure-devops-ui/Card";
@@ -133,6 +135,7 @@ export function prCommandItems(store: ActionStore, url: string, open: any, rest:
     { ...open, important: false },
     // GitHub refuses updateSubscription for GitHub App user tokens (notifications are not an app permission), so send the user to GitHub.
     { id: "follow", important: false, text: "Follow on GitHub", iconProps: { iconName: "Ringer" }, onActivate: () => void window.open(url, "_blank", "noopener") },
+    { id: "githubDev", important: false, text: "Open in github.dev", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(githubDevPrUrl(store.repo, store.number), "_blank", "noopener") },
     { id: "target", important: false, text: "Change target branch", iconProps: { iconName: "BranchCompare" }, disabled: !v || store.busy || !v.pr.viewerCanUpdate || v.pr.state !== "OPEN", onActivate: () => setUi({ target: true }) },
     ...rest.map((c) => ({ ...c, important: false })),
   ];
@@ -364,6 +367,9 @@ function UpdateBranchButton({ store, methods }: { store: ActionStore; methods: N
 function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }) {
   const href = safeUrl(r.url);
   const info = r.kind === "check" ? store.view?.checkInfo.get(r.title) : undefined;
+  // VW-7: GitHub gives no list of conflicting files, only its conflict editor, which is offered to someone who can update the pull request.
+  const pr = store.view?.pr;
+  const conflictUrl = r.kind === "conflicts" && pr ? conflictState({ mergeStateStatus: pr.mergeStateStatus, state: pr.state, viewerCanUpdate: pr.viewerCanUpdate }, store.repo, store.number).editorUrl : null;
   return (
     <li className="gh-policy flex-row flex-center">
       <Status {...STATUS_OF[r.state]} size={StatusSize.m} ariaLabel={{ success: "Passed", failure: "Failed", pending: "Waiting", neutral: "Skipped" }[r.state]} />
@@ -373,6 +379,7 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
       {r.detail && <span className="gh-policy-detail secondary-text body-s text-ellipsis">{r.detail}</span>}
       {href && <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>}
       {info && (info.rerun.canRerun || r.state === "failure") && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
+      {r.kind === "conflicts" && r.state === "failure" && conflictUrl && <Link className="gh-policy-link body-s" href={conflictUrl} target="_blank" rel="noopener noreferrer">Resolve conflicts on GitHub</Link>}
       {r.action?.kind === "updateBranch" && <UpdateBranchButton store={store} methods={r.action.methods} />}
     </li>
   );

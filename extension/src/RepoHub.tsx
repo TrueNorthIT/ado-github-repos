@@ -8,10 +8,9 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { VssPersona } from "azure-devops-ui/VssPersona";
-import { Time } from "azure-devops-ui/Time";
 import { BrowseState } from "./lib/browseState";
 import { filterBranches } from "./lib/branchSwitch";
-import { commitDateText } from "./lib/dateText";
+import { RelDate } from "./RelDate";
 import type { CheckStatus, Person } from "./lib/commitsQuery";
 import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
@@ -124,7 +123,7 @@ export const PersonLine = ({ person, size = "extra-extra-small", className = "" 
 
 /** "Today at 14:18", "6 Nov 2025 at 13:43": native's commit date (a time.bolt-time-item). */
 export const CommitTime = ({ date }: { date: Date }) => (
-  <Time className="gh-commit-date" dateTime={date} getTimeString={() => commitDateText(date)} getNextInterval={() => 60_000} />
+  <RelDate className="gh-commit-date" date={date} />
 );
 
 const STATUS: Record<CheckStatus, { s: (typeof Statuses)[keyof typeof Statuses]; text: string; cls: string }> = {

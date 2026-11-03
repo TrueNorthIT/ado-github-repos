@@ -1,8 +1,7 @@
 // The "Branches" hub (B-1 to B-5): branches in folders with their head commit, behind and ahead of the default branch,
 // favourites, and create / delete. Behind and ahead load lazily, a few compares at a time.
 import * as React from "react";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Header, TitleSize } from "azure-devops-ui/Header";
@@ -125,7 +124,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
       ),
     },
     { id: "author", name: "Author", width: 150, render: ({ item: b }) => <PersonLine person={b.author} /> },
-    { id: "date", name: "Authored Date", width: 130, render: ({ item: b }) => <Ago date={b.authoredDate} format={AgoFormat.Compact} /> },
+    { id: "date", name: "Authored Date", width: 130, render: ({ item: b }) => <RelDate date={b.authoredDate} /> },
     { id: "ba", name: "Behind | Ahead", width: 120, render: ({ item: b }) => (b.isDefault ? null : <BehindAhead value={compares[b.name]} max={max} />) },
     { id: "status", name: "Status", width: 110, render: ({ item: b }) => <CheckStatusCell status={b.status} /> },
     { id: "pr", name: "Pull Request", width: 100, render: ({ item: b }) => <PrCell number={b.prNumber} href={b.prNumber ? href("prs", { repo, view: "prs", pr: b.prNumber }) : undefined} onOpen={(n) => void openInHub("prs", { repo, view: "prs", pr: n })()} /> },

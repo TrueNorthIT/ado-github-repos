@@ -17,7 +17,7 @@ import { defaultParentOption, parentOptions } from "./lib/commitDetail";
 import type { PrFile } from "./lib/prFiles";
 import { githubUrl } from "./lib/githubUrl";
 import { commitUrl } from "./lib/commits";
-import { shortDate } from "./lib/dateText";
+import { RelDate } from "./RelDate";
 import { ErrorView, hubClick } from "./Browser";
 import { FilesView } from "./PrFiles";
 import { RepoIcon } from "./fileIcons";
@@ -52,7 +52,7 @@ function Meta({ d, repo, branch, branchHref, openBranch }: { d: CommitDetail; re
         <span className="monospaced-xs secondary-text gh-commit-sha">{d.shortSha}</span>
         <ClipboardButton className="gh-pr-copy" getContent={() => d.sha} ariaLabel={`Copy commit SHA ${d.sha}`} showCopiedTooltip subtle />
         <PersonLine person={d.author} size="extra-extra-small" className="font-weight-semibold" />
-        <span className="secondary-text">committed {shortDate(d.committedDate)}</span>
+        <span className="secondary-text">committed <RelDate date={d.committedDate} /></span>
         {branch && <Link className="gh-pr-branch-link" href={branchHref} onClick={openBranch}>{branch}</Link>}
         <CheckStatusCell status={d.status} />
       </span>
@@ -77,8 +77,8 @@ function Details({ d, repo, parentHref, openParent }: { d: CommitDetail; repo: s
       <Card className="gh-pr-card" contentProps={{ contentPadding: true }}>
         <div className="gh-detail flex-column">
           <Row label="Message"><pre className="gh-detail-message">{d.message}</pre></Row>
-          <Row label="Author"><PersonLine person={d.author} /> <span className="secondary-text">on {d.authoredDate.toLocaleString()}</span></Row>
-          <Row label="Committer"><PersonLine person={d.committer} /> <span className="secondary-text">on {d.committedDate.toLocaleString()}</span></Row>
+          <Row label="Author"><PersonLine person={d.author} /> <span className="secondary-text"><RelDate date={d.authoredDate} /></span></Row>
+          <Row label="Committer"><PersonLine person={d.committer} /> <span className="secondary-text"><RelDate date={d.committedDate} /></span></Row>
           <Row label={d.parents.length === 1 ? "Parent" : "Parents"}>
             {d.parents.length ? (
               d.parents.map((p) => (

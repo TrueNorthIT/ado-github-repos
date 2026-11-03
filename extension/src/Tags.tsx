@@ -1,7 +1,6 @@
 // The "Tags" hub (T-1, T-2): tags in folders, newest first; create (lightweight or annotated) and delete.
 import * as React from "react";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { Card } from "azure-devops-ui/Card";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
@@ -61,7 +60,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
       render: ({ item: t }) => <Link className="gh-sha-link monospaced-xs" href={href("commits", { repo, commit: t.sha })} onClick={openInHub("commits", { repo, commit: t.sha })} ariaLabel={`Commit ${t.shortSha}`}>{t.shortSha}</Link>,
     },
     { id: "author", name: "Tagger / Author", width: 170, render: ({ item: t }) => <PersonLine person={t.author} /> },
-    { id: "date", name: "Date", width: 120, render: ({ item: t }) => <Ago date={t.date} format={AgoFormat.Compact} /> },
+    { id: "date", name: "Date", width: 120, render: ({ item: t }) => <RelDate date={t.date} /> },
     { id: "message", name: "Message", width: -60, render: ({ item: t }) => <span className="text-ellipsis secondary-text" title={t.message}>{t.message?.split("\n")[0] ?? ""}</span> },
     {
       id: "more", name: "", width: 40,

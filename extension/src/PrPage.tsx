@@ -12,8 +12,7 @@ import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { Table, ITableColumn, TwoLineTableCell } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
 import type { ChecksSummary, Mergeable, PrPageData, PrReviewer, PrStatus, ReviewState } from "./lib/prModel";
@@ -29,6 +28,9 @@ import { openInRepos, useRepoHref } from "./repoHref";
 import { watchTheme } from "./theme";
 import { ErrorView, Markdown } from "./Browser";
 import { PrFilesTab } from "./PrFiles";
+import { PrUpdatesTab } from "./PrUpdates";
+import { recordPrViewed } from "./prefs";
+import { viewedKey } from "./lib/lastViewed";
 import { ActivityFeed } from "./Feed";
 import { feedStore, useFeed } from "./feedStore";
 import { ReactionBar } from "./CommentParts";
@@ -44,6 +46,7 @@ import "./browser.css";
 const PAGES: { id: PrPageId; name: string }[] = [
   { id: "overview", name: "Overview" },
   { id: "files", name: "Files" },
+  { id: "updates", name: "Updates" },
   { id: "commits", name: "Commits" },
 ];
 
@@ -396,7 +399,7 @@ function Deployments({ repo, number, version }: { repo: string; number: number; 
               <span className="body-m font-weight-semibold text-ellipsis">{r.environment}</span>
               {r.url && /^https?:\/\//i.test(r.url) && <Link className="body-s text-ellipsis" href={r.url} target="_blank" rel="noopener noreferrer" ariaLabel={`Open ${r.environment} deployment: ${r.url}`}>{hostOf(r.url)}</Link>}
             </div>
-            <span className="secondary-text body-s"><Ago date={new Date(r.updatedAt)} format={AgoFormat.Compact} /></span>
+            <span className="secondary-text body-s"><RelDate date={r.updatedAt} /></span>
           </li>
         ))}
       </ul>
@@ -446,7 +449,7 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
               <Link className="monospaced-xs secondary-text" href={commitUrl(repo, c.sha)} target="_blank" rel="noopener noreferrer" subtle ariaLabel={`Commit ${c.shortSha} on GitHub`}>{c.shortSha}</Link>
               <VssPersona imageUrl={c.avatar} displayName={c.author} size="extra-small" suppressPersonaCard showInitialsOnImageError />
               <span>{c.author}</span>
-              <Ago date={c.date} format={AgoFormat.Extended} />
+              <RelDate date={c.date} />
               <SignaturePill signature={c.signature} />
             </span>
           }
@@ -516,6 +519,8 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
     return () => offs.forEach((off) => off());
   }, [repo, n]);
 
+  // VW-9: opening a pull request notes the time, so the list can mark it again once it changes.
+  React.useEffect(() => { if (load.t === "ready") void recordPrViewed(viewedKey(repo, n)); }, [repo, n, load.t === "ready"]); // eslint-disable-line react-hooks/exhaustive-deps
   const actions = useActions(repo, n);
   const edit = useEdit(repo, n, actions.version);
   const [ui, setUi] = React.useState<Ui>({});
@@ -557,6 +562,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
       )}
       {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
+      {pr && page === "updates" && <PrUpdatesTab repo={repo} number={n} pr={pr} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </>
   );

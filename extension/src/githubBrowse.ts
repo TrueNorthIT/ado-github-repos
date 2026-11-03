@@ -4,6 +4,10 @@ import { tokenAction } from "./lib/tokens";
 import { buildQueries, mapResponse, type CommitInfo } from "./lib/commits";
 import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitTree, type TreeEntry } from "./lib/tree";
 import { detailQuery, listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
+import { hasListFilters, listFilterQuery, type ListFilters } from "./lib/prListFilters";
+import { toUpdates, updatesQuery, type PrUpdate } from "./lib/prUpdates";
+import { mergeViewed, markViewedMutation, toViewedPage, unmarkViewedMutation, viewedFilesQuery, type ViewedPage, type ViewedState } from "./lib/viewedFiles";
+import { rangeQuery, toRangeContext, type RangeContext, type RangePrNode } from "./lib/commitRange";
 import { toListRow, toPrPage, type PrListNode, type PrListRow, type PrPageData } from "./lib/prModel";
 import { fromRestFile, type PrFile } from "./lib/prFiles";
 import { actionsDetailQuery, branchesQuery, mergeMessageQuery, type PrActionsNode } from "./lib/actionsQuery";
@@ -235,13 +239,14 @@ const prLists = new Map<string, { at: number; p: Promise<PrListResult> }>();
  * One tab of the PR list for "owner/name". `filter` is the keyword (a number jumps to that PR), `cursor` the previous page's endCursor.
  * Cached 30 s per repo, tab, filter and cursor, so changing tab or filter never shows another key's rows; failures are not cached.
  */
-export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | null = null): Promise<PrListResult> {
-  const key = JSON.stringify([repo, tab, tab === "mine" ? "" : filter.trim(), tab === "mine" ? null : cursor]);
+export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | null = null, filters?: ListFilters): Promise<PrListResult> {
+  const withFilters = tab !== "mine" && !!filters && hasListFilters(filters);
+  const key = JSON.stringify([repo, tab, tab === "mine" ? "" : filter.trim(), tab === "mine" ? null : cursor, withFilters ? filters : null]);
   const hit = prLists.get(key);
   if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
   const [owner, name] = repo.split("/");
   const p = (async (): Promise<PrListResult> => {
-    const reqs = listQuery(tab, { owner, name, filter, after: cursor ?? undefined });
+    const reqs = withFilters ? [listFilterQuery(tab as Exclude<PrTab, "mine">, { owner, name, filters: { ...filters, text: filters!.text ?? filter }, after: cursor ?? undefined })] : listQuery(tab, { owner, name, filter, after: cursor ?? undefined });
     const bodies = await Promise.all(reqs.map(graphql));
     const now = Date.now();
     if (tab === "mine") {
@@ -297,7 +302,80 @@ export const getPrFiles = (repo: string, number: number) =>
   });
 
 /** Drops the cached PR page and files (Try again). */
-export const invalidatePr = () => (prPages.clear(), prFiles.clear());
+export const invalidatePr = () => (prPages.clear(), prFiles.clear(), updateLists.clear(), rangeContexts.clear());
+
+// ---------- batch 4: updates, viewed files, ranges ----------
+
+const MAX_PAGES = 20;
+const updateLists = new Map<string, { at: number; p: Promise<PrUpdate[]> }>();
+const rangeContexts = new Map<string, { at: number; p: Promise<RangeContext> }>();
+
+/** VW-1: the PR's updates (pushes), oldest first, from the timeline's commits and force pushes. Cached 30 s. */
+export const getUpdates = (repo: string, number: number) =>
+  ttl(updateLists, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const timeline: any[] = [];
+    let base: string | null = null;
+    for (let after: string | undefined, i = 0; i < MAX_PAGES; i++) {
+      const pr = (await graphql(updatesQuery({ owner, name, number, after }))).data?.repository?.pullRequest;
+      if (!pr) throw new GhError("access", 404);
+      base = pr.baseRefOid ?? base;
+      timeline.push(...(pr.timelineItems?.nodes ?? []));
+      if (!pr.timelineItems?.pageInfo?.hasNextPage) break;
+      after = pr.timelineItems.pageInfo.endCursor;
+    }
+    return toUpdates(timeline, base);
+  });
+
+/** VW-3: every changed file's viewed state, and the PR's node id the mutations need. */
+export async function getViewedStates(repo: string, number: number): Promise<{ pullRequestId: string; states: Record<string, ViewedState> }> {
+  const [owner, name] = repo.split("/");
+  const pages: ViewedPage[] = [];
+  for (let after: string | undefined, i = 0; i < MAX_PAGES; i++) {
+    const page = toViewedPage(await graphql(viewedFilesQuery({ owner, name, number, after })));
+    pages.push(page);
+    if (!page.hasNextPage || !page.cursor) break;
+    after = page.cursor;
+  }
+  return { pullRequestId: pages[0]?.pullRequestId ?? "", states: mergeViewed(pages) };
+}
+
+export const setFileViewed = (pullRequestId: string, path: string, viewed: boolean) => mutate((viewed ? markViewedMutation : unmarkViewedMutation)(pullRequestId, path));
+
+/** VW-6: base, head, every commit with its parents, and the viewer's last review. Cached 30 s. */
+export const getRangeContext = (repo: string, number: number) =>
+  ttl(rangeContexts, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const pages: RangePrNode[] = [];
+    for (let after: string | undefined, i = 0; i < MAX_PAGES; i++) {
+      const pr = (await graphql(rangeQuery({ owner, name, number, after }))).data?.repository?.pullRequest;
+      if (!pr) throw new GhError("access", 404);
+      pages.push(pr);
+      if (!pr.commits?.pageInfo?.hasNextPage) break;
+      after = pr.commits.pageInfo.endCursor;
+    }
+    return toRangeContext(pages);
+  });
+
+/** VW-6/VW-1: the changed files of a compare (or single-commit) REST path, 100 a page up to GitHub's cap, with each file's patch. */
+export const getRangeFiles = (path: string): Promise<PrFile[]> =>
+  refTtl(`range|${path}`, async () => {
+    const out: PrFile[] = [];
+    for (let page = 1; out.length < MAX_DIFF_FILES; page++) {
+      const j = await json<{ files?: Parameters<typeof fromRestFile>[0][] }>(`${path}?per_page=100&page=${page}`);
+      const files = j.files ?? [];
+      out.push(...files.map(fromRestFile));
+      if (files.length < 100) break;
+    }
+    return out;
+  });
+
+/** VW-11: a file's bytes from a contents-API path (richDiff.imageSources) as a Blob; the caller owns, and must revoke, any object URL made from it. */
+export async function getBlobAt(restPath: string, mimeFrom: string): Promise<Blob> {
+  const blob = await (await request(restPath, "application/vnd.github.raw")).blob();
+  const mime = IMAGE_MIME[mimeFrom.slice(mimeFrom.lastIndexOf(".") + 1).toLowerCase()];
+  return mime ? new Blob([blob], { type: mime }) : blob;
+}
 
 // ---------- activity feed (AF-7) ----------
 
