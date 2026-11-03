@@ -87,10 +87,11 @@ async function request(url: string, accept: string, retry = true, body?: string,
   }
   if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
     const reset = Number(res.headers.get("x-ratelimit-reset"));
-    throw new GhError("rateLimit", 403, reset ? new Date(reset * 1000) : undefined);
+    throw new GhError("rateLimit", 403, reset ? new Date(reset * 1000) : undefined, undefined, await bodyMessage(res));
   }
-  if (res.status === 403 || res.status === 404) throw new GhError("access", res.status);
-  throw new GhError("other", res.status);
+  const apiMessage = await bodyMessage(res);
+  if (res.status === 403 || res.status === 404) throw new GhError("access", res.status, undefined, undefined, apiMessage);
+  throw new GhError("other", res.status, undefined, undefined, apiMessage);
 }
 
 /** A REST call described as data (lib/restRequest.ts). GitHub answers a re-run with 201 and no body, so nothing is parsed. */

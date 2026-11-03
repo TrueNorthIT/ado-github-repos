@@ -10,6 +10,7 @@ import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from ".
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rangeData, renderMd, searchTerms, setViewed, sideOfOid, updatesData, viewedData } from "./fixtures/b4";
 import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
+import { securityFile, securityMarkdown, securityRest } from "./fixtures/security";
 import { refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -149,6 +150,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
   if (cmp && repo.fullName.toLowerCase() === PR_REPO) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
+  const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
+  if (secAnswer) return secAnswer;
   const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
   if (refsAnswer) return refsAnswer;
   const reviewers = /^\/pulls\/(\d+)\/requested_reviewers$/.exec(rest);
@@ -163,6 +166,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
     const cpath = c[1].split("/").map(decodeURIComponent).join("/");
     if (cpath === "docs/img/logo.png" && /^(ba5e|4ead)/.test(ref)) return new Response(logoBytes(ref), { headers: { "Content-Type": "application/octet-stream" } });
     // Commit oids named by the Updates and "Show changes from" fixtures hold the base or the head text of the PR's files.
+    const secFile = securityFile(ref, cpath);
+    if (secFile !== undefined) return new Response(secFile, { headers: { "Content-Type": "application/octet-stream" } });
     const asSha = isUpdateOid(ref) ? sideOfOid(ref) + ref.slice(4) : ref;
     const fixture = contentAt(isUpdateOid(ref) ? sideOfOid(ref) + "0".repeat(33) + "200" : asSha, cpath);
     if (fixture !== undefined && accept.includes("vnd.github.html") && /\.md$/.test(cpath)) return new Response(renderMd(fixture), { headers: { "Content-Type": "text/html" } });
@@ -183,6 +188,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
 async function handle(u: URL, init: RequestInit | undefined, sc: string): Promise<Response | undefined> {
   const accept = new Headers(init?.headers).get("Accept") ?? "";
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
+  if (u.hostname === "api.github.com" && u.pathname === "/markdown" && init?.method === "POST") return securityMarkdown(String(init.body ?? ""));
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
   const wiStates = /\/_apis\/wit\/workitemtypes\/([^/]+)\/states$/.exec(u.pathname);
