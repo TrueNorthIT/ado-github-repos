@@ -22,6 +22,7 @@ import { BranchBar, CheckStatusCell, CommitTime, HubProps, Loading, PersonLine, 
 import { findCommit, invalidateRefs, listCommits } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
+import { SignaturePill } from "./Signature";
 import "./browser.css";
 
 // ---------- the table (also the Pushes page's expanded commits) ----------
@@ -74,6 +75,7 @@ function columns(p: CommitTableProps): ITableColumn<CommitRow>[] {
               <span className="monospaced-xs secondary-text gh-commit-sha">{row.shortSha}</span>
               <PersonLine person={row.author} className="secondary-text body-s" />
               <span className="secondary-text body-s"><CommitTime date={row.date} /></span>
+              <SignaturePill signature={row.signature} />
             </span>
           }
         />

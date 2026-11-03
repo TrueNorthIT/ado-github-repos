@@ -4,7 +4,7 @@ import * as ReactDOM from "react-dom";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Link } from "azure-devops-ui/Link";
-import { Pill, PillSize } from "azure-devops-ui/Pill";
+import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { ListSelection } from "azure-devops-ui/List";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
@@ -15,9 +15,11 @@ import { buildFileTree, type PrFile, type PrTreeNode } from "./lib/prFiles";
 import { classifyFile, monacoLanguage } from "./lib/fileKind";
 import { ErrorView, loadMonaco } from "./Browser";
 import { FileIcon } from "./fileIcons";
-import { getPrFiles, getRaw, invalidatePr } from "./githubBrowse";
+import { getAnnotations, getPrFiles, getRaw, invalidatePr } from "./githubBrowse";
 import { openInRepos, useRepoHref } from "./repoHref";
 import { InlineThreads } from "./Feed";
+import { AnnotationZone } from "./AnnotationZone";
+import { mapAnnotations, type AnnotationAnchor } from "./lib/annotations";
 import { useFeed } from "./feedStore";
 import { threadsByFile, type InlineAnchor } from "./lib/inlineThreads";
 import type { ThreadItem } from "./lib/feedModel";
@@ -30,6 +32,15 @@ const MAX_BYTES = 1048576;
 const NO_ANCHORS: InlineAnchor[] = [];
 const NO_COUNTS = new Map<string, number>();
 const NO_THREADS = new Map<string, InlineAnchor[]>();
+
+/** CI-1: the head commit's check annotations placed on the PR's files. `urls` maps a check name to its details page. */
+export interface AnnotationsInfo {
+  byFile: Map<string, AnnotationAnchor[]>;
+  urls: Map<string, string>;
+}
+const NO_ANNOTATIONS: AnnotationAnchor[] = [];
+const NO_ANN_COUNTS = new Map<string, number>();
+const NO_URLS = new Map<string, string>();
 
 /** What a diff needs of its source: the pull request, or a commit against one parent (no base for an initial commit). */
 export interface DiffCtx {
@@ -81,7 +92,7 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
 
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, sideBySide = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; sideBySide?: boolean }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -145,8 +156,9 @@ export function DiffBody({ file, repo, pr, dark, anchors, sideBySide = false }: 
 
   // Review threads go under their lines as view zones (AF-6). Created when the editor mounts, and again only when the set of anchors changes.
   const anchorKey = JSON.stringify(anchors);
+  const annotationKey = JSON.stringify(annotations);
   React.useEffect(() => {
-    if (!target || !anchors.length) return;
+    if (!target || (!anchors.length && !annotations.length)) return;
     let dead = false;
     let undo: (() => void) | undefined;
     const whole = body.t === "diff" ? body.whole : undefined;
@@ -162,12 +174,22 @@ export function DiffBody({ file, repo, pr, dark, anchors, sideBySide = false }: 
           nodes.push(node);
           return { side: a.side, line: a.line, node };
         });
+      // Annotations describe the head commit, so they sit on the RIGHT side, added after the threads so they follow them on a shared line.
+      if (whole !== "removed") {
+        for (const a of annotations) {
+          const node = document.createElement("div");
+          node.className = "gh-zone";
+          ReactDOM.render(<AnnotationZone anchor={a} urls={annotationUrls} />, node);
+          nodes.push(node);
+          plans.push({ side: "RIGHT", line: a.line, node });
+        }
+      }
       const remove = m.placeZones(target, plans);
       undo = () => { nodes.forEach((n) => ReactDOM.unmountComponentAtNode(n)); remove(); };
     });
     return () => { dead = true; undo?.(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey stands for anchors
-  }, [target, anchorKey, repo, pr.number, pr.baseRef]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey and annotationKey stand for anchors and annotations
+  }, [target, anchorKey, annotationKey, repo, pr.number, pr.baseRef]);
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
   // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
   React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
@@ -184,7 +206,13 @@ export function DiffBody({ file, repo, pr, dark, anchors, sideBySide = false }: 
 
 // ---------- a file's card ----------
 
-export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, sideBySide }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; sideBySide?: boolean }) {
+const annotationTotal = (anchors: AnnotationAnchor[]) => anchors.reduce((n, a) => n + a.annotations.length, 0);
+const annotationLabel = (n: number) => `${n} check ${n === 1 ? "annotation" : "annotations"}`;
+function AnnotationBadge({ count }: { count: number }) {
+  return count ? <Pill className="gh-annotation-count" size={PillSize.compact} ariaLabel={annotationLabel(count)}>{annotationLabel(count)}</Pill> : null;
+}
+
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean }) {
   const href = useRepoHref();
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const view = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
@@ -203,6 +231,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, sid
             <div className="flex-row flex-baseline">
               <span className="gh-pr-file-name body-m">{name}</span>
               <span className="gh-pr-stat body-s"><span className="gh-pr-del">-{file.deletions}</span><span className="gh-pr-add">+{file.additions}</span></span>
+              <AnnotationBadge count={annotationTotal(annotations)} />
             </div>
             <span className="secondary-text body-s text-ellipsis">/{file.path}{file.previousPath ? ` (renamed from /${file.previousPath})` : ""}</span>
           </div>
@@ -210,7 +239,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, sid
         </div>
       )}
     >
-      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} sideBySide={sideBySide} />
+      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} />
     </Card>
   );
 }
@@ -220,7 +249,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, sid
 const toItem = (n: PrTreeNode): ITreeItem<PrTreeNode> =>
   n.kind === "folder" ? { id: n.path, data: n, expanded: true, childItems: n.children.map(toItem) } : { id: n.path, data: n };
 
-export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS }: { nodes: PrTreeNode[]; selected?: string; select: (path: string) => void; threadCounts?: Map<string, number> }) {
+export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS, annotationCounts = NO_ANN_COUNTS }: { nodes: PrTreeNode[]; selected?: string; select: (path: string) => void; threadCounts?: Map<string, number>; annotationCounts?: Map<string, number> }) {
   const provider = React.useMemo(() => new TreeItemProvider<PrTreeNode>(nodes.map(toItem)), [nodes]);
   const selection = React.useMemo(() => new ListSelection({ selectOnFocus: false }), []);
   const current = React.useRef(selected);
@@ -244,16 +273,17 @@ export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS }: 
               <span className="gh-entry-icon"><FileIcon name={n.name} kind={n.kind} /></span>
               <Link className="bolt-table-link text-ellipsis" subtle removeUnderline role="presentation" excludeTabStop>{n.name}</Link>
               {n.kind === "file" && threadCounts.has(n.path) && <Pill className="gh-tree-count" size={PillSize.compact} ariaLabel={`${threadCounts.get(n.path)} comment ${threadCounts.get(n.path) === 1 ? "thread" : "threads"}`}>{threadCounts.get(n.path)}</Pill>}
+              {n.kind === "file" && annotationCounts.has(n.path) && <Pill className="gh-tree-count" size={PillSize.compact} variant={PillVariant.outlined} ariaLabel={annotationLabel(annotationCounts.get(n.path)!)}>{annotationCounts.get(n.path)}</Pill>}
             </ExpandableTreeCell>
           );
         },
       },
     ],
-    [threadCounts]
+    [threadCounts, annotationCounts]
   );
   return (
     <Tree<PrTreeNode>
-      key={[...threadCounts].join()} /* rows are memoised: remount when the badges change */
+      key={[...threadCounts, ...annotationCounts].join() /* rows are memoised: remount when the badges change */}
       ariaLabel="Changed files"
       className="gh-tree"
       columns={columns}
@@ -277,10 +307,15 @@ export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS }: 
 // ---------- the tab ----------
 
 /** The tree and the cards, with `bar` above them. Shared by the PR Files tab and commit detail. `treeHeader` sits above the tree (native's repo name row). */
-export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, bar, treeHeader }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; bar: React.ReactNode; treeHeader?: React.ReactNode }) {
+export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode; treeHeader?: React.ReactNode }) {
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
   const [collapsed, setCollapsed] = React.useState(() => new Set(files.slice(OPEN_CARDS).map((f) => f.path)));
   const els = React.useRef(new Map<string, HTMLElement>());
+  const annotationCounts = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [path, list] of annotations?.byFile ?? []) m.set(path, annotationTotal(list));
+    return m;
+  }, [annotations]);
 
   // A selected file (tree click or hash) opens its card and scrolls to it.
   React.useEffect(() => {
@@ -304,7 +339,7 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
           onRenderNearElement={() => (
             <nav className="gh-left-inner flex-column" aria-label="Changed files">
               {treeHeader}
-              <div className="gh-tree-wrap"><FileTree nodes={nodes} selected={selected} select={select} threadCounts={threadCounts} /></div>
+              <div className="gh-tree-wrap"><FileTree nodes={nodes} selected={selected} select={select} threadCounts={threadCounts} annotationCounts={annotationCounts} /></div>
             </nav>
           )}
           onRenderFarElement={() => (
@@ -318,6 +353,8 @@ export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide
                     dark={dark}
                     sideBySide={sideBySide}
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
+                    annotations={annotations?.byFile.get(f.path)}
+                    annotationUrls={annotations?.urls}
                     collapsed={collapsed.has(f.path)}
                     toggle={() => setCollapsed((c) => { const n = new Set(c); n.has(f.path) ? n.delete(f.path) : n.add(f.path); return n; })}
                   />
@@ -340,9 +377,21 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
     for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
     return m;
   }, [threads]);
+  // CI-1: the annotations arrive after the diff; if they can't be read (no Checks permission, say) the diff simply has none.
+  const [contexts, setContexts] = React.useState<Awaited<ReturnType<typeof getAnnotations>>>([]);
+  React.useEffect(() => {
+    let dead = false;
+    getAnnotations(repo, pr.number).then((c) => !dead && setContexts(c), () => {});
+    return () => { dead = true; };
+  }, [repo, pr.number]);
+  const annotations = React.useMemo<AnnotationsInfo>(() => {
+    const urls = new Map<string, string>();
+    for (const c of contexts) if (c.__typename === "CheckRun" && c.detailsUrl) urls.set(c.name, c.detailsUrl);
+    return { byFile: mapAnnotations(contexts, files.map((f) => f.path)).byFile, urls };
+  }, [contexts, files]);
   return (
     <FilesView
-      files={files} repo={repo} ctx={pr} selected={selected} select={select} dark={dark} anchors={anchors} threadCounts={threadCounts}
+      files={files} repo={repo} ctx={pr} selected={selected} select={select} dark={dark} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
       bar={<div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div>}
     />
   );

@@ -3,12 +3,16 @@
 // optimistic changes are rolled back on failure, and a success drops the cached page and list so they refetch.
 import * as React from "react";
 import { PermissionError } from "./connections";
-import { GhError, getActions, invalidateActions, invalidatePrPage, invalidatePrs, mutate } from "./githubBrowse";
+import { GhError, getActions, invalidateActions, invalidatePrPage, invalidatePrs, mutate, rest } from "./githubBrowse";
 import {
   closePullRequestMutation, convertToDraftMutation, deleteRefMutation, disableAutoMergeMutation, enableAutoMergeMutation, markReadyForReviewMutation,
   mergePullRequestMutation, reopenPullRequestMutation, updateBaseMutation, type MergeMethod,
 } from "./lib/actionsQuery";
+import { copilotResult, copilotReviewMutation } from "./lib/copilotReview";
+import { dequeueMutation, enqueueMutation } from "./lib/mergeQueue";
 import { nextPollDelay } from "./lib/pollPlan";
+import { rerunAllRequest, rerunFailedJobsRequest } from "./lib/reruns";
+import { updateBranchMutation, type UpdateMethod } from "./lib/updateBranch";
 import { deriveActions, type ActionsPr, type ActionsRepo, type ActionsView } from "./lib/prActions";
 import type { PrStatus } from "./lib/prModel";
 import type { StateActionId } from "./lib/stateActions";
@@ -62,6 +66,12 @@ export class ActionStore {
   version = 0;
   /** While a state change is in flight, the status the pill should already show. */
   optimisticStatus?: PrStatus;
+  /** Set after a re-run: the checks are polled until this time, and for as long as one is still pending. */
+  watchChecksUntil = 0;
+  /** GitHub's answer to the last "Request Copilot review" that was refused, shown in the reviewers panel. */
+  copilotMessage?: string;
+  /** failureReason of that answer; copilotAvailability hides the option for the permanent ones. */
+  copilotReason?: string | null;
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private loadedAt = 0;
@@ -79,7 +89,7 @@ export class ActionStore {
   }
   private setRaw(raw: ActionsRepo) {
     this.raw = raw;
-    this.view = deriveActions(raw);
+    this.view = deriveActions(raw, { copilotFailure: this.copilotReason });
   }
   private patchPr(p: Partial<ActionsPr>) {
     this.setRaw({ ...this.raw!, pullRequest: { ...this.raw!.pullRequest!, ...p } });
@@ -114,10 +124,16 @@ export class ActionStore {
   /** Quietly re-asks GitHub, skipping the cache. Bumps `version` when mergeStateStatus stopped being UNKNOWN, so the page header refetches too. */
   async refresh() {
     if (this.pending) return;
-    const was = this.raw?.pullRequest?.mergeStateStatus;
+    const was = this.raw?.pullRequest;
     invalidateActions(this.repo, this.number);
     await this.ensureLoaded(true);
-    if (was === "UNKNOWN" && this.raw?.pullRequest?.mergeStateStatus !== "UNKNOWN") (this.version++, this.emit());
+    const now = this.raw?.pullRequest;
+    // The header refetches when mergeability settled, or when the queue merged the pull request.
+    if ((was?.mergeStateStatus === "UNKNOWN" && now?.mergeStateStatus !== "UNKNOWN") || was?.state !== now?.state || !!was?.isInMergeQueue !== !!now?.isInMergeQueue) {
+      if (was?.state !== now?.state) (invalidatePrPage(this.repo, this.number), invalidatePrs()); // the header and list must show the new state, not their cached one
+      this.version++;
+      this.emit();
+    }
   }
 
   dismiss() {
@@ -231,6 +247,54 @@ export class ActionStore {
     });
   }
 
+  /** CI-2: re-run the failed jobs of one workflow run, or all of its jobs. The checks are then polled (useActions). */
+  rerun(runId: number, all: boolean) {
+    return this.run(async () => {
+      await rest((all ? rerunAllRequest : rerunFailedJobsRequest)(this.repo, runId));
+      this.watchChecksUntil = Date.now() + 30_000;
+    });
+  }
+
+  /** CI-3: merge or rebase the base branch into the head. expectedHeadOid refuses it if the head moved. */
+  updateBranch(method: UpdateMethod) {
+    const pr = this.v().pr;
+    return this.run(async () => void (await mutate(updateBranchMutation({ pullRequestId: pr.id, expectedHeadOid: pr.headRefOid, updateMethod: method }))));
+  }
+
+  /** CI-4: add to, or remove from, the merge queue. */
+  enqueue() {
+    const pr = this.v().pr;
+    return this.run(async () => void (await mutate(enqueueMutation({ pullRequestId: pr.id, expectedHeadOid: pr.headRefOid }))));
+  }
+  dequeue() {
+    const pr = this.v().pr;
+    return this.run(async () => void (await mutate(dequeueMutation(pr.id))));
+  }
+
+  /** CI-7: GitHub refuses with a typed reason, which is kept for the reviewers panel instead of becoming the page's error. */
+  requestCopilotReview() {
+    const pr = this.v().pr;
+    this.copilotMessage = undefined;
+    return this.run(async () => {
+      let payload: Parameters<typeof copilotResult>[0];
+      try {
+        payload = (await mutate(copilotReviewMutation(pr.id))).requestCopilotCodeReview;
+      } catch (e) {
+        this.copilotMessage = actionErrorText(e);
+        return;
+      }
+      const r = copilotResult(payload);
+      if (r.ok) return;
+      this.copilotMessage = r.message;
+      this.copilotReason = payload?.failureReason ?? null;
+      if (this.raw) this.setRaw(this.raw);
+    });
+  }
+  dismissCopilot() {
+    this.copilotMessage = undefined;
+    this.emit();
+  }
+
   changeTarget(branch: string) {
     const pr = this.v().pr;
     return this.run(async () => void (await mutate(updateBaseMutation(pr.id, branch))));
@@ -255,16 +319,23 @@ export function useActions(repo: string, number: number, enabled = true): Action
     if (enabled) store.ensureLoaded();
     return off;
   }, [store, enabled]);
-  // While GitHub is still working out mergeability, ask again until it knows (see lib/pollPlan.ts). Stops on unmount.
-  const unknown = store.view?.pr.mergeStateStatus === "UNKNOWN" && store.view.pr.state === "OPEN";
+  // While GitHub is still working out mergeability, a re-run's checks are running, or the pull request is queued, ask again (see lib/pollPlan.ts). Stops on unmount.
+  const open = store.view?.pr.state === "OPEN";
+  const unknown = open && store.view!.pr.mergeStateStatus === "UNKNOWN";
+  const queued = open && !!store.view!.pr.isInMergeQueue;
+  const watching = open && Date.now() < store.watchChecksUntil;
+  const polling = unknown || queued || watching;
   React.useEffect(() => {
-    if (!enabled || !unknown) return;
+    if (!enabled || !polling) return;
     const t0 = Date.now();
     let timer: ReturnType<typeof setTimeout>;
     let dead = false;
     const tick = () => {
       const pr = store.view?.pr;
-      const delay = pr && nextPollDelay({ state: pr.state, mergeStateStatus: pr.mergeStateStatus, elapsedMs: Date.now() - t0 });
+      const waiting = !!store.view?.rows.some((r) => r.kind === "check" && r.state === "pending");
+      const keepPolling = !!pr?.isInMergeQueue || (store.watchChecksUntil > 0 && (Date.now() < store.watchChecksUntil || waiting));
+      if (!keepPolling) store.watchChecksUntil = 0;
+      const delay = pr && nextPollDelay({ state: pr.state, mergeStateStatus: pr.mergeStateStatus, elapsedMs: Date.now() - t0, keepPolling });
       if (dead || delay == null) return;
       timer = setTimeout(async () => {
         await store.refresh();
@@ -273,6 +344,6 @@ export function useActions(repo: string, number: number, enabled = true): Action
     };
     tick();
     return () => ((dead = true), clearTimeout(timer));
-  }, [store, enabled, unknown]);
+  }, [store, enabled, polling]);
   return store;
 }

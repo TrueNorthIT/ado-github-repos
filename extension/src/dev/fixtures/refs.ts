@@ -218,7 +218,7 @@ export const commitNode = (c: FCommit) => ({
   associatedPullRequests: { nodes: c.pr ? [{ number: c.pr, title: c.title, state: "MERGED", mergeCommit: { oid: c.sha } }] : [] },
   statusCheckRollup: c.status ? { state: c.status } : null,
   tree: { oid: sha(c.idx + 5000) },
-  signature: c.idx % 9 === 0 ? { isValid: true, state: "VALID" } : null,
+  signature: c.idx % 9 === 0 ? { isValid: true, state: "VALID", wasSignedByGitHub: c.idx % 18 === 0, signer: { login: "ann" } } : c.idx % 9 === 4 ? { isValid: false, state: "UNKNOWN_KEY", wasSignedByGitHub: false, signer: null } : null,
 });
 
 export function branchNode(rr: RepoRefs, b: FBranch) {

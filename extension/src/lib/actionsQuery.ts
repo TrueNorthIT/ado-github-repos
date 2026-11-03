@@ -28,7 +28,13 @@ export interface PrActionsNode {
       headRefName: string;
       headRefOid: string;
       isCrossRepository: boolean;
-      headRepository: { nameWithOwner: string } | null;
+      headRepository: { nameWithOwner: string; viewerPermission?: string | null } | null;
+      maintainerCanModify?: boolean;
+      viewerCanUpdateBranch?: boolean;
+      isMergeQueueEnabled?: boolean;
+      isInMergeQueue?: boolean;
+      mergeQueueEntry?: { position: number | null; state: "QUEUED" | "AWAITING_CHECKS" | "MERGEABLE" | "UNMERGEABLE" | "LOCKED"; estimatedTimeToMerge: number | null } | null;
+      reviewRequests?: { nodes: { requestedReviewer: { __typename: string; login?: string } | null }[] };
       headRef: { id: string; name: string; branchProtectionRule: { allowsDeletions: boolean } | null } | null;
       viewerSubscription: "SUBSCRIBED" | "UNSUBSCRIBED" | "IGNORED" | null;
       viewerDidAuthor: boolean;
@@ -50,7 +56,7 @@ export interface PrActionsNode {
 }
 
 const CHECK_FIELDS = `__typename
-        ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) startedAt completedAt checkSuite { workflowRun { workflow { name } } } }
+        ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) startedAt completedAt checkSuite { workflowRun { workflow { name } } } runSuite: checkSuite { workflowRun { databaseId } } annotations(first: 1) { totalCount } }
         ... on StatusContext { context state targetUrl createdAt isRequired(pullRequestNumber: $number) }`;
 
 /** The extra fields the actions need: repo merge settings, mergeStateStatus, reviewDecision, viewer flags, head ref + protection, default branch, auto-merge request and the head commit's check contexts. Variables { owner, name, number }. */
@@ -62,7 +68,9 @@ export function actionsDetailQuery({ owner, name, number }: { owner: string; nam
     defaultBranchRef { name }
     pullRequest(number: $number) {
       id state isDraft merged mergeStateStatus reviewDecision baseRefName headRefName headRefOid isCrossRepository
-      headRepository { nameWithOwner }
+      headRepository { nameWithOwner viewerPermission }
+      maintainerCanModify viewerCanUpdateBranch isMergeQueueEnabled isInMergeQueue mergeQueueEntry { position state estimatedTimeToMerge }
+      reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } } } }
       headRef { id name branchProtectionRule { allowsDeletions } }
       viewerDidAuthor viewerCanUpdate viewerCanClose viewerCanReopen viewerCanDeleteHeadRef viewerCanEnableAutoMerge viewerCanDisableAutoMerge viewerCanMergeAsAdmin viewerSubscription
       viewerLatestReview { id state }

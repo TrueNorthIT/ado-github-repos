@@ -1,6 +1,7 @@
 // GitHub GraphQL builders and row mapper for the Commits list (C-1).
 // Rule shared with feedQuery.ts / prQuery.ts: every caller-supplied value travels in `variables`, never in the query text.
 import type { GraphQlRequest } from "./prQuery";
+import { signatureSelection, type CommitSignature } from "./signatures";
 
 /** Avatar for an account GitHub no longer knows (same value as prModel.ts / feedModel.ts). */
 export const GHOST_AVATAR = "https://github.com/ghost.png";
@@ -29,6 +30,7 @@ export interface GqlCommitNode {
   parents?: { nodes: { oid: string }[] } | null;
   associatedPullRequests?: { nodes: { number: number; title: string; state: "OPEN" | "CLOSED" | "MERGED" }[] } | null;
   statusCheckRollup?: { state: string } | null;
+  signature?: CommitSignature | null;
 }
 
 export interface CommitRow {
@@ -48,6 +50,8 @@ export interface CommitRow {
   /** Number of the associated PR when it is MERGED or OPEN, else null. */
   prNumber: number | null;
   status: CheckStatus | null;
+  /** CI-6: present only when the commit is signed. */
+  signature?: CommitSignature;
 }
 
 export interface CommitsPage {
@@ -69,7 +73,8 @@ const COMMIT_FIELDS = `oid messageHeadline message committedDate authoredDate
   author { name user { login avatarUrl } }
   parents(first: 5) { nodes { oid } }
   associatedPullRequests(first: 1) { nodes { number title state } }
-  statusCheckRollup { state }`;
+  statusCheckRollup { state }
+  ${signatureSelection()}`;
 
 /** `history(first: 50, after: $after)` on the ref's target commit, with the fields CommitRow is built from. Variables { owner, name, ref, after }. */
 export function commitsQuery(p: CommitsParams): GraphQlRequest {
@@ -125,6 +130,7 @@ export function mapCommitNode(node: GqlCommitNode): CommitRow {
     parents: (node.parents?.nodes ?? []).map((n) => n.oid),
     prNumber: pr && (pr.state === "MERGED" || pr.state === "OPEN") ? pr.number : null,
     status: mapCheckState(node.statusCheckRollup?.state),
+    ...(node.signature ? { signature: node.signature } : {}),
   };
 }
 

@@ -10,7 +10,8 @@ import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextField } from "azure-devops-ui/TextField";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { IconSize } from "azure-devops-ui/Icon";
-import { Pill, PillSize } from "azure-devops-ui/Pill";
+import { SignaturePill } from "./Signature";
+import { signatureBadge } from "./lib/signatures";
 import type { CommitDetail } from "./lib/commitDetail";
 import { defaultParentOption, parentOptions } from "./lib/commitDetail";
 import type { PrFile } from "./lib/prFiles";
@@ -93,7 +94,7 @@ function Details({ d, repo, parentHref, openParent }: { d: CommitDetail; repo: s
           {d.treeSha && <Row label="Tree"><span className="monospaced-xs">{d.treeSha}</span></Row>}
           {d.signature && (
             <Row label="Signature">
-              <Pill size={PillSize.regular}>{d.signature.valid ? "Verified" : "Unverified"}</Pill> <span className="secondary-text">{d.signature.state.toLowerCase().replace(/_/g, " ")}</span>
+              <SignaturePill signature={d.signature} /> <span className="secondary-text">{signatureBadge(d.signature)?.detail}</span>
             </Row>
           )}
         </div>

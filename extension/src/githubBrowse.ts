@@ -17,6 +17,10 @@ import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, typ
 import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
 import { deleteRefMutation } from "./lib/actionsQuery";
 import { mapRestCommit, type RestCommit } from "./lib/restCommit";
+import { annotationsQuery, type AnnotatedContext } from "./lib/annotations";
+import { deploymentsQuery, type DeploymentNode } from "./lib/deployments";
+import type { RestRequest } from "./lib/restRequest";
+import { commitSignaturesQuery, type CommitSignature } from "./lib/signatures";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -40,17 +44,17 @@ async function token(force = false): Promise<string> {
   return cached.accessToken;
 }
 
-async function request(url: string, accept: string, retry = true, body?: string): Promise<Response> {
+async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url.startsWith("http") ? url : API + url, { method: body ? "POST" : "GET", body, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
+    res = await fetch(url.startsWith("http") ? url : API + url, { method, body, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
   } catch (e) {
     if (e instanceof GhError) throw e;
     throw new GhError("other");
   }
   if (res.ok) return res;
   if (res.status === 401) {
-    if (retry) return request(url, accept, false, body); // token may have been revoked or just expired: refresh once
+    if (retry) return request(url, accept, false, body, method); // token may have been revoked or just expired: refresh once
     cached = null;
     throw new GhError("auth", 401);
   }
@@ -60,6 +64,11 @@ async function request(url: string, accept: string, retry = true, body?: string)
   }
   if (res.status === 403 || res.status === 404) throw new GhError("access", res.status);
   throw new GhError("other", res.status);
+}
+
+/** A REST call described as data (lib/restRequest.ts). GitHub answers a re-run with 201 and no body, so nothing is parsed. */
+export async function rest(r: RestRequest): Promise<void> {
+  await request(r.path, "application/vnd.github+json", true, r.body ? JSON.stringify(r.body) : undefined, r.method);
 }
 
 const json = async <T>(url: string): Promise<T> => (await request(url, "application/vnd.github+json")).json();
@@ -350,6 +359,39 @@ export async function setThreadResolved(threadId: string, resolved: boolean): Pr
   const d = await mutate(resolved ? resolveMutation(threadId) : unresolveMutation(threadId));
   return (resolved ? d.resolveReviewThread : d.unresolveReviewThread).thread.isResolved;
 }
+
+// ---------- CI: annotations, deployments, commit signatures (batch 1b) ----------
+
+const annotationNodes = new Map<string, { at: number; p: Promise<AnnotatedContext[]> }>();
+/** The head commit's check runs with their first 50 annotations each (one GraphQL call). Cached 30 s. */
+export const getAnnotations = (repo: string, number: number) =>
+  ttl(annotationNodes, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const node = (await graphql(annotationsQuery({ owner, name, number }))).data?.repository?.pullRequest;
+    return ((node?.statusCheckRollup?.contexts?.nodes ?? []) as AnnotatedContext[]).filter((c) => c?.__typename === "CheckRun" || c?.__typename === "StatusContext");
+  });
+
+/** The PR's DeployedEvent deployments (last 50). Not cached: the Overview asks again after every action. */
+export async function getDeployments(repo: string, number: number): Promise<DeploymentNode[]> {
+  const [owner, name] = repo.split("/");
+  const nodes: ({ deployment?: DeploymentNode | null } | null)[] = (await graphql(deploymentsQuery({ owner, name, number }))).data?.repository?.pullRequest?.timelineItems?.nodes ?? [];
+  return nodes.flatMap((n) => (n?.deployment ? [n.deployment] : []));
+}
+
+const signatureMaps = new Map<string, { at: number; p: Promise<Map<string, CommitSignature | null>> }>();
+/** Signature of each commit of the PR, by oid (a null value is an unsigned commit). Pages of 100, up to 1000 commits. Cached 30 s. */
+export const getCommitSignatures = (repo: string, number: number) =>
+  ttl(signatureMaps, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    const out = new Map<string, CommitSignature | null>();
+    for (let after: string | undefined, i = 0; i < 10; i++) {
+      const c = (await graphql(commitSignaturesQuery({ owner, name, number, after }))).data?.repository?.pullRequest?.commits;
+      for (const n of c?.nodes ?? []) if (n?.commit?.oid) out.set(n.commit.oid, n.commit.signature ?? null);
+      if (!c?.pageInfo?.hasNextPage || !c.pageInfo.endCursor) break;
+      after = c.pageInfo.endCursor;
+    }
+    return out;
+  });
 
 // ---------- acting on a pull request (batch 1) ----------
 
