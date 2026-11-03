@@ -27,6 +27,7 @@ import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ActionStore } from "./actionStore";
 import { getBranchNames, getMergeMessages } from "./githubBrowse";
 import { mergeMethodLabel, supportsCustomMessage, type MergeMethod } from "./lib/mergeOptions";
+import { groupChecks, reconcileOpen, type CheckGroup } from "./lib/checkGroups";
 import type { PolicyState } from "./lib/policies";
 import type { ActionablePolicyRow } from "./lib/updateBranch";
 import type { CheckRerun } from "./lib/reruns";
@@ -413,6 +414,35 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
   );
 }
 
+const STATE_LABEL: Record<PolicyState, string> = { success: "Passed", failure: "Failed", pending: "Waiting", neutral: "Skipped" };
+
+/** The rows of the policies list: the non-check rows as they are, then one collapsible section per workflow or app. Open state lives here, for the life of the card. */
+function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: ActionStore }) {
+  const { top, groups } = groupChecks(rows);
+  const memo = React.useRef({ open: {} as Record<string, boolean>, seen: {} as Record<string, PolicyState> });
+  const [, bump] = React.useState(0);
+  memo.current = reconcileOpen(memo.current.open, memo.current.seen, groups); // idempotent for unchanged input, so safe to run in render
+  const toggle = (name: string) => { memo.current = { ...memo.current, open: { ...memo.current.open, [name]: !memo.current.open[name] } }; bump((n) => n + 1); };
+  const item = (r: ActionablePolicyRow, i: number) => <PolicyItem key={`${r.kind}-${r.title}-${i}`} r={r} store={store} />;
+  const section = (g: CheckGroup<ActionablePolicyRow>, i: number) => {
+    const open = memo.current.open[g.name];
+    const id = `gh-policy-group-${i}`;
+    return (
+      <li key={g.name} className="gh-policy-group">
+        <button type="button" className="gh-policy-group-head flex-row flex-center" aria-expanded={open} aria-controls={id} onClick={() => toggle(g.name)}>
+          <Icon iconName={open ? "ChevronDown" : "ChevronRight"} className="gh-policy-group-chevron" />
+          <Status {...STATUS_OF[g.state]} size={StatusSize.m} ariaLabel={STATE_LABEL[g.state]} />
+          <span className="gh-policy-title body-m font-weight-semibold text-ellipsis">{g.name}</span>
+          {g.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
+          <span className="gh-policy-detail secondary-text body-s text-ellipsis">{g.summary}</span>
+        </button>
+        {open && <ul id={id} className="gh-policy-list gh-policy-group-rows" aria-label={g.name}>{g.rows.map(item)}</ul>}
+      </li>
+    );
+  };
+  return <>{top.map(item)}{groups.map(section)}</>;
+}
+
 /** The Overview's top card for an open pull request: one row per policy. Returns null when the page should show its fallback card instead. */
 export function PoliciesCard({ store }: { store: ActionStore }) {
   if (store.status === "loading" && !store.view) return <Card className="gh-pr-card gh-pr-merge"><div className="gh-pr-merge-row flex-row flex-center"><Spinner size={SpinnerSize.small} ariaLabel="Loading policies" /></div></Card>;
@@ -434,7 +464,7 @@ export function PoliciesCard({ store }: { store: ActionStore }) {
         </div>
         {v.rows.length > 0 && (
           <ul className="gh-policy-list" aria-label="Policies">
-            {v.rows.map((r, i) => <PolicyItem key={`${r.kind}-${r.title}-${i}`} r={r} store={store} />)}
+            <PolicyRows rows={v.rows} store={store} />
           </ul>
         )}
       </div>

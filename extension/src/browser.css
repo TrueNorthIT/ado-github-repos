@@ -254,6 +254,12 @@
 .gh-policy-link { margin-left: auto; flex: none; }
 .gh-policy-annotations { flex: none; }
 .gh-policy-action { flex: none; }
+.gh-policy-group { border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0,0,0,.08)); }
+.gh-policy-group-head { all: unset; box-sizing: border-box; display: flex; width: 100%; gap: 12px; padding: 8px 20px; min-height: 40px; cursor: pointer; color: inherit; }
+.gh-policy-group-head:hover { background: var(--component-grid-row-hover-background-color, rgba(0,0,0,.04)); }
+.gh-policy-group-head:focus-visible { outline: 2px solid var(--communication-background, #0078d4); outline-offset: -2px; }
+.gh-policy-group-chevron { flex: none; }
+.gh-policy-group-rows .gh-policy { padding-left: 52px; }
 .gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
 .gh-complete { width: 100%; }
 /* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */

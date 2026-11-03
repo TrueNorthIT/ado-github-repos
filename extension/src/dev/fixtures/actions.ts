@@ -8,7 +8,7 @@ const MIN = 60e3;
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 
 type Check =
-  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean; startedAt?: string; completedAt?: string; checkSuite?: { workflowRun: { workflow: { name: string } } }; runSuite?: { workflowRun: { databaseId: number } | null }; annotations?: { totalCount: number } }
+  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean; startedAt?: string; completedAt?: string; checkSuite?: { workflowRun: { workflow: { name: string } } }; runSuite?: { workflowRun: { databaseId: number } | null }; annotations?: { totalCount: number }; appSuite?: { app: { name: string } } }
   | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null; isRequired: boolean; createdAt?: string };
 const run = (name: string, conclusion: string | null, isRequired: boolean, status = conclusion ? "COMPLETED" : "IN_PROGRESS"): Check => ({
   __typename: "CheckRun", name, status, conclusion, detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${1000 + name.length}`, isRequired,
@@ -18,10 +18,10 @@ const wfRun = (name: string, workflow: string, minAgo: number, conclusion: strin
   ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>), startedAt: iso((minAgo + 1) * MIN), completedAt: iso(minAgo * MIN), checkSuite: { workflowRun: { workflow: { name: workflow } } },
 });
 /** A GitHub Actions job of workflow run `runId` (the id that re-run needs), with its annotation count. */
-const job = (name: string, runId: number, conclusion: string | null, isRequired: boolean, annotations = 0): Check => ({
+const job = (name: string, runId: number, conclusion: string | null, isRequired: boolean, annotations = 0, workflow = "Validate"): Check => ({
   ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>),
   detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${runId}/job/${name.length}`,
-  checkSuite: { workflowRun: { workflow: { name: "CI" } } }, runSuite: { workflowRun: { databaseId: runId } }, annotations: { totalCount: annotations },
+  checkSuite: { workflowRun: { workflow: { name: workflow } } }, runSuite: { workflowRun: { databaseId: runId } }, annotations: { totalCount: annotations },
 });
 const GREEN = [run("build", "SUCCESS", true), run("unit tests", "SUCCESS", true), run("lint", "SUCCESS", false)];
 
@@ -77,8 +77,10 @@ function ciChecks(): Check[] {
   job("build", RERUN_RUN, "SUCCESS", true),
   job("unit tests", RERUN_RUN, "FAILURE", true, 2),
   job("lint", RERUN_RUN, "FAILURE", false, 4),
-  { ...(run("code quality", "FAILURE", false) as Extract<Check, { __typename: "CheckRun" }>), detailsUrl: `https://checks.example.test/${PR_REPO}/312`, annotations: { totalCount: 1 } },
-  job("deploy preview", 9002, "SUCCESS", false),
+  { ...(run("code quality", "FAILURE", false) as Extract<Check, { __typename: "CheckRun" }>), detailsUrl: `https://checks.example.test/${PR_REPO}/312`, annotations: { totalCount: 1 }, appSuite: { app: { name: "SonarCloud" } } },
+  job("deploy preview", 9002, "SUCCESS", false, 0, "Storybook"),
+  job("build storybook", 9002, "SUCCESS", false, 0, "Storybook"),
+  job("screenshots", 9003, null, false, 0, "Screenshots"),
   { __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS", targetUrl: null, isRequired: false },
   ];
 }
