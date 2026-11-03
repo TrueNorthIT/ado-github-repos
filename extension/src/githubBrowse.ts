@@ -21,6 +21,8 @@ import { commitsByPathQuery, commitsQuery, commitSearchQuery, mapCommitSearch, m
 import { commitDetailQuery, comparePath, diffPath, mapCommitDetail, type CommitDetail, type ParentOption } from "./lib/commitDetail";
 import { isPushActivity, mapActivity, nextActivityCursor, mapPushHeads, pushExpansion, pushHeadsQuery, pushesPath, type PushHead, type PushRow, type RestActivity } from "./lib/pushes";
 import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, type AheadBehind, type Branch } from "./lib/branches";
+import { renameBranchRequest, setDefaultBranchRequest } from "./lib/branches";
+import { classicState, toPolicies, type BranchPolicies, type ClassicState } from "./lib/branchPolicies";
 import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
 import { deleteRefMutation } from "./lib/actionsQuery";
 import { mapWriteContext, writeContextQuery, type WriteContext } from "./lib/fileCommit";
@@ -781,6 +783,62 @@ export const createBranch = (repoId: string, name: string, oid: string) => mutat
 
 /** Deletes a branch or tag by its ref node id. */
 export const deleteRef = (refId: string) => mutate(deleteRefMutation(refId));
+
+/** Renames a branch (REST). The caller words a refusal (lib/branches.ts renameErrorText). */
+export const renameBranch = (repo: string, from: string, to: string) => restSend(renameBranchRequest(repo, from, to));
+
+/** Makes `branch` the repository's default branch (REST, admin only). */
+export const setDefaultBranch = (repo: string, branch: string) => restSend(setDefaultBranchRequest(repo, branch));
+
+/** Whether the viewer is an admin of the repository (GET /repos/{repo} permissions.admin). False when it can't be read. */
+export const getIsRepoAdmin = (repo: string): Promise<boolean> =>
+  refTtl(`admin|${repo}`, () => json<{ permissions?: { admin?: boolean } }>(repoPath(repo)).then((j) => !!j.permissions?.admin, () => false));
+
+/** Tag names (REST, newest first as GitHub lists them, up to 1000) for the compare pickers. */
+export const listTagNames = (repo: string): Promise<string[]> =>
+  refTtl(`tagNames|${repo}`, async () => {
+    const names: string[] = [];
+    let url: string | undefined = `${repoPath(repo)}/tags?per_page=100`;
+    while (url && names.length < MAX_BRANCHES) {
+      const res = await request(url, "application/vnd.github+json");
+      names.push(...(await res.json()).map((t: { name: string }) => t.name));
+      url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
+    }
+    return names;
+  });
+
+export interface BranchPoliciesData {
+  policies: BranchPolicies;
+  /** Whether the classic branch protection rule was read, absent, or needs admin to read. */
+  classic: ClassicState["t"];
+  /** GitHub calls the branch protected (GET /branches/{branch}). */
+  protected: boolean;
+}
+
+/** The rules that apply to a branch: its ruleset rules, plus the classic protection rule when the viewer may read it. Cached 30 s. */
+export const getBranchPolicies = (repo: string, branch: string): Promise<BranchPoliciesData> =>
+  refTtl(`policies|${repo}|${branch}`, async () => {
+    const enc = encodeURIComponent(branch);
+    const [info, rules, prot] = await Promise.all([
+      json<any>(`${repoPath(repo)}/branches/${enc}`),
+      (async () => {
+        const out: any[] = [];
+        let url: string | undefined = `${repoPath(repo)}/rules/branches/${enc}?per_page=100`;
+        for (let i = 0; url && i < 5; i++) {
+          const res = await request(url, "application/vnd.github+json");
+          out.push(...(await res.json()));
+          url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
+        }
+        return out;
+      })(),
+      json<any>(`${repoPath(repo)}/branches/${enc}/protection`).then(
+        (body) => ({ ok: true as const, body }),
+        (e) => { if (e instanceof GhError && e.kind === "access") return { ok: false as const, status: e.status }; throw e; }
+      ),
+    ]);
+    const classic = classicState(prot, !!info?.protected);
+    return { policies: toPolicies(rules, classic, info), classic: classic.t, protected: !!info?.protected };
+  });
 
 /** Lightweight tag (no message) or annotated tag (message: the tag object first, then the ref). */
 export async function createTag(repo: string, repoId: string, p: { name: string; oid: string; message?: string }): Promise<void> {

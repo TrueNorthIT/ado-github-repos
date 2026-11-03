@@ -7,27 +7,29 @@ import { Card } from "azure-devops-ui/Card";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
-import { MoreButton } from "azure-devops-ui/Menu";
+import { MenuItemType, MoreButton } from "azure-devops-ui/Menu";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextField } from "azure-devops-ui/TextField";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
 import type { BranchTabId } from "./lib/browseState";
-import { barWidths, branchesToCompare, buildRefTree, canDeleteBranch, filterByTab, inBatches, maxDivergence, STALE_DAYS, type AheadBehind, type Branch, type RefLeaf } from "./lib/branches";
+import { barWidths, branchesToCompare, buildRefTree, canDeleteBranch, filterByTab, inBatches, maxDivergence, renameErrorText, renameInPrefs, STALE_DAYS, type AheadBehind, type Branch, type RefLeaf } from "./lib/branches";
 import { ErrorView } from "./Browser";
-import { CheckStatusCell, HubProps, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
-import { NewBranchDialog, ConfirmDeleteDialog } from "./RefDialogs";
+import { CheckStatusCell, forgetDefaultBranch, HubProps, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
+import { NewBranchDialog, ConfirmDeleteDialog, RenameBranchDialog, SetDefaultBranchDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
-import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
+import { createBranch, deleteRef, getAheadBehind, getIsRepoAdmin, getViewerLogin, GhError, invalidateRefs, listAllBranches, renameBranch, setDefaultBranch, type BranchesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { serializeActions } from "./lib/actionsHash";
 import { branchRowNewPrHash } from "./lib/newPrHash";
 import { branchCompareHash, compareBaseFor, withCompareBase } from "./lib/compareHash";
 import { BranchCompare } from "./BranchCompare";
+import { BranchPolicies } from "./BranchPolicies";
+import { serializePolicies } from "./lib/policyHash";
 import { gotoHash, useHashExtras } from "./hostNav";
 import { usePrefs } from "./prefs";
-import { useRefWrites } from "./refWrites";
+import { RefWriteError, useRefWrites } from "./refWrites";
 import "./browser.css";
 
 const TABS: { id: BranchTabId; name: string }[] = [{ id: "mine", name: "Mine" }, { id: "all", name: "All" }, { id: "stale", name: "Stale" }];
@@ -60,7 +62,8 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   const [compares, setCompares] = React.useState<Record<string, AheadBehind>>({});
   const [query, setQuery] = React.useState(state.q ?? "");
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
-  const [dialog, setDialog] = React.useState<{ kind: "new"; base?: string } | { kind: "delete"; branch: Branch } | null>(null);
+  const [dialog, setDialog] = React.useState<{ kind: "new"; base?: string } | { kind: "delete" | "rename" | "default"; branch: Branch } | null>(null);
+  const [admin, setAdmin] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -71,6 +74,12 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
     return () => { dead = true; };
   }, [repo, signedIn, reload]);
   React.useEffect(() => { getViewerLogin().then(setViewer, () => setViewer("")); }, [signedIn]);
+  React.useEffect(() => {
+    let dead = false;
+    setAdmin(false);
+    getIsRepoAdmin(repo).then((a) => !dead && setAdmin(a));
+    return () => { dead = true; };
+  }, [repo, signedIn]);
 
   // The search box owns its text; the hash follows a moment after typing (replace: no history entry per keystroke).
   React.useEffect(() => {
@@ -158,10 +167,14 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
                   { id: "new", text: "New branch", iconProps: { iconName: "Add" }, onActivate: () => setDialog({ kind: "new", base: b.name }) },
                   { id: "pr", text: "New pull request", iconProps: { iconName: "BranchPullRequest" }, href: href("prs", branchRowNewPrHash(repo, b.name)), onActivate: openInHub("prs", branchRowNewPrHash(repo, b.name)) as any, disabled: b.isDefault },
                   { id: "delete", text: "Delete branch", iconProps: { iconName: "Delete" }, disabled: !del.ok || writes.busy, secondaryText: del.ok ? undefined : del.reason, onActivate: () => setDialog({ kind: "delete", branch: b }) },
+                  { id: "rename", text: "Rename branch", iconProps: { iconName: "Rename" }, disabled: writes.busy, onActivate: () => setDialog({ kind: "rename", branch: b }) },
                   { id: "history", text: "View history", iconProps: { iconName: "History" }, href: href("commits", { repo, ref: b.name === def ? undefined : b.name }), onActivate: openInHub("commits", { repo, ref: b.name === def ? undefined : b.name }) as any },
                   { id: "compare", text: "Compare", iconProps: { iconName: "BranchCompare" }, href: compareHash(b.name), onActivate: () => { const h = compareHash(b.name); if (h) gotoHash(h); }, disabled: !compareHash(b.name) },
                   { id: "setcompare", text: "Set as compare branch", iconProps: { iconName: "BranchCompare" }, disabled: b.name === compareBranch, onActivate: () => setCompareBranch(b.name) },
+                  ...(admin ? [{ id: "setdefault", text: "Set as default branch", iconProps: { iconName: "Home" }, disabled: b.isDefault || writes.busy, onActivate: () => setDialog({ kind: "default", branch: b }) }] : []),
                   { id: "copy", text: "Copy branch name", iconProps: { iconName: "Copy" }, onActivate: () => { void navigator.clipboard?.writeText(b.name); } },
+                  { id: "divider", itemType: MenuItemType.Divider },
+                  { id: "policies", text: "Branch policies", iconProps: { iconName: "Shield" }, href: serializePolicies({ repo, branch: b.name }), onActivate: () => gotoHash(serializePolicies({ repo, branch: b.name })) },
                 ],
               },
             }}
@@ -169,7 +182,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         );
       },
     },
-  ], [compares, max, favs, def, href, repo, writes.busy, compareBranch]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [compares, max, favs, def, href, repo, writes.busy, compareBranch, admin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameCell = React.useCallback((leaf: RefLeaf<Branch>) => {
     const b = leaf.item;
@@ -182,7 +195,9 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         {b.name === compareBranch && (
           <Pill className="gh-pr-pill gh-compare-pill" size={PillSize.compact} variant={PillVariant.standard} onClick={() => gotoHash(branchCompareHash(repo, def && def !== b.name ? def : b.name, b.name))} ariaLabel={`Compare against ${b.name}`}>Compare</Pill>
         )}
-        {b.protected && !b.isDefault && <Icon iconName="Lock" size={IconSize.small} className="gh-branch-lock" ariaLabel="Protected" />}
+        {b.protected && (
+          <Button subtle className="gh-branch-lock" iconProps={{ iconName: "Shield", size: IconSize.small }} ariaLabel={`Branch policies for ${b.name}`} tooltipProps={{ text: "Branch policies apply" }} href={serializePolicies({ repo, branch: b.name })} onClick={(e) => { e?.preventDefault(); gotoHash(serializePolicies({ repo, branch: b.name })); }} />
+        )}
       </>
     );
   }, [def, href, repo, compareBranch]);
@@ -193,6 +208,18 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
     void writes.run(() => createBranch(v.repoId, name, from.sha), () => { setDialog(null); refresh(); });
   };
   const doDelete = (b: Branch) => void writes.run(() => deleteRef(b.id), () => { setDialog(null); setNotice(`Deleted branch ${b.name}.`); refresh(); });
+  const doRename = (b: Branch, to: string) => void writes.run(
+    async () => {
+      try {
+        await renameBranch(repo, b.name, to);
+      } catch (e) {
+        const text = e instanceof GhError && e.kind !== "auth" && e.kind !== "rateLimit" ? renameErrorText(e.status, e.apiMessage, b) : null;
+        throw text ? new RefWriteError(text) : e;
+      }
+    },
+    () => { setPrefs((p) => renameInPrefs(p, repo, b.name, to)); setDialog(null); setNotice(`Renamed branch ${b.name} to ${to}.`); refresh(); }
+  );
+  const doSetDefault = (b: Branch) => void writes.run(() => setDefaultBranch(repo, b.name), () => { forgetDefaultBranch(repo); setDialog(null); setNotice(`${b.name} is now the default branch.`); refresh(); });
   const closeDialog = () => { if (!writes.busy) { setDialog(null); writes.clearError(); } };
 
   const error = data.t === "error" ? data.err : null;
@@ -253,15 +280,23 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
       {dialog?.kind === "delete" && (
         <ConfirmDeleteDialog what="branch" name={dialog.branch.name} busy={writes.busy} error={writes.error} clearError={writes.clearError} confirm={() => doDelete(dialog.branch)} close={closeDialog} />
       )}
+      {dialog?.kind === "rename" && (
+        <RenameBranchDialog from={dialog.branch.name} existing={names} busy={writes.busy} error={writes.error} clearError={writes.clearError} rename={(to) => doRename(dialog.branch, to)} close={closeDialog} />
+      )}
+      {dialog?.kind === "default" && (
+        <SetDefaultBranchDialog branch={dialog.branch.name} current={def} busy={writes.busy} error={writes.error} clearError={writes.clearError} confirm={() => doSetDefault(dialog.branch)} close={closeDialog} />
+      )}
     </>
   );
 }
 
 export function BranchesHub(props: HubProps) {
-  const { compare } = useHashExtras(); // BrowseState drops view=compare, so the page is routed on its own parse of the hash
+  const { compare, policies } = useHashExtras(); // BrowseState drops view=compare and view=policies, so the pages are routed on their own parse of the hash
   return (
     <RepoHubPage state={props.state} go={props.go}>
-      {(repo) => (compare && compare.repo === repo ? <BranchCompare key={repo} repo={repo} cmp={compare} props={props} /> : <BranchList repo={repo} props={props} />)}
+      {(repo) => (compare && compare.repo === repo ? <BranchCompare key={repo} repo={repo} cmp={compare} props={props} />
+        : policies && policies.repo === repo ? <BranchPolicies key={`${repo}|${policies.branch}`} repo={repo} branch={policies.branch} props={props} />
+        : <BranchList repo={repo} props={props} />)}
     </RepoHubPage>
   );
 }

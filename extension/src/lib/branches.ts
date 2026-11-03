@@ -2,6 +2,7 @@
 // Rule shared with feedQuery.ts / actionsQuery.ts: every caller-supplied value travels in `variables`, never in the query text.
 // Deleting a branch reuses deleteRefMutation(refId) from actionsQuery.ts, with Branch.id as the ref node id.
 import type { GraphQlRequest } from "./prQuery";
+import type { RestRequest } from "./restRequest";
 import { mapCheckState, mapPerson, type CheckStatus, type GqlActor, type Person } from "./commitsQuery";
 
 export interface GqlBranchNode {
@@ -205,4 +206,68 @@ export function canDeleteBranch(branch: { name: string; protected: boolean }, de
   if (branch.name === defaultBranch) return { ok: false, code: "default", reason: "The default branch can't be deleted." };
   if (branch.protected) return { ok: false, code: "protected", reason: "This branch is protected by a branch protection rule." };
   return { ok: true };
+}
+
+// ---- Rename and set as default ----
+
+const branchPath = (repo: string, branch: string) => `/repos/${repo}/branches/${encodeURIComponent(branch)}`;
+
+/** POST /repos/{o}/{r}/branches/{branch}/rename with { new_name }. GitHub moves open PRs, protection rules and the default branch with it. */
+export function renameBranchRequest(repo: string, from: string, to: string): RestRequest {
+  return { method: "POST", path: `${branchPath(repo, from)}/rename`, body: { new_name: to } };
+}
+
+/** PATCH /repos/{o}/{r} with { default_branch }. Needs admin. */
+export function setDefaultBranchRequest(repo: string, branch: string): RestRequest {
+  return { method: "PATCH", path: `/repos/${repo}`, body: { default_branch: branch } };
+}
+
+/** The sentence for a failed rename: 403 explains the admin rule for the default and protected branches; otherwise GitHub's own message when it gave one. */
+export function renameErrorText(status: number, apiMessage: string | undefined, b: { isDefault: boolean; protected: boolean }): string | null {
+  if (status === 403) {
+    if (b.isDefault) return "Renaming the default branch needs admin access to the repository on GitHub.";
+    if (b.protected) return "Renaming a protected branch needs admin access to the repository on GitHub.";
+    return "Your GitHub sign-in isn't allowed to rename branches in this repository. It needs write access.";
+  }
+  if (status === 404) return "The branch wasn't found, or your GitHub sign-in can't see it. Refresh and try again.";
+  if (status === 422 && apiMessage) return `GitHub said: ${apiMessage}`;
+  return null;
+}
+
+/** Per-repo favourites and compare branch with `from` renamed to `to`. The same object back when neither named `from`. */
+export function renameInPrefs<P extends { favourites: Record<string, string[]>; compareBase?: Record<string, string> }>(prefs: P, repo: string, from: string, to: string): P {
+  const favs = prefs.favourites[repo];
+  const favHit = !!favs?.includes(from);
+  const baseHit = prefs.compareBase?.[repo] === from;
+  if (!favHit && !baseHit) return prefs;
+  return {
+    ...prefs,
+    ...(favHit && { favourites: { ...prefs.favourites, [repo]: favs!.map((n) => (n === from ? to : n)) } }),
+    ...(baseHit && { compareBase: { ...prefs.compareBase, [repo]: to } }),
+  };
+}
+
+// ---- Compare any two refs ----
+
+export type RefKind = "branch" | "tag" | "commit";
+
+/** What a compare ref names: a known branch first, then a known tag, then a commit SHA (4 to 40 hex); otherwise a branch (GitHub resolves it). */
+export function refKind(name: string, branches: readonly string[], tags: readonly string[]): RefKind {
+  if (branches.includes(name)) return "branch";
+  if (tags.includes(name)) return "tag";
+  return /^[0-9a-f]{4,40}$/i.test(name) ? "commit" : "branch";
+}
+
+/**
+ * What the compare picker lists for a search: matching branches (default first), matching tags, and, when the search is a
+ * commit SHA (7 to 40 hex) that names no branch or tag, that commit. Matching is a trimmed, case-insensitive substring.
+ */
+export function compareRefOptions(branches: readonly string[], tags: readonly string[], query: string, defaultBranch?: string): { branches: string[]; tags: string[]; commit?: string } {
+  const q = query.trim().toLowerCase();
+  const hit = (n: string) => n.toLowerCase().includes(q);
+  const bs = branches.filter(hit);
+  const ordered = defaultBranch && bs.includes(defaultBranch) ? [defaultBranch, ...bs.filter((b) => b !== defaultBranch)] : bs;
+  const sha = query.trim();
+  const commit = /^[0-9a-f]{7,40}$/i.test(sha) && !branches.includes(sha) && !tags.includes(sha) ? sha.toLowerCase() : undefined;
+  return { branches: ordered, tags: tags.filter(hit), ...(commit && { commit }) };
 }

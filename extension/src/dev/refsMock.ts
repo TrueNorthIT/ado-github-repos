@@ -1,6 +1,7 @@
 // __TN_MOCK__ Mock GitHub answers for the Repos pages (batch R1): commit lists and detail, pushes, compare, branches, tags and their writes.
 // Scenario `refsFail` makes every write answer 403 (the app shows "Your GitHub sign-in isn't allowed to do this...").
 import { ME } from "./fixtures/prs";
+import { defaultBranchOf } from "./policiesMock";
 import { repoOf, TEXT } from "./fixtures/repos";
 import {
   activities, actor, ancestors, branchNode, commitNode, contentAt, filesOf, historyOf, newId, PEOPLE, refsOf, resolve, tagNode, avatar,
@@ -87,7 +88,7 @@ export function refsGraphql(query: string, v: Record<string, any>, sc: string): 
     const rr = known(v);
     if (!rr) return json({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] });
     const nodes = [...rr.branches].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((b) => branchNode(rr, b));
-    return json({ data: { repository: { id: REPO_ID(`${v.owner}/${v.name}`), defaultBranchRef: { name: "main" }, refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } });
+    return json({ data: { repository: { id: REPO_ID(`${v.owner}/${v.name}`), defaultBranchRef: { name: defaultBranchOf(`${v.owner}/${v.name}`) }, refs: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } });
   }
   if (query.includes('refPrefix: "refs/tags/"')) {
     const rr = known(v);
@@ -185,5 +186,5 @@ export function refsContent(fullName: string, ref: string, path: string): string
 /** Whether a compare of two refs is the history fixtures' (both are fixture branches) rather than the New pull request fixtures'. */
 export const isRefsCompare = (fullName: string, base: string, head: string) => {
   const rr = refsOf(fullName);
-  return [base, head].every((n) => rr.branches.some((x) => x.name === n));
+  return [base, head].every((n) => rr.branches.some((x) => x.name === n) || rr.tags.some((t) => t.name === n) || (/^[0-9a-f]{4,40}$/i.test(n) && rr.commits.some((c) => c.sha.startsWith(n.toLowerCase()))));
 };

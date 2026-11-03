@@ -104,6 +104,9 @@ export function useDefaultBranch(repo: string): { defaultBranch?: string; err?: 
   return r;
 }
 
+/** Forgets the cached default branch (after "Set as default branch"), so the next useDefaultBranch reads it again. */
+export const forgetDefaultBranch = (repo: string) => void infos.delete(repo);
+
 /** The branch picker, as on Files: loads the branch names when first opened. `onPick` gets the branch. */
 /** `inTitle`: the page-header form, on the title row after the repo switcher (Commits, Pushes), instead of its own row above the header. */
 export function BranchBar({ repo, current, defaultBranch, onPick, inTitle }: { repo: string; current: string; defaultBranch?: string; onPick: (branch: string) => void; inTitle?: boolean }) {

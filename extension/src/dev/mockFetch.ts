@@ -13,6 +13,7 @@ import { newPrGraphql, MERGE_BASE } from "./fixtures/newPr";
 import { securityFile, securityMarkdown, securityRest } from "./fixtures/security";
 import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
 import { releasesGraphql, releasesRest } from "./releasesMock";
+import { defaultBranchOf, isAdmin, policiesRest } from "./policiesMock";
 import { releaseFormRest } from "./releaseFormMock";
 import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
@@ -151,7 +152,9 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const repo = m && repoOf(`${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}`);
   if (!m || !repo || repo.missing) return status(404);
   const rest = m[3] ?? "";
-  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" } });
+  const polAnswer = policiesRest(repo.fullName, rest, init, sc); // Branches: policies, rename, set as default, tag names
+  if (polAnswer) return polAnswer;
+  if (!rest) return json({ default_branch: defaultBranchOf(repo.fullName), private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly", admin: isAdmin(sc) } });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);
     const names = repo.branches.slice((page - 1) * BRANCH_PAGE, page * BRANCH_PAGE);
