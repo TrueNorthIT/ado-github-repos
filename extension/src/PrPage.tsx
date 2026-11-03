@@ -482,7 +482,7 @@ export interface PrPageProps {
   state: BrowseState & { pr: number };
   /** The list tab to return to. */
   listTab: NonNullable<BrowseState["prTab"]>;
-  go: (s: BrowseState, replace?: boolean) => void;
+  go: (s: BrowseState, replace?: boolean | "ifEmpty") => void;
   signedIn: boolean;
   signIn: () => void;
   busy: boolean;

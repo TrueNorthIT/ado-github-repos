@@ -22,7 +22,7 @@ import "./browser.css";
 
 export interface HubProps {
   state: BrowseState;
-  go: (s: BrowseState, replace?: boolean) => void;
+  go: (s: BrowseState, replace?: boolean | "ifEmpty") => void;
   /** Bumped each time the header breadcrumb asks for the repo switcher. */
   openSwitch: number;
   signedIn: boolean;
@@ -57,7 +57,7 @@ export const Loading = ({ label = "Loading" }: { label?: string }) => (
 export function RepoHubPage({ state, go, children }: { state: BrowseState; go: HubProps["go"]; children: (repo: string) => React.ReactNode }) {
   const fallback = useDefaultRepo(!state.repo);
   const repo = state.repo;
-  React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo }, true); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo }, "ifEmpty"); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   let body: React.ReactNode;
   if (repo) body = children(repo);
   else if (fallback.none) body = <ZeroData iconProps={{ iconName: "PlugConnected" }} imageAltText="No GitHub connections" primaryText="No GitHub repositories" secondaryText="Connect GitHub repositories to this project in Project settings." />;

@@ -78,8 +78,8 @@ export function App() {
 
   // The address bar (host hash) decides between the list and the file browser.
   const [nav, setNav] = React.useState<BrowseState | null>(null);
-  const goRef = React.useRef<(s: BrowseState, replace?: boolean) => void>(() => {});
-  const go = React.useCallback((s: BrowseState, replace?: boolean) => goRef.current(s, replace), []);
+  const goRef = React.useRef<(s: BrowseState, replace?: boolean | "ifEmpty") => void>(() => {});
+  const go = React.useCallback((s: BrowseState, replace?: boolean | "ifEmpty") => goRef.current(s, replace), []);
   const [switchTick, setSwitchTick] = React.useState(0);
   React.useEffect(() => {
     connectNav((s) => {
@@ -151,7 +151,7 @@ export function App() {
   // Files opens straight into a repo, as native does: with none in the hash, the first connected repo. The list stays one click away ("All repositories").
   const wantsDefault = hub === "files" && nav !== null && !nav.repo && nav.view !== "repos";
   const fallback = useDefaultRepo(wantsDefault);
-  React.useEffect(() => { if (wantsDefault && fallback.repo) go({ repo: fallback.repo }, true); }, [wantsDefault, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => { if (wantsDefault && fallback.repo) go({ repo: fallback.repo }, "ifEmpty"); }, [wantsDefault, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   if (nav === null) return <Page className="flex-grow" />;
   const hubProps = { state: nav, go, openSwitch: switchTick, signedIn, signIn: doSignIn, busy, commandBarItems: signInOut };
   if (hub === "prs") return <PullRequestsHub {...hubProps} />;

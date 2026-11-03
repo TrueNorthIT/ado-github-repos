@@ -274,7 +274,7 @@ function MineList(p: TabProps) {
 
 export interface PrHubProps {
   state: BrowseState;
-  go: (s: BrowseState, replace?: boolean) => void;
+  go: (s: BrowseState, replace?: boolean | "ifEmpty") => void;
   /** Bumped each time the header breadcrumb asks for the repo switcher. */
   openSwitch: number;
   signedIn: boolean;
@@ -287,7 +287,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
   const fallback = useDefaultRepo(!state.repo);
   const repo = state.repo ?? fallback.repo;
   // Fill the default repo into the hash (no history entry) so the header breadcrumb and a reload agree with the page.
-  React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo, view: "prs", prTab: state.prTab }, true); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo, view: "prs", prTab: state.prTab }, "ifEmpty"); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   const tab: PrTab = state.prTab ?? "mine";
   const [filterOpen, setFilterOpen] = React.useState(true);
   const goPr = React.useCallback((s: BrowseState) => go({ ...s, view: "prs" }), [go]);

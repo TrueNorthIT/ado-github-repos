@@ -20,7 +20,7 @@ export async function readInitialHash(get: () => Promise<string>, waitMs = 400):
   return get();
 }
 
-export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState, replace?: boolean) => void> {
+export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState, replace?: boolean | "ifEmpty") => void> {
   const svc = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
   let current: BrowseState = {};
 
@@ -43,12 +43,22 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
 
   emit(await readInitialHash(() => svc.getHash()));
   svc.onHashChanged(emit);
-  return (s, replace) => {
-    if (replace) svc.replaceHash(serialize(s).slice(1)); // e.g. the PR hub filling in its default repo: no extra history entry
+  const write = (s: BrowseState, replace?: boolean) => {
+    if (replace) svc.replaceHash(serialize(s).slice(1)); // e.g. a hub filling in its default repo: no extra history entry
     else svc.setHash(serialize(s));
     const next = parse(serialize(s));
     announce(next);
     onChange(next); // do not rely on the host echoing programmatic changes back
+  };
+  return (s, replace) => {
+    if (replace !== "ifEmpty") return write(s, replace);
+    // A default repo must never overwrite a real address: the host can answer the first getHash() before it has the
+    // hash (0.26.0 and again 0.27.1: a #...&pr=234 link opened the PR list). Ask again now; if a repo is there, use it.
+    void (async () => {
+      const h = await svc.getHash().catch(() => "");
+      if (parse(h).repo) emit(h);
+      else write(s, true);
+    })();
   };
 }
 
