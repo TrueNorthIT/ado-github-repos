@@ -39,6 +39,14 @@ export async function patch<T>(url: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+/** POST a json body (WIQL). A 401/403 is a PermissionError. */
+export async function post<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, { method: "POST", body: JSON.stringify(body), headers: { Authorization: `Bearer ${await SDK.getAccessToken()}`, Accept: "application/json", "Content-Type": "application/json" } });
+  if (res.status === 401 || res.status === 403) throw new PermissionError(String(res.status));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 /** Lists connections and their repos. Only `id` is guaranteed on a connection (non-admins get fewer fields). */
 export async function fetchConnections(ctx: ProjectCtx): Promise<Connection[]> {
   const base = `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apis/githubconnections`;

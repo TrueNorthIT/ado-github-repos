@@ -21,6 +21,11 @@ import { annotationsQuery, type AnnotatedContext } from "./lib/annotations";
 import { deploymentsQuery, type DeploymentNode } from "./lib/deployments";
 import type { RestRequest } from "./lib/restRequest";
 import { commitSignaturesQuery, type CommitSignature } from "./lib/signatures";
+import { prEditQuery, type PrEditNode } from "./lib/prEdit";
+import { projectItemsQuery, orgProjectsQuery, repoProjectsQuery, mergeProjectOptions, toProjectRows, type ProjectOption, type ProjectRow } from "./lib/projects";
+import { teamCandidates, teamSearchQuery, userCandidates, userSearchQuery, type Candidate } from "./lib/reviewerSearch";
+import { labelSearchQuery, toLabelOption, type LabelOption } from "./lib/labels";
+import { milestoneSearchQuery, sortMilestones, toMilestoneOption, type MilestoneOption } from "./lib/milestones";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -326,7 +331,7 @@ export const getFeed = (repo: string, number: number) =>
   });
 
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
-export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`));
+export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`), editNodes.delete(`${repo}#${number}`), projectNodes.delete(`${repo}#${number}`));
 
 /** Drops just the cached actions node, so the next getActions asks GitHub again. */
 export const invalidateActions = (repo: string, number: number) => void actionNodes.delete(`${repo}#${number}`);
@@ -584,4 +589,73 @@ export async function createTag(repo: string, repoId: string, p: { name: string;
     oid = (await res.json()).sha;
   }
   await mutate(createTagMutation(repoId, p.name, oid));
+}
+
+// ---------- editing a pull request (batch 2) ----------
+
+const editNodes = new Map<string, { at: number; p: Promise<PrEditNode> }>();
+const projectNodes = new Map<string, { at: number; p: Promise<ProjectRow[] | null> }>();
+
+const editNodeOf = async (repo: string, number: number): Promise<PrEditNode> => {
+  const [owner, name] = repo.split("/");
+  const node = (await graphql(prEditQuery({ owner, name, number }))).data?.repository?.pullRequest;
+  if (!node) throw new GhError("access", 404);
+  return node;
+};
+
+/** What the edit controls need (ids, permissions, code owners, assignees, labels, milestone, linked issues). Cached 30 s; invalidatePrPage drops it. */
+export const getEdit = (repo: string, number: number) => ttl(editNodes, `${repo}#${number}`, () => editNodeOf(repo, number));
+
+/** The pull request's current description, read fresh so a body edit never overwrites a newer one. */
+export async function getBodyNow(repo: string, number: number): Promise<string> {
+  return (await editNodeOf(repo, number)).body ?? "";
+}
+
+/** The pull request's Projects (v2) items, or null when GitHub refuses them (the app lacks the Projects permission): the page then hides the section. */
+export const getProjectRows = (repo: string, number: number) =>
+  ttl(projectNodes, `${repo}#${number}`, async () => {
+    const [owner, name] = repo.split("/");
+    try {
+      const body = await graphql(projectItemsQuery({ owner, name, number }));
+      const items = body.data?.repository?.pullRequest?.projectItems;
+      return items && !body.errors?.length ? toProjectRows(items.nodes) : null;
+    } catch {
+      return null;
+    }
+  });
+
+/** Users and teams for the reviewer picker: two requests, so a user-owned repository (no teams) still gives its users. */
+export async function searchReviewers(repo: string, query: string): Promise<Candidate[]> {
+  const [owner, name] = repo.split("/");
+  const [users, teams] = await Promise.all([
+    graphql(userSearchQuery({ owner, name, query })).then((b) => userCandidates(b.data)),
+    graphql(teamSearchQuery({ org: owner, query })).then((b) => teamCandidates(b.data), () => [] as Candidate[]),
+  ]);
+  return [...users, ...teams];
+}
+
+export async function searchAssignees(repo: string, query: string): Promise<Candidate[]> {
+  const [owner, name] = repo.split("/");
+  return userCandidates((await graphql(userSearchQuery({ owner, name, query }))).data);
+}
+
+export async function searchLabels(repo: string, query: string): Promise<LabelOption[]> {
+  const [owner, name] = repo.split("/");
+  return ((await graphql(labelSearchQuery({ owner, name, query }))).data?.repository?.labels?.nodes ?? []).filter(Boolean).map(toLabelOption);
+}
+
+export async function searchMilestones(repo: string, query: string): Promise<MilestoneOption[]> {
+  const [owner, name] = repo.split("/");
+  return sortMilestones(((await graphql(milestoneSearchQuery({ owner, name, query }))).data?.repository?.milestones?.nodes ?? []).filter(Boolean).map(toMilestoneOption));
+}
+
+/** Projects the viewer can add this pull request to: the repository's, then the organisation's. Either request may fail alone (no organisation for a user-owned repository). */
+export async function searchProjects(repo: string, query: string, attached: string[]): Promise<ProjectOption[]> {
+  const [owner, name] = repo.split("/");
+  const nodes = (p: Promise<any>, pick: (d: any) => any) => p.then((b) => pick(b.data)?.projectsV2?.nodes ?? null, () => null);
+  const [r, o] = await Promise.all([
+    nodes(graphql(repoProjectsQuery({ owner, name, query })), (d) => d?.repository),
+    nodes(graphql(orgProjectsQuery({ org: owner, query })), (d) => d?.organization),
+  ]);
+  return mergeProjectOptions(r, o, attached);
 }
