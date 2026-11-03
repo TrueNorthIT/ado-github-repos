@@ -1,0 +1,68 @@
+/* Actions run page and log view. Colours come from the ADO palette variables (RGB triples) so both themes work. */
+.gh-act-body { padding: 0 20px 24px; gap: 16px; }
+.gh-act-card { margin: 0; }
+.gh-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.gh-act-facts-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; padding: 4px 4px 8px; }
+.gh-act-facts-grid dt { color: rgba(var(--palette-neutral-60, 100, 100, 100), 1); }
+.gh-act-facts-grid dd { margin: 0; min-width: 0; }
+.gh-act-prlink + .gh-act-prlink { margin-left: 8px; }
+.gh-act-empty { padding: 16px; }
+
+/* graph */
+.gh-act-graph-wrap { overflow: auto; padding: 16px; }
+.gh-act-graph { position: relative; display: flex; align-items: flex-start; gap: 56px; min-width: min-content; }
+.gh-act-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.gh-act-lines path { stroke: rgba(var(--palette-neutral-30, 150, 150, 150), 1); stroke-width: 1.5; }
+.gh-act-col { display: flex; flex-direction: column; gap: 12px; position: relative; flex: 0 0 auto; width: 230px; }
+.gh-act-node { background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-left-width: 4px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.gh-act-succeeded { border-left-color: rgb(16, 124, 16); }
+.gh-act-failed { border-left-color: rgb(168, 0, 0); }
+.gh-act-inProgress { border-left-color: rgb(0, 120, 212); }
+.gh-act-cancelled, .gh-act-skipped, .gh-act-neutral, .gh-act-queued, .gh-act-waiting { border-left-color: rgba(var(--palette-neutral-30, 150, 150, 150), 1); }
+.gh-act-cardbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.gh-act-cardbtn:hover { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
+.gh-act-cardbtn:focus-visible, .gh-act-stepbtn:focus-visible { outline: 2px solid rgba(var(--palette-primary, 0, 120, 212), 1); outline-offset: -2px; }
+.gh-act-title { flex: 1 1 auto; min-width: 0; }
+.gh-act-dur, .gh-act-count { flex: 0 0 auto; font-size: .8rem; }
+.gh-act-matrix { list-style: none; margin: 0; padding: 0 0 4px 16px; }
+
+/* tables */
+.gh-act-jobs { width: 100%; border-collapse: collapse; }
+.gh-act-jobs th { text-align: left; font-weight: 600; font-size: .8rem; padding: 8px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); color: rgba(var(--palette-neutral-60, 100, 100, 100), 1); }
+.gh-act-jobs td { padding: 4px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); max-width: 260px; }
+.gh-act-jobname { gap: 8px; min-width: 0; }
+.gh-act-rowmenu { width: 40px; text-align: right; }
+.gh-act-pill { margin-left: 8px; }
+.gh-act-notes { padding: 4px 12px 8px; }
+.gh-act-notes-h { margin: 8px 0 4px; font-size: 1rem; gap: 8px; }
+.gh-act-notes ul { list-style: none; margin: 0; padding: 0; }
+.gh-act-notes li { padding: 6px 0; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); }
+.gh-act-note-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gh-act-review { gap: 12px; }
+.gh-act-envs { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* log view */
+.gh-act-logpage { display: flex; flex-direction: column; }
+.gh-act-log { display: flex; margin: 0 20px 20px; height: calc(100vh - 190px); min-height: 420px; border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-radius: 4px; overflow: hidden; background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
+.gh-act-steps { flex: 0 0 300px; overflow: auto; border-right: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); padding: 4px 0; }
+.gh-act-stepbtn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.gh-act-stepbtn:hover:not(:disabled) { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
+.gh-act-stepbtn:disabled { cursor: default; opacity: .6; }
+.gh-act-stepbtn.selected { background: rgba(var(--palette-primary, 0, 120, 212), .12); }
+.gh-act-jobbtn { font-weight: 600; padding-top: 6px; padding-bottom: 6px; }
+.gh-act-steplist { list-style: none; margin: 0; padding: 0 0 4px 16px; }
+.gh-act-logpane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+.gh-act-logbar { gap: 4px; padding: 4px 8px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); flex: 0 0 auto; }
+.gh-act-editor { flex: 1 1 0; min-height: 0; }
+.gh-act-logwait { padding: 24px; }
+
+/* Monaco: the log's own decorations */
+.monaco-editor .gh-log-error { background: rgba(207, 34, 46, .16); }
+.monaco-editor .gh-log-warning { background: rgba(191, 135, 0, .18); }
+.monaco-editor .gh-log-hl { background: rgba(0, 120, 212, .28); }
+.monaco-editor .gh-a-bold { font-weight: 700; }
+.monaco-editor .gh-a-italic { font-style: italic; }
+.monaco-editor .gh-a-underline { text-decoration: underline; }
+.gh-act-cardbody { display: flex; flex-direction: column; min-width: 0; width: 100%; }
+.gh-act-card .bolt-card-content { min-width: 0; flex-direction: column; }
+.gh-act-body .bolt-pill { display: inline-flex; width: auto; }

@@ -3,6 +3,7 @@
 import "monaco-editor/editor/browser/coreCommands.js";
 import "monaco-editor/editor/contrib/clipboard/browser/clipboard.js";
 import "monaco-editor/editor/contrib/find/browser/findController.js";
+import "monaco-editor/editor/contrib/folding/browser/folding.js";
 // Only the editable variant needs these two: Ctrl+M lets Tab leave the editor (a keyboard trap otherwise), and the line shortcuts people expect when typing.
 import "monaco-editor/editor/contrib/toggleTabFocusMode/browser/toggleTabFocusMode.js";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js";
@@ -325,5 +326,98 @@ export function enableLineComments(target: ZoneTarget, o: LineCommentOptions): {
   return {
     highlight: (span) => parts.forEach((p, i) => p.highlight(span && (target.kind === "whole" ? true : span.side === (i === 0 ? "RIGHT" : "LEFT")) ? span : null)),
     dispose: () => parts.forEach((p) => p.dispose()),
+  };
+}
+
+// ---------- the Actions job log (ACT-7): one big read-only model, ANSI colours and error lines as decorations, folding from ##[group] ----------
+
+const PAL_LIGHT = ["#24292f", "#cf222e", "#1a7f37", "#9a6700", "#0969da", "#8250df", "#1b7c83", "#6e7781", "#57606a", "#a40e26", "#2da44e", "#bf8700", "#218bff", "#a475f9", "#3192aa", "#8c959f"];
+const PAL_DARK = ["#6e7681", "#ff7b72", "#3fb950", "#d29922", "#58a6ff", "#bc8cff", "#39c5cf", "#b1bac4", "#8b949e", "#ffa198", "#56d364", "#e3b341", "#79c0ff", "#d2a8ff", "#56d4dd", "#f0f6fc"];
+let ansiSheet: HTMLStyleElement | undefined;
+const ansiDone = new Set<string>();
+function ansiRule(sel: string, css: string) {
+  if (!ansiSheet) { ansiSheet = document.createElement("style"); document.head.appendChild(ansiSheet); }
+  ansiSheet.appendChild(document.createTextNode(`${sel}{${css}}
+`));
+}
+const cube = (i: number) => {
+  if (i >= 232) { const v = 8 + (i - 232) * 10; return `rgb(${v},${v},${v})`; }
+  const n = i - 16, c = (x: number) => (x ? 55 + x * 40 : 0);
+  return `rgb(${c(Math.floor(n / 36))},${c(Math.floor(n / 6) % 6)},${c(n % 6)})`;
+};
+/** The CSS class for a colour (palette index or "#rrggbb"), created on first use. 0-15 follow the editor theme. */
+function ansiColour(kind: "f" | "b", c: number | string): string {
+  const name = `gh-a-${kind}-${typeof c === "number" ? c : c.slice(1)}`;
+  if (ansiDone.has(name)) return name;
+  ansiDone.add(name);
+  const prop = kind === "f" ? "color" : "background-color";
+  if (typeof c === "number" && c < 16) {
+    ansiRule(`.monaco-editor.vs .${name}`, `${prop}:${PAL_LIGHT[c]}`);
+    ansiRule(`.monaco-editor.vs-dark .${name}`, `${prop}:${PAL_DARK[c]}`);
+  } else ansiRule(`.${name}`, `${prop}:${typeof c === "number" ? cube(c) : c}`);
+  return name;
+}
+const ansiClass = (s: { fg?: number | string; bg?: number | string; bold?: boolean; italic?: boolean; underline?: boolean }) =>
+  [s.fg !== undefined && ansiColour("f", s.fg), s.bg !== undefined && ansiColour("b", s.bg), s.bold && "gh-a-bold", s.italic && "gh-a-italic", s.underline && "gh-a-underline"].filter(Boolean).join(" ");
+
+monaco.languages.register({ id: "ghlog" });
+
+export interface LogDoc {
+  text: string;
+  marks: { line: number; start: number; end: number; span: { fg?: number | string; bg?: number | string; bold?: boolean; italic?: boolean; underline?: boolean } }[];
+  levels: { line: number; kind: "error" | "warning" }[];
+  folds: { start: number; end: number }[];
+}
+
+export function createLogViewer(el: HTMLElement, dark: boolean, label: string, onLineClick: (line: number) => void) {
+  monaco.editor.setTheme(themeName(dark));
+  let folds: { start: number; end: number }[] = [];
+  const provider = monaco.languages.registerFoldingRangeProvider("ghlog", { provideFoldingRanges: () => folds.map((f) => ({ start: f.start, end: f.end })) });
+  const editor = monaco.editor.create(el, {
+    value: "",
+    language: "ghlog",
+    readOnly: true,
+    domReadOnly: true,
+    automaticLayout: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    lineNumbers: "on",
+    folding: true,
+    showFoldingControls: "always",
+    largeFileOptimizations: false,
+    renderLineHighlight: "none",
+    occurrencesHighlight: "off",
+    links: false,
+    quickSuggestions: false,
+    wordWrap: "off",
+    ariaLabel: label,
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: 'Consolas, "Courier New", monospace',
+  });
+  const styled = editor.createDecorationsCollection([]);
+  const hl = editor.createDecorationsCollection([]);
+  const down = editor.onMouseDown((e) => {
+    if (e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS && e.target.position) onLineClick(e.target.position.lineNumber);
+  });
+  return {
+    setDoc(d: LogDoc) {
+      const top = editor.getScrollTop();
+      folds = d.folds;
+      editor.setValue(d.text);
+      const decs: monaco.editor.IModelDeltaDecoration[] = d.marks.map((m) => ({ range: new monaco.Range(m.line, m.start, m.line, m.end), options: { inlineClassName: ansiClass(m.span) } }));
+      for (const l of d.levels) decs.push({ range: new monaco.Range(l.line, 1, l.line, 1), options: { isWholeLine: true, className: l.kind === "error" ? "gh-log-error" : "gh-log-warning", overviewRuler: { color: l.kind === "error" ? "#cf222e" : "#bf8700", position: monaco.editor.OverviewRulerLane.Full } } });
+      styled.set(decs);
+      editor.setScrollTop(top);
+    },
+    /** Scrolls the line near the top; `mark` also highlights it. */
+    reveal(line: number, mark = false, scroll = true) {
+      const n = Math.min(Math.max(1, line), editor.getModel()?.getLineCount() ?? 1);
+      if (scroll) editor.revealLineNearTop(n);
+      editor.setPosition({ lineNumber: n, column: 1 });
+      hl.set(mark ? [{ range: new monaco.Range(n, 1, n, 1), options: { isWholeLine: true, className: "gh-log-hl" } }] : []);
+    },
+    setTheme: (d: boolean) => monaco.editor.setTheme(themeName(d)),
+    dispose() { down.dispose(); provider.dispose(); const m = editor.getModel(); editor.dispose(); m?.dispose(); },
   };
 }

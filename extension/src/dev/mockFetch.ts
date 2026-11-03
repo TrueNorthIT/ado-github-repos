@@ -15,6 +15,7 @@ import { isRefsCompare, refsContent, refsGraphql, refsRest } from "./refsMock";
 import { releasesGraphql, releasesRest } from "./releasesMock";
 import { releaseFormRest } from "./releaseFormMock";
 import { actionsRest } from "./actionsMock";
+import { actionsRunRest } from "./actionsRunMock";
 import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -206,6 +207,10 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   const accept = new Headers(init?.headers).get("Accept") ?? "";
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
   if (u.hostname === "api.github.com" && u.pathname === "/markdown" && init?.method === "POST") return securityMarkdown(String(init.body ?? ""));
+  if (u.hostname === "api.github.com" && sc !== "rateLimit") {
+    const run = await actionsRunRest(u, init, sc); // Actions run page: run detail, jobs, logs, artifacts, annotations, re-run, cancel, review
+    if (run) return run;
+  }
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
   const wiStates = /\/_apis\/wit\/workitemtypes\/([^/]+)\/states$/.exec(u.pathname);
