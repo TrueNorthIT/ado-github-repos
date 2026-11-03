@@ -27,11 +27,11 @@ import { BrowseState, serialize } from "./lib/browseState";
 import { parseRepoUrl, isGitHubDotCom } from "./lib/repoUrl";
 import { getTokens, signIn, signOut } from "./auth";
 import { Connection, filterRows, mergeRows, Row } from "./lib/rows";
-import { relativeTime } from "./lib/tokens";
+import { RelDate } from "./RelDate";
 
 const NA = "Not available";
 
-function cell(col: ITableColumn<Row>, rowIndex: number, columnIndex: number, text: string) {
+function cell(col: ITableColumn<Row>, rowIndex: number, columnIndex: number, text: React.ReactNode) {
   return <SimpleTableCell key={`c${columnIndex}`} columnIndex={columnIndex} tableColumn={col}>{text}</SimpleTableCell>;
 }
 
@@ -60,7 +60,7 @@ const columns = (open: (repo: string) => void): ITableColumn<Row>[] => [
   { id: "description", name: "Description", width: -60, renderCell: (r, c, col, row) => cell(col, r, c, row.unavailable ? NA : row.meta?.description ?? "") },
   { id: "language", name: "Language", width: 120, renderCell: (r, c, col, row) => cell(col, r, c, row.meta?.language ?? "") },
   { id: "visibility", name: "Visibility", width: 100, renderCell: (r, c, col, row) => cell(col, r, c, row.meta ? (row.meta.private ? "Private" : "Public") : "") },
-  { id: "updated", name: "Updated", width: 140, renderCell: (r, c, col, row) => cell(col, r, c, relativeTime(row.meta?.pushedAt)) },
+  { id: "updated", name: "Updated", width: 140, renderCell: (r, c, col, row) => cell(col, r, c, row.meta?.pushedAt ? <RelDate date={row.meta.pushedAt} /> : "") },
 ];
 
 type Load =

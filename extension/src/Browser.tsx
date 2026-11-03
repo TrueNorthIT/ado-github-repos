@@ -13,8 +13,7 @@ import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
 import { Table, ITableColumn, SimpleTableCell, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
-import { Ago } from "azure-devops-ui/Ago";
-import { AgoFormat } from "azure-devops-ui/Utilities/Date";
+import { RelDate } from "./RelDate";
 import { Tooltip } from "azure-devops-ui/TooltipEx";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Tree, ExpandableTreeCell, ITreeColumn } from "azure-devops-ui/TreeEx";
@@ -299,7 +298,7 @@ function Listing({ entries, go, repo, refName, folder }: { entries: TreeEntry[];
         width: -20,
         renderCell: (_r, columnIndex, tableColumn, e) => {
           const c = commits[e.path];
-          return <SimpleTableCell key="changed" columnIndex={columnIndex} tableColumn={tableColumn}>{c && <Ago date={c.date} format={AgoFormat.Compact} />}</SimpleTableCell>;
+          return <SimpleTableCell key="changed" columnIndex={columnIndex} tableColumn={tableColumn}>{c && <RelDate date={c.date} />}</SimpleTableCell>;
         },
       },
       {
