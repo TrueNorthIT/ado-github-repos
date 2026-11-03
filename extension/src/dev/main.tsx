@@ -57,6 +57,7 @@ function toolbar() {
   document.body.append(bar);
 }
 
+SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
 toolbar();
 import("./fakeHeader").then((m) => m.fakeHeader());
 import("../index");

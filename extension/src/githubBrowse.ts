@@ -108,6 +108,12 @@ export async function restJson<T = any>(r: RestRequest): Promise<{ body: T; link
   return { body: await res.json(), link: res.headers.get("link") };
 }
 
+/** A write that answers with JSON (release create/update, generate-notes): sends the method and body, parses the reply; 204 gives undefined. */
+export async function restSend<T = any>(r: RestRequest): Promise<T> {
+  const res = await request(r.path, "application/vnd.github+json", true, r.body ? JSON.stringify(r.body) : undefined, r.method);
+  return (res.status === 204 ? undefined : await res.json()) as T;
+}
+
 const json = async <T>(url: string): Promise<T> => (await request(url, "application/vnd.github+json")).json();
 
 export interface RepoInfo {
