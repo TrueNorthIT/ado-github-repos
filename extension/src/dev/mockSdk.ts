@@ -109,7 +109,8 @@ export function applyTheme(theme: Record<string, string>) {
   themeEl.textContent = `:root { ${Object.entries(theme).map(([k, v]) => `--${k}: ${v}`).join("; ")} } body { color: var(--text-primary-color); background: var(--background-color) }`;
   window.dispatchEvent(new CustomEvent("themeApplied", { detail: theme }));
 }
-export const isMockDark = () => { try { return localStorage.getItem(PREFIX + "theme") === "dark"; } catch { return false; } };
+/** `?theme=light|dark` wins (headless screenshots, npm run shots), then the toolbar's stored choice. */
+export const isMockDark = () => { const q = new URLSearchParams(location.search).get("theme"); if (q === "dark" || q === "light") return q === "dark"; try { return localStorage.getItem(PREFIX + "theme") === "dark"; } catch { return false; } };
 export function setMockTheme(dark: boolean) {
   try { localStorage.setItem(PREFIX + "theme", dark ? "dark" : "light"); } catch { /* ignore */ }
   applyTheme(dark ? DARK : LIGHT);

@@ -1,8 +1,11 @@
 # Builds, checks and publishes the Azure DevOps extension to the Visual Studio Marketplace
 # using Marketplace Trusted Publishing (GitHub OIDC). No stored PAT.
 #
-# Release: bump "version" in extension/package.json and extension/vss-extension.json,
-# commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+# Release: bump "version" in extension/package.json and extension/vss-extension.json, commit
+# and push main. A push to main whose version has no vX.Y.Z tag yet is a release: this workflow
+# publishes it, then creates the tag and the GitHub release. (Cloud sessions can't push tags, so
+# the tag is made here.) Pushing a vX.Y.Z tag yourself still works; the main push then finds the
+# tag and does nothing.
 # Manual run (Actions tab) defaults to a dry run: build and package only.
 #
 # tfx-cli has no OIDC support, so the job exchanges the GitHub OIDC token itself, the same
@@ -12,6 +15,7 @@ name: publish
 
 on:
   push:
+    branches: [main]
     tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
@@ -27,7 +31,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A main push is a release only when its version has no tag yet; tag pushes and manual runs always go ahead.
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: check
+        run: |
+          version=$(node -p "require('./extension/vss-extension.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "branch" ] && [ "$GITHUB_EVENT_NAME" = "push" ] && git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already tagged: not a release"; echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
   publish:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub release on tags
@@ -108,11 +137,14 @@ jobs:
           echo "::error::Validation still pending after 20 min; check the Marketplace"; exit 1
 
       - name: GitHub release
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push'
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           VSIX: ${{ steps.vsix.outputs.path }}
+          TAG: v${{ needs.gate.outputs.version }}
         run: |
-          bash .github/scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
-          gh release create "$GITHUB_REF_NAME" "$VSIX" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          # On a main push the tag doesn't exist yet: make it locally for the notes' range, and let `gh release create` create it on GitHub at this commit.
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag "$TAG" "$GITHUB_SHA"
+          bash .github/scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$VSIX" --repo "$GITHUB_REPOSITORY" --title "$TAG" --target "$GITHUB_SHA" --notes-file "$RUNNER_TEMP/notes.md"

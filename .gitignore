@@ -6,3 +6,4 @@ local.settings.json
 coverage/
 .vitest/
 dist-dev/
+shots/

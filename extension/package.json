@@ -6,7 +6,8 @@
     "test": "vitest run",
     "build": "tsc --noEmit && node build.mjs",
     "package": "tfx extension create --manifest-globs vss-extension.json --output-path out",
-    "dev": "node build.mjs --dev"
+    "dev": "node build.mjs --dev",
+    "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
     "azure-devops-extension-api": "^4.270.0",
