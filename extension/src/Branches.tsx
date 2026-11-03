@@ -21,6 +21,7 @@ import { NewBranchDialog, ConfirmDeleteDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
 import { createBranch, deleteRef, getAheadBehind, getViewerLogin, invalidateRefs, listAllBranches, type BranchesData } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
+import { branchRowNewPrHash } from "./lib/newPrHash";
 import { usePrefs } from "./prefs";
 import { useRefWrites } from "./refWrites";
 import "./browser.css";
@@ -147,7 +148,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
                 id: `gh-branch-menu-${b.name}`,
                 items: [
                   { id: "new", text: "New branch", iconProps: { iconName: "Add" }, onActivate: () => setDialog({ kind: "new", base: b.name }) },
-                  { id: "pr", text: "New pull request", iconProps: { iconName: "BranchPullRequest" }, href: ghCompare(b.name, true), target: "_blank", rel: "noopener noreferrer", disabled: b.isDefault },
+                  { id: "pr", text: "New pull request", iconProps: { iconName: "BranchPullRequest" }, href: href("prs", branchRowNewPrHash(repo, b.name)), onActivate: openInHub("prs", branchRowNewPrHash(repo, b.name)) as any, disabled: b.isDefault },
                   { id: "delete", text: "Delete branch", iconProps: { iconName: "Delete" }, disabled: !del.ok || writes.busy, secondaryText: del.ok ? undefined : del.reason, onActivate: () => setDialog({ kind: "delete", branch: b }) },
                   { id: "history", text: "View history", iconProps: { iconName: "History" }, href: href("commits", { repo, ref: b.name === def ? undefined : b.name }), onActivate: openInHub("commits", { repo, ref: b.name === def ? undefined : b.name }) as any },
                   { id: "compare", text: "Compare", iconProps: { iconName: "OpenInNewTab" }, href: ghCompare(b.name, false), target: "_blank", rel: "noopener noreferrer", disabled: b.isDefault },

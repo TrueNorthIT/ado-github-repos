@@ -497,3 +497,14 @@
 .gh-pr-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--palette-primary, 0, 120, 212), 1); }
 .gh-pr-line1 .gh-pr-title-unread { font-weight: 600; }
 .gh-updates-body { min-width: 0; width: 100%; }
+
+/* ---------- New pull request (batch 5) ---------- */
+.gh-np-branches { padding: 0 32px 8px; gap: 8px; }
+.gh-np-branches .gh-topbar { padding: 0; }
+.gh-np-body { display: flex; flex-direction: column; gap: 16px; }
+.gh-np-field { margin-bottom: 4px; }
+.gh-np-actions { gap: 12px; margin-top: 4px; }
+.gh-np-checking { min-height: 24px; }
+.gh-np-note { padding: 8px 4px 0; }
+.gh-np-preview { margin-top: 8px; }
+.gh-np-preview .gh-pr-files { margin-top: 8px; }
