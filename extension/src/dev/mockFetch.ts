@@ -4,7 +4,8 @@ import { CONNECTIONS, HTML, TEXT, repoOf, treeFor } from "./fixtures/repos";
 import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
-import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages } from "./fixtures/actions";
+import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, rerunRun } from "./fixtures/actions";
+import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
@@ -44,6 +45,14 @@ function graphql(init: RequestInit | undefined, sc: string): Response {
     if (sc === "feedPostFails") return status(403); // the sign-in can't post: shows the optimistic rollback
     const data = feedMutation(query, variables);
     return data ? json({ data }) : json({ data: null, errors: [{ message: "Unknown mutation" }] });
+  }
+  // Batch 1b: annotations, deployments and commit signatures of a pull request (their queries also ask about pullRequest( and timelineItems(, so they go first).
+  if (query.includes("annotations(first: 50)") || query.includes("DEPLOYED_EVENT") || query.includes("commits(first: 100")) {
+    const mine = `${variables.owner}/${variables.name}`.toLowerCase() === PR_REPO;
+    const pullRequest = !mine ? null : query.includes("annotations(first: 50)") ? annotationContexts(variables.number)
+      : query.includes("DEPLOYED_EVENT") ? { timelineItems: { nodes: deploymentNodes(variables.number) } }
+      : { commits: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: signatureNodes(variables.number) } };
+    return json({ data: { repository: { pullRequest } } });
   }
   // Acting on a PR: the actions detail query, the merge message suggestions and the branch list (all ask about pullRequest( or refs(, so they go before the generic routes).
   if (query.includes("mergeStateStatus")) {
@@ -115,6 +124,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (refsAnswer) return refsAnswer;
   const files = /^\/pulls\/(\d+)\/files$/.exec(rest);
   if (files) return repo.fullName.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === Number(files[1])) ? json(restFiles(Number(files[1]))) : status(404);
+  const rerun = /^\/actions\/runs\/(\d+)\/(rerun|rerun-failed-jobs)$/.exec(rest);
+  if (rerun && init?.method === "POST") return sc === "actionsFail" || !rerunRun(Number(rerun[1]), rerun[2] === "rerun") ? status(403) : status(201);
   const c = /^\/contents\/(.+)$/.exec(rest);
   if (c) {
     const text = contentAt(u.searchParams.get("ref") ?? "", c[1].split("/").map(decodeURIComponent).join("/"));

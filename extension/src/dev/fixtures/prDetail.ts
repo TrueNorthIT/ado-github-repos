@@ -73,7 +73,7 @@ const SMALL: FixtureFile[] = [f("package.json", "modified", PKG_BASE, PKG_HEAD)]
 // 25 tiny files for #197: cards past the 20th start collapsed.
 const MANY: FixtureFile[] = Array.from({ length: 25 }, (_, i) => f(`src/gen/file${String(i + 1).padStart(2, "0")}.ts`, "added", undefined, `export const v${i} = ${i};\n`));
 
-export const PR_FILES: Record<number, FixtureFile[]> = { 200: RICH, 199: SMALL, 198: SMALL, 197: MANY, 170: SMALL };
+export const PR_FILES: Record<number, FixtureFile[]> = { 200: RICH, 199: SMALL, 198: SMALL, 197: MANY, 170: SMALL, 312: RICH };
 const RICH_NUMBERS = Object.keys(PR_FILES).map(Number);
 
 /** Contents of `path` at a fixture sha, or undefined (404). */
@@ -100,9 +100,10 @@ const RICH_BODY = `<h2>What changed</h2>
 <p>See <a href="https://github.com/truenorthit/github-repos/blob/main/docs/guide.md">the guide</a> and <a href="https://example.com">an external page</a>.</p>`;
 
 const ANN = { name: "Ann Author", user: { login: "ann" } };
+export const commitOid = (n: number, i: number) => (0xc0de0000 + n * 16 + i).toString(16).padEnd(40, "0");
 const commit = (n: number, i: number, message: string, author: { name: string; user: { login: string } | null }, hoursAgo: number) => ({
   commit: {
-    oid: (0xc0de0000 + n * 16 + i).toString(16).padEnd(40, "0"),
+    oid: commitOid(n, i),
     message,
     authoredDate: new Date(Date.now() - hoursAgo * 3600e3).toISOString(),
     author: { ...author, avatarUrl: avatarOf(author.user?.login ?? "ann") },
@@ -113,7 +114,7 @@ const commit = (n: number, i: number, message: string, author: { name: string; u
 export function detailNode(p: FixturePr) {
   const n = p.node.number;
   const known = RICH_NUMBERS.includes(n);
-  const rollup = n === 200 ? "SUCCESS" : n === 199 ? "FAILURE" : n === 198 ? "PENDING" : null;
+  const rollup = n === 200 ? "SUCCESS" : n === 199 || n === 312 ? "FAILURE" : n === 198 ? "PENDING" : null;
   const reviews =
     n === 200
       ? [
@@ -130,13 +131,13 @@ export function detailNode(p: FixturePr) {
     baseRefOid: baseSha(known ? n : 1),
     mergeable: n === 199 ? "CONFLICTING" : n === 198 ? "UNKNOWN" : "MERGEABLE",
     statusCheckRollup: rollup ? { state: rollup } : null,
-    reviewRequests: { nodes: n === 200 ? [{ requestedReviewer: who("bob-dev") }] : [] },
+    reviewRequests: { nodes: n === 200 || n === 312 ? [{ requestedReviewer: who("bob-dev") }] : [] },
     reviews: { nodes: reviews },
     // Review threads follow the feed fixtures, so resolving one in the feed moves the header's "x/y comments resolved".
     ...(threadTotals(n) && { reviewThreads: { totalCount: threadTotals(n)![1], nodes: [...Array(threadTotals(n)![0]).fill(true), ...Array(threadTotals(n)![1] - threadTotals(n)![0]).fill(false)].map((isResolved) => ({ isResolved })) } }),
     commits: {
       nodes:
-        n === 200
+        n === 200 || n === 312
           ? [
               commit(n, 1, "Add retry helper\n\nBacks off exponentially.", ANN, 30),
               commit(n, 2, "Use a template string in greet (AB#1001)", ANN, 22),

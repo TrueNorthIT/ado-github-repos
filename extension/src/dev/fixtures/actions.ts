@@ -2,12 +2,13 @@
 // Per-PR repository settings stand in for per-repo ones: #308 is "a repo that only allows squash", #309 "a repo that deletes branches on merge".
 import { ME, PRS, PR_REPO, type FixturePr } from "./prs";
 import { headSha } from "./prDetail";
+import { scenario } from "../mockSdk";
 
 const MIN = 60e3;
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 
 type Check =
-  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean; startedAt?: string; completedAt?: string; checkSuite?: { workflowRun: { workflow: { name: string } } } }
+  | { __typename: "CheckRun"; name: string; status: string; conclusion: string | null; detailsUrl: string | null; isRequired: boolean; startedAt?: string; completedAt?: string; checkSuite?: { workflowRun: { workflow: { name: string } } }; runSuite?: { workflowRun: { databaseId: number } | null }; annotations?: { totalCount: number } }
   | { __typename: "StatusContext"; context: string; state: string; targetUrl: string | null; isRequired: boolean; createdAt?: string };
 const run = (name: string, conclusion: string | null, isRequired: boolean, status = conclusion ? "COMPLETED" : "IN_PROGRESS"): Check => ({
   __typename: "CheckRun", name, status, conclusion, detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${1000 + name.length}`, isRequired,
@@ -15,6 +16,12 @@ const run = (name: string, conclusion: string | null, isRequired: boolean, statu
 /** A run of `name` in `workflow`, `minAgo` minutes ago: several of these make the duplicates a re-run or another event leaves behind. */
 const wfRun = (name: string, workflow: string, minAgo: number, conclusion: string, isRequired = false): Check => ({
   ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>), startedAt: iso((minAgo + 1) * MIN), completedAt: iso(minAgo * MIN), checkSuite: { workflowRun: { workflow: { name: workflow } } },
+});
+/** A GitHub Actions job of workflow run `runId` (the id that re-run needs), with its annotation count. */
+const job = (name: string, runId: number, conclusion: string | null, isRequired: boolean, annotations = 0): Check => ({
+  ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>),
+  detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${runId}/job/${name.length}`,
+  checkSuite: { workflowRun: { workflow: { name: "CI" } } }, runSuite: { workflowRun: { databaseId: runId } }, annotations: { totalCount: annotations },
 });
 const GREEN = [run("build", "SUCCESS", true), run("unit tests", "SUCCESS", true), run("lint", "SUCCESS", false)];
 
@@ -29,9 +36,14 @@ interface Spec {
   body?: string;
   /** The first N fetches report mergeStateStatus UNKNOWN, as GitHub does right after a reopen. */
   unknownFetches?: number;
+  /** The base branch requires a merge queue; `queued` starts the pull request in it. */
+  queue?: { queued?: boolean };
+  /** The head is in a fork the viewer can't push to (Rebase is disabled). */
+  fork?: boolean;
   settings?: { merge?: boolean; squash?: boolean; rebase?: boolean; autoMerge?: boolean; deleteOnMerge?: boolean };
 }
 const WI = "Relates to AB#1000 and AB#1001.";
+export const RERUN_RUN = 9001;
 const SPECS: Record<number, Spec> = {
   301: { title: "Clean: required checks pass, ready to complete", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: `Everything is green. ${WI}`, settings: { autoMerge: true } },
   302: { title: "Blocked: a required check is failing", mergeStateStatus: "BLOCKED", reviewDecision: "REVIEW_REQUIRED", checks: [run("build", "FAILURE", true), run("unit tests", null, true), run("lint", "SUCCESS", false), run("docs preview", "SKIPPED", false)], body: `Auto-merge is allowed here. ${WI}`, settings: { autoMerge: true } },
@@ -43,6 +55,12 @@ const SPECS: Record<number, Spec> = {
   308: { title: "Squash only: the repository allows nothing else", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { merge: false, rebase: false } },
   309: { title: "Branch cleanup: the repository deletes merged branches", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, settings: { deleteOnMerge: true } },
   310: { title: "Settling: GitHub is still working out mergeability", mergeStateStatus: "CLEAN", reviewDecision: null, checks: GREEN, body: WI, unknownFetches: 2 },
+  312: {
+    title: "CI: failed jobs with annotations, deployments and signed commits", mergeStateStatus: "BLOCKED", reviewDecision: "APPROVED", body: WI, checks: ciChecks(),
+  },
+  313: { title: "Queue: the base branch requires a merge queue", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, queue: {} },
+  314: { title: "Queued: already waiting in the merge queue", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, queue: { queued: true } },
+  315: { title: "Fork behind: the head is in a fork you can't push to", mergeStateStatus: "BEHIND", reviewDecision: "APPROVED", checks: GREEN, body: WI, fork: true },
   311: {
     title: "Duplicates: re-runs and other workflow events", mergeStateStatus: "CLEAN", reviewDecision: null, body: WI,
     checks: [
@@ -53,6 +71,17 @@ const SPECS: Record<number, Spec> = {
   },
 };
 
+function ciChecks(): Check[] {
+  return [
+  job("build", RERUN_RUN, "SUCCESS", true),
+  job("unit tests", RERUN_RUN, "FAILURE", true, 2),
+  job("lint", RERUN_RUN, "FAILURE", false, 4),
+  { ...(run("code quality", "FAILURE", false) as Extract<Check, { __typename: "CheckRun" }>), detailsUrl: `https://checks.example.test/${PR_REPO}/312`, annotations: { totalCount: 1 } },
+  job("deploy preview", 9002, "SUCCESS", false),
+  { __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS", targetUrl: null, isRequired: false },
+  ];
+}
+
 interface Live {
   mergeStateStatus: string;
   reviewDecision: string | null;
@@ -61,6 +90,12 @@ interface Live {
   headRefDeleted: boolean;
   subscription: string;
   unknownLeft: number;
+  checks: Check[];
+  /** Fetches left before the re-run jobs finish (they report IN_PROGRESS until then). */
+  rerunLeft: number;
+  /** Set while queued: fetches since it was added, which move it up the queue and finally merge it. */
+  queue: { ticks: number } | null;
+  copilotPending: boolean;
 }
 const live = new Map<number, Live>();
 const specOf = (n: number) => SPECS[n];
@@ -81,9 +116,34 @@ Object.keys(SPECS).map(Number).sort((a, b) => b - a).forEach((n, i) => {
     },
   };
   PRS.unshift(pr);
-  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0 });
+  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0, checks: s.checks.map((c) => ({ ...c })), rerunLeft: 0, queue: s.queue?.queued || (n === 313 && scenario() === "queued") ? { ticks: 0 } : null, copilotPending: false });
 });
 PRS.sort((a, b) => Date.parse(b.node.updatedAt) - Date.parse(a.node.updatedAt));
+
+/** Each fetch moves the fixtures along: re-run jobs finish, a queued pull request advances and is merged after a few fetches. */
+function tick(n: number, l: Live, p: FixturePr) {
+  if (l.rerunLeft > 0 && --l.rerunLeft === 0) {
+    l.checks = l.checks.map((c) => (c.__typename === "CheckRun" && c.status !== "COMPLETED" ? { ...c, status: "COMPLETED", conclusion: "SUCCESS", annotations: { totalCount: 0 } } : c));
+    if (!l.checks.some((c) => c.__typename === "CheckRun" && c.isRequired && c.conclusion !== "SUCCESS")) l.mergeStateStatus = "CLEAN";
+  }
+  if (l.queue && ++l.queue.ticks >= 9) {
+    l.queue = null;
+    Object.assign(p.node, { state: "MERGED", mergedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  }
+}
+
+/** POST .../actions/runs/{id}/rerun[-failed-jobs]: the failed (or, for "all", every) job of that run goes back to IN_PROGRESS, then succeeds. false when the run is unknown. */
+export function rerunRun(runId: number, all: boolean): boolean {
+  for (const [n, l] of live) {
+    if (!l.checks.some((c) => c.__typename === "CheckRun" && c.runSuite?.workflowRun?.databaseId === runId)) continue;
+    l.checks = l.checks.map((c) => (c.__typename === "CheckRun" && c.runSuite?.workflowRun?.databaseId === runId && (all || c.conclusion === "FAILURE") ? { ...c, status: "IN_PROGRESS", conclusion: null } : c));
+    l.rerunLeft = 4;
+    l.mergeStateStatus = "BLOCKED";
+    void n;
+    return true;
+  }
+  return false;
+}
 
 const prOf = (n: number) => PRS.find((p) => p.node.number === n);
 
@@ -93,21 +153,26 @@ export function actionsNode(n: number) {
   if (!p || !l || !s) return null;
   const st = s.settings ?? {};
   const open = p.node.state === "OPEN";
+  tick(n, l, p);
   const mergeStateStatus = l.unknownLeft > 0 ? (l.unknownLeft--, "UNKNOWN") : l.mergeStateStatus;
+  const entry = l.queue && { position: Math.max(1, 3 - Math.floor(l.queue.ticks / 2)), state: "QUEUED", estimatedTimeToMerge: Math.max(1, 3 - Math.floor(l.queue.ticks / 2)) * 240 };
   return {
     mergeCommitAllowed: st.merge ?? true, squashMergeAllowed: st.squash ?? true, rebaseMergeAllowed: st.rebase ?? true,
     autoMergeAllowed: !!st.autoMerge, deleteBranchOnMerge: !!st.deleteOnMerge, viewerPermission: "ADMIN",
     defaultBranchRef: { name: "main" },
     pullRequest: {
       id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED", mergeStateStatus, reviewDecision: l.reviewDecision,
-      baseRefName: p.node.baseRefName, headRefName: p.node.headRefName, headRefOid: headSha(n), isCrossRepository: false, headRepository: { nameWithOwner: PR_REPO },
+      baseRefName: p.node.baseRefName, headRefName: p.node.headRefName, headRefOid: headSha(n), isCrossRepository: !!s.fork, headRepository: { nameWithOwner: s.fork ? "contributor/github-repos" : PR_REPO, viewerPermission: s.fork ? "READ" : "ADMIN" },
+      maintainerCanModify: false, viewerCanUpdateBranch: open && mergeStateStatus === "BEHIND",
+      isMergeQueueEnabled: !!s.queue, isInMergeQueue: !!l.queue, mergeQueueEntry: entry,
+      reviewRequests: { nodes: l.copilotPending ? [{ requestedReviewer: { __typename: "Bot", login: "copilot-pull-request-reviewer" } }] : [] },
       // GitHub reports false here for every open PR; the app asks about push permission instead (lib/prActions.ts).
       headRef: l.headRefDeleted ? null : { id: `REF_${n}`, name: p.node.headRefName, branchProtectionRule: null },
       viewerDidAuthor: p.node.author?.login === ME, viewerSubscription: l.subscription,
       viewerCanUpdate: open, viewerCanClose: open, viewerCanReopen: p.node.state === "CLOSED", viewerCanDeleteHeadRef: false,
       viewerCanEnableAutoMerge: open && !!st.autoMerge && !l.autoMergeRequest, viewerCanDisableAutoMerge: open && !!l.autoMergeRequest, viewerCanMergeAsAdmin: false,
       viewerLatestReview: l.latestReview, autoMergeRequest: l.autoMergeRequest,
-      statusCheckRollup: { state: "SUCCESS", contexts: { pageInfo: { hasNextPage: false }, nodes: s.checks } },
+      statusCheckRollup: { state: "SUCCESS", contexts: { pageInfo: { hasNextPage: false }, nodes: l.checks } },
     },
   };
 }
@@ -125,7 +190,7 @@ export function mergeMessages(n: number) {
 type Result = { code: number } | { data: unknown } | { errors: { type?: string; message: string }[] };
 const num = (id: unknown) => Number(String(id).replace(/^\D+/, ""));
 const fail = (message: string): Result => ({ errors: [{ message }] });
-const MUTATIONS = /\b(addPullRequestReview|dismissPullRequestReview|mergePullRequest|enablePullRequestAutoMerge|disablePullRequestAutoMerge|deleteRef|closePullRequest|reopenPullRequest|convertPullRequestToDraft|markPullRequestReadyForReview|updateSubscription|updatePullRequest)\(input: \$input\)/;
+const MUTATIONS = /\b(addPullRequestReview|dismissPullRequestReview|mergePullRequest|enablePullRequestAutoMerge|disablePullRequestAutoMerge|deleteRef|closePullRequest|reopenPullRequest|convertPullRequestToDraft|markPullRequestReadyForReview|updateSubscription|updatePullRequest|updatePullRequestBranch|enqueuePullRequest|dequeuePullRequest|requestCopilotCodeReview)\(input: \$input\)/;
 
 /** Applies an action mutation to the fixtures. undefined when `query` is not one of ours (the feed's mutations fall through). `scenario` "actionsFail" refuses them all. */
 export function actionsMutation(query: string, variables: Record<string, any>, scenario: string): Result | undefined {
@@ -133,7 +198,7 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
   if (!field) return undefined;
   if (scenario === "actionsFail") return { code: 403 };
   const input = variables.input ?? {};
-  const n = num(input.pullRequestId ?? input.pullRequestReviewId ?? input.refId ?? input.subscribableId);
+  const n = num(input.pullRequestId ?? input.pullRequestReviewId ?? input.refId ?? input.subscribableId ?? input.id);
   const p = prOf(n), l = live.get(n);
   if (!p || !l) return fail("Could not resolve to a node with the global id");
   const pr = () => ({ id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED" });
@@ -185,6 +250,22 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
     case "updateSubscription":
       l.subscription = input.state;
       return { data: { updateSubscription: { subscribable: { viewerSubscription: l.subscription } } } };
+    case "updatePullRequestBranch":
+      if (input.expectedHeadOid !== headSha(n)) return fail("Head branch was modified. Review and try the update again.");
+      l.mergeStateStatus = "CLEAN";
+      l.unknownLeft = 2; // GitHub works out mergeability again after the push
+      return { data: { updatePullRequestBranch: { pullRequest: { id: `PR_${n}`, headRefOid: headSha(n), mergeStateStatus: "UNKNOWN", viewerCanUpdateBranch: false } } } };
+    case "enqueuePullRequest":
+      if (!specOf(n).queue) return fail("Pull request is not eligible for the merge queue");
+      l.queue = { ticks: 0 };
+      return { data: { enqueuePullRequest: { mergeQueueEntry: { position: 3, state: "QUEUED", estimatedTimeToMerge: 720, pullRequest: { id: `PR_${n}`, isInMergeQueue: true } } } } };
+    case "dequeuePullRequest":
+      l.queue = null;
+      return { data: { dequeuePullRequest: { mergeQueueEntry: null } } };
+    case "requestCopilotCodeReview":
+      if (scenario === "copilotRefused") return { data: { requestCopilotCodeReview: { success: false, failureReason: "NO_QUOTA_REMAINING", reviewRequest: null, pullRequest: { id: `PR_${n}` } } } };
+      l.copilotPending = true;
+      return { data: { requestCopilotCodeReview: { success: true, failureReason: null, reviewRequest: { id: "RR_1" }, pullRequest: { id: `PR_${n}` } } } };
     default: // updatePullRequest
       p.node.baseRefName = input.baseRefName;
       return { data: { updatePullRequest: { pullRequest: { id: `PR_${n}`, baseRefName: p.node.baseRefName } } } };
