@@ -10,6 +10,13 @@ import { actionsDetailQuery, branchesQuery, mergeMessageQuery, type PrActionsNod
 import { feedQuery, addCommentMutation, replyMutation, resolveMutation, unresolveMutation } from "./lib/feedQuery";
 import { toFeed, type FeedComment, type FeedItem, type ReviewThreadNode, type TimelineNode } from "./lib/feedModel";
 import type { GhActor } from "./lib/prModel";
+import { commitsQuery, commitSearchQuery, mapCommitSearch, mapCommitsPage, type CommitRow, type CommitsPage } from "./lib/commitsQuery";
+import { commitDetailQuery, comparePath, diffPath, mapCommitDetail, type CommitDetail, type ParentOption } from "./lib/commitDetail";
+import { isPushActivity, mapActivity, mapPushHeads, pushExpansion, pushHeadsQuery, pushesPath, type PushHead, type PushRow, type RestActivity } from "./lib/pushes";
+import { branchListQuery, createBranchMutation, mapBranchesPage, mapCompare, type AheadBehind, type Branch } from "./lib/branches";
+import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, type TagRow } from "./lib/tags";
+import { deleteRefMutation } from "./lib/actionsQuery";
+import { mapRestCommit, type RestCommit } from "./lib/restCommit";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -374,4 +381,165 @@ export async function getMergeMessages(repo: string, number: number): Promise<{ 
   } catch {
     return null;
   }
+}
+
+// ---------- commits, pushes, branches and tags (batch R1) ----------
+
+const refCaches: Map<string, unknown>[] = [];
+/** A 30 s cache like the PR pages', dropped as a whole by invalidateRefs() after any branch or tag write. */
+const refTtl = (() => {
+  const m = new Map<string, { at: number; p: Promise<unknown> }>();
+  refCaches.push(m as Map<string, unknown>);
+  return <T>(key: string, make: () => Promise<T>): Promise<T> => ttl(m as Map<string, { at: number; p: Promise<T> }>, key, make);
+})();
+
+/** Drops cached commit lists, pushes, branches and tags (after a write, or Try again). */
+export const invalidateRefs = () => refCaches.forEach((m) => m.clear());
+
+const split = (repo: string) => repo.split("/") as [string, string];
+
+/** One page of history for a ref (50 commits), with PR and check status. `after` is the previous page's endCursor. */
+export const listCommits = (repo: string, ref: string, after?: string): Promise<CommitsPage> =>
+  refTtl(`commits|${repo}|${ref}|${after ?? ""}`, async () => {
+    const [owner, name] = split(repo);
+    return mapCommitsPage(await graphql(commitsQuery({ owner, name, ref, after })));
+  });
+
+/** One commit by SHA prefix for the Commit ID box; null when there is none. */
+export async function findCommit(repo: string, sha: string): Promise<CommitRow | null> {
+  const [owner, name] = split(repo);
+  return mapCommitSearch(await graphql(commitSearchQuery({ owner, name, sha })));
+}
+
+/** The commit detail header and Details tab. Throws a 404 "access" error when the commit is not there. */
+export const getCommitDetail = (repo: string, sha: string): Promise<CommitDetail> =>
+  refTtl(`detail|${repo}|${sha}`, async () => {
+    const [owner, name] = split(repo);
+    const d = mapCommitDetail(await graphql(commitDetailQuery({ owner, name, sha })));
+    if (!d) throw new GhError("access", 404);
+    return d;
+  });
+
+const MAX_DIFF_FILES = 3000;
+
+/** The changed files of a commit against the chosen parent (REST, 100 a page up to 3000), with each file's patch. */
+export const getCommitFiles = (repo: string, sha: string, option: ParentOption): Promise<PrFile[]> =>
+  refTtl(`files|${repo}|${sha}|${option.baseSha}`, async () => {
+    const out: PrFile[] = [];
+    const base = diffPath(repo, sha, option);
+    for (let page = 1; out.length < MAX_DIFF_FILES; page++) {
+      const j = await json<{ files?: Parameters<typeof fromRestFile>[0][] }>(`${base}?per_page=100&page=${page}`);
+      const files = j.files ?? [];
+      out.push(...files.map(fromRestFile));
+      if (files.length < 100) break;
+    }
+    return out;
+  });
+
+export interface PushesData {
+  pushes: PushRow[];
+  /** Keyed by the push's `after` oid. */
+  heads: Record<string, PushHead>;
+}
+
+/** The latest pushes to a branch (30), with the commit each one ended at (headline and merged PR) for its title. */
+export const listPushes = (repo: string, branch: string): Promise<PushesData> =>
+  refTtl(`pushes|${repo}|${branch}`, async () => {
+    const acts = await json<RestActivity[]>(pushesPath(repo, branch));
+    const pushes = acts.filter((a) => isPushActivity(a.activity_type)).map(mapActivity);
+    const shas = [...new Set(pushes.map((p) => p.after))];
+    const [owner, name] = split(repo);
+    let heads: Record<string, PushHead> = {};
+    if (shas.length) {
+      try {
+        const q = pushHeadsQuery({ owner, name, shas });
+        heads = mapPushHeads(await graphql(q), q.aliases);
+      } catch {
+        /* titles fall back to the short SHA; the list itself still works */
+      }
+    }
+    return { pushes, heads };
+  });
+
+/** The commits an expanded push lists: before...after, or just the after commit for a new branch. */
+export const listPushCommits = (repo: string, push: PushRow): Promise<CommitRow[]> =>
+  refTtl(`pushcommits|${repo}|${push.before}|${push.after}`, async () => {
+    const x = pushExpansion(repo, push);
+    if (x.kind === "single") {
+      const one = await findCommit(repo, x.sha);
+      return one ? [one] : [];
+    }
+    const j = await json<{ commits?: RestCommit[] }>(x.path);
+    return (j.commits ?? []).map(mapRestCommit).reverse(); // newest first, like every other commit list
+  });
+
+export interface BranchesData {
+  repoId: string;
+  defaultBranch: string | null;
+  branches: Branch[];
+}
+
+/** Every branch (100 a page up to 1000, alphabetical) with its head commit, check status and open PR. */
+export const listAllBranches = (repo: string): Promise<BranchesData> =>
+  refTtl(`branches|${repo}`, async () => {
+    const [owner, name] = split(repo);
+    const out: BranchesData = { repoId: "", defaultBranch: null, branches: [] };
+    for (let after: string | undefined; out.branches.length < MAX_BRANCHES; ) {
+      const page = mapBranchesPage(await graphql(branchListQuery({ owner, name, after })));
+      out.repoId = page.repoId;
+      out.defaultBranch = page.defaultBranch;
+      out.branches.push(...page.branches);
+      if (!page.hasNextPage || !page.endCursor) break;
+      after = page.endCursor;
+    }
+    return out;
+  });
+
+/** Ahead and behind of a branch against the default branch (one REST compare; commits are not listed). */
+export const getAheadBehind = (repo: string, base: string, branch: string): Promise<AheadBehind> =>
+  refTtl(`compare|${repo}|${base}|${branch}`, async () => mapCompare(await json(`${comparePath(repo, base, branch)}?per_page=1`)));
+
+export interface TagsData {
+  repoId: string;
+  tags: TagRow[];
+}
+
+/** Every tag (100 a page up to 1000, newest first). */
+export const listAllTags = (repo: string): Promise<TagsData> =>
+  refTtl(`tags|${repo}`, async () => {
+    const [owner, name] = split(repo);
+    const out: TagsData = { repoId: "", tags: [] };
+    for (let after: string | undefined; out.tags.length < MAX_BRANCHES; ) {
+      const page = mapTagsPage(await graphql(tagListQuery({ owner, name, after })));
+      out.repoId = page.repoId;
+      out.tags.push(...page.tags);
+      if (!page.hasNextPage || !page.endCursor) break;
+      after = page.endCursor;
+    }
+    return out;
+  });
+
+let viewer: Promise<string> | undefined;
+/** The signed-in GitHub login, for the Mine tab. */
+export const getViewerLogin = (): Promise<string> =>
+  (viewer ??= graphql({ query: "query { viewer { login } }", variables: {} }).then(
+    (b) => b.data.viewer.login as string,
+    (e) => ((viewer = undefined), Promise.reject(e))
+  ));
+
+/** Creates a branch at a commit; the repository id comes from the list. */
+export const createBranch = (repoId: string, name: string, oid: string) => mutate(createBranchMutation(repoId, name, oid));
+
+/** Deletes a branch or tag by its ref node id. */
+export const deleteRef = (refId: string) => mutate(deleteRefMutation(refId));
+
+/** Lightweight tag (no message) or annotated tag (message: the tag object first, then the ref). */
+export async function createTag(repo: string, repoId: string, p: { name: string; oid: string; message?: string }): Promise<void> {
+  let oid = p.oid;
+  if (p.message?.trim()) {
+    const r = createTagObjectRequest(repo, { tag: p.name, message: p.message, oid });
+    const res = await request(r.path, "application/vnd.github+json", true, JSON.stringify(r.body));
+    oid = (await res.json()).sha;
+  }
+  await mutate(createTagMutation(repoId, p.name, oid));
 }

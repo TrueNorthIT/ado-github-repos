@@ -15,7 +15,12 @@ import { fetchMetadata } from "./github";
 import * as SDK from "azure-devops-extension-sdk";
 import { RepoBrowser, hubClick } from "./Browser";
 import { PullRequestsHub } from "./PullRequests";
-import { connectNav } from "./hostNav";
+import { connectNav, currentHub } from "./hostNav";
+import { CommitsHub } from "./Commits";
+import { PushesHub } from "./Pushes";
+import { BranchesHub } from "./Branches";
+import { TagsHub } from "./Tags";
+import { Loading, useDefaultRepo } from "./RepoHub";
 import { clearCache } from "./githubBrowse";
 import { BrowseState, serialize } from "./lib/browseState";
 import { parseRepoUrl, isGitHubDotCom } from "./lib/repoUrl";
@@ -141,10 +146,20 @@ export function App() {
     : [{ id: "in", text: "Sign in with GitHub", iconProps: { iconName: "Contact" }, isPrimary: true, disabled: busy, onActivate: () => { void doSignIn(); } }];
 
   const signInOut = commandBarItems;
+  // Every hub loads this page; the contribution id says which one this is.
+  const hub = currentHub();
+  // Files opens straight into a repo, as native does: with none in the hash, the first connected repo. The list stays one click away ("All repositories").
+  const wantsDefault = hub === "files" && nav !== null && !nav.repo && nav.view !== "repos";
+  const fallback = useDefaultRepo(wantsDefault);
+  React.useEffect(() => { if (wantsDefault && fallback.repo) go({ repo: fallback.repo }, true); }, [wantsDefault, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   if (nav === null) return <Page className="flex-grow" />;
-  // Both hubs load this page; the contribution id says which one this is (the PR hub's id ends "-prs-hub").
-  if (SDK.getContributionId().endsWith("-prs-hub"))
-    return <PullRequestsHub state={nav} go={go} openSwitch={switchTick} signedIn={signedIn} signIn={doSignIn} busy={busy} commandBarItems={signInOut} />;
+  const hubProps = { state: nav, go, openSwitch: switchTick, signedIn, signIn: doSignIn, busy, commandBarItems: signInOut };
+  if (hub === "prs") return <PullRequestsHub {...hubProps} />;
+  if (hub === "commits") return <CommitsHub {...hubProps} />;
+  if (hub === "pushes") return <PushesHub {...hubProps} />;
+  if (hub === "branches") return <BranchesHub {...hubProps} />;
+  if (hub === "tags") return <TagsHub {...hubProps} />;
+  if (wantsDefault && !fallback.none) return <Page className="flex-grow"><Loading label="Opening the first repository" /></Page>;
   if (nav.repo)
     return (
       <Page className="flex-grow">

@@ -5,6 +5,7 @@ import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
 import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages } from "./fixtures/actions";
+import { refsContent, refsGraphql, refsRest } from "./refsMock";
 import { fakeTokens, scenario } from "./mockSdk";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +36,8 @@ const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item"
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const { query, variables } = JSON.parse(String(init?.body ?? "{}"));
+  const refs = refsGraphql(query, variables, sc); // commits, branches, tags and their writes (before the PR mutations: both have a deleteRef)
+  if (refs) return refs;
   if (/^\s*mutation\b/.test(query)) {
     const act = actionsMutation(query, variables, sc);
     if (act) return "code" in act ? status(act.code) : json(act);
@@ -93,7 +96,7 @@ function prGraphql(v: Record<string, any>, full: boolean): Response {
   return json({ data: { repository: { pullRequests: page(list, v.after ?? null) } } });
 }
 
-function github(u: URL, accept: string, sc: string): Response {
+function github(u: URL, accept: string, sc: string, init?: RequestInit): Response {
   if (sc === "rateLimit") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
   const m = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(u.pathname);
   const repo = m && repoOf(`${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}`);
@@ -108,12 +111,16 @@ function github(u: URL, accept: string, sc: string): Response {
   }
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
+  const refsAnswer = refsRest(repo.fullName, rest, u, init, sc);
+  if (refsAnswer) return refsAnswer;
   const files = /^\/pulls\/(\d+)\/files$/.exec(rest);
   if (files) return repo.fullName.toLowerCase() === PR_REPO && PRS.some((p) => p.node.number === Number(files[1])) ? json(restFiles(Number(files[1]))) : status(404);
   const c = /^\/contents\/(.+)$/.exec(rest);
   if (c) {
     const text = contentAt(u.searchParams.get("ref") ?? "", c[1].split("/").map(decodeURIComponent).join("/"));
     if (text !== undefined) return new Response(text, { headers: { "Content-Type": "application/octet-stream" } });
+    const history = refsContent(repo.fullName, u.searchParams.get("ref") ?? "", c[1].split("/").map(decodeURIComponent).join("/"));
+    if (history !== undefined) return new Response(history, { headers: { "Content-Type": "application/octet-stream" } });
     if (sc === "noAccess") return status(403);
     const path = c[1].split("/").map(decodeURIComponent).join("/");
     if (!(path in repo.files)) return status(404);
@@ -127,7 +134,7 @@ function github(u: URL, accept: string, sc: string): Response {
 async function handle(u: URL, init: RequestInit | undefined, sc: string): Promise<Response | undefined> {
   const accept = new Headers(init?.headers).get("Accept") ?? "";
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
-  if (u.hostname === "api.github.com") return github(u, accept, sc);
+  if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
   const wiStates = /\/_apis\/wit\/workitemtypes\/([^/]+)\/states$/.exec(u.pathname);
   if (u.hostname === "dev.azure.com" && wiStates) return json({ count: 0, value: WI_STATES[decodeURIComponent(wiStates[1])] ?? [] });

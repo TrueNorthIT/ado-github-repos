@@ -40,10 +40,31 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   };
 }
 
-/** The Repositories hub's URL for a state (the PR page's branch and file links: the PR hub itself has no file browser). */
-export const repoHubHref = (ctx: { org: string; project: string }, s: BrowseState) =>
-  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(/-prs-hub$/, "-hub")}${serialize({ ...s, view: undefined })}`;
+export type HubId = "files" | "commits" | "pushes" | "branches" | "tags" | "prs";
+/** The contribution id of each hub, as in vss-extension.json. Files keeps the original id so old links survive. */
+export const HUB_CONTRIBUTION: Record<HubId, string> = {
+  files: "github-repos-hub",
+  commits: "github-repos-commits-hub",
+  pushes: "github-repos-pushes-hub",
+  branches: "github-repos-branches-hub",
+  tags: "github-repos-tags-hub",
+  prs: "github-repos-prs-hub",
+};
+const HUB_SUFFIX = /github-repos(?:-[a-z]+)?-hub$/;
 
-export async function openRepoHub(s: BrowseState): Promise<void> {
-  (await SDK.getService<IHostNavigationService>(NAV_SERVICE)).navigate(repoHubHref(await getProjectCtx(), s));
+/** Which hub this page is, from the contribution id (every hub loads the same hub.html). */
+export const currentHub = (contributionId: string = SDK.getContributionId()): HubId =>
+  (/github-repos-(commits|pushes|branches|tags|prs)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
+
+/** Another hub's URL for a state: the current contribution id with its hub suffix swapped. */
+export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState) =>
+  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(HUB_SUFFIX, HUB_CONTRIBUTION[hub])}${serialize(s)}`;
+
+export async function openHub(hub: HubId, s: BrowseState): Promise<void> {
+  (await SDK.getService<IHostNavigationService>(NAV_SERVICE)).navigate(hubHref(await getProjectCtx(), hub, s));
 }
+
+/** The Files hub's URL for a state (the PR page's branch and file links). */
+export const repoHubHref = (ctx: { org: string; project: string }, s: BrowseState) => hubHref(ctx, "files", { ...s, view: undefined });
+
+export const openRepoHub = (s: BrowseState) => openHub("files", { ...s, view: undefined });

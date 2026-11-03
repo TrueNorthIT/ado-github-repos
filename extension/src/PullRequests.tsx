@@ -29,6 +29,7 @@ import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { invalidatePrs, listPrs, type PrListResult } from "./githubBrowse";
 import { ErrorView, RepoSwitcher } from "./Browser";
+import { useDefaultRepo } from "./RepoHub";
 import { PrPage } from "./PrPage";
 import "./browser.css";
 
@@ -280,24 +281,6 @@ export interface PrHubProps {
   signIn: () => Promise<void>;
   busy: boolean;
   commandBarItems: { id: string; text: string; iconProps?: { iconName: string }; disabled?: boolean; onActivate: () => void }[];
-}
-
-/** The first connected github.com repo, for a hub opened with no repo in the hash. */
-function useDefaultRepo(enabled: boolean): { repo?: string; none: boolean } {
-  const [r, setR] = React.useState<{ repo?: string; none: boolean }>({ none: false });
-  React.useEffect(() => {
-    if (!enabled) return;
-    let dead = false;
-    loadProject().then(
-      (p) => {
-        const first = mergeRows(p.connections).rows.find((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); });
-        if (!dead) setR({ repo: first?.label, none: !first });
-      },
-      () => !dead && setR({ none: true })
-    );
-    return () => { dead = true; };
-  }, [enabled]);
-  return r;
 }
 
 export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy, commandBarItems }: PrHubProps) {

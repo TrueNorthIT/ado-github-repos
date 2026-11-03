@@ -28,6 +28,17 @@ import "./browser.css";
 const OPEN_CARDS = 20;
 const MAX_BYTES = 1048576;
 const NO_ANCHORS: InlineAnchor[] = [];
+const NO_COUNTS = new Map<string, number>();
+const NO_THREADS = new Map<string, InlineAnchor[]>();
+
+/** What a diff needs of its source: the pull request, or a commit against one parent (no base for an initial commit). */
+export interface DiffCtx {
+  baseSha: string | null;
+  headSha: string;
+  /** Only for pull requests: the inline review threads belong to a PR number and base branch. */
+  number?: number;
+  baseRef?: string;
+}
 
 // ---------- one side of a diff ----------
 
@@ -70,7 +81,7 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
 
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: string; pr: PrPageData; dark: boolean; anchors: InlineAnchor[] }) {
+export function DiffBody({ file, repo, pr, dark, anchors, sideBySide = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; sideBySide?: boolean }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -79,6 +90,8 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
   const [height, setHeight] = React.useState(0);
   const darkRef = React.useRef(dark);
   darkRef.current = dark;
+  const sideRef = React.useRef(sideBySide);
+  sideRef.current = sideBySide;
   const handle = React.useRef<{ dispose(): void; setTheme?: never } | null>(null);
   const [target, setTarget] = React.useState<ZoneTarget | null>(null);
 
@@ -91,7 +104,7 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
     const added = file.changeType === "ADDED";
     const deleted = file.changeType === "DELETED";
     Promise.all([
-      added ? ({ ok: true, text: "" } as Side) : fetchSide(repo, baseSha, file.previousPath ?? file.path),
+      added || !baseSha ? ({ ok: true, text: "" } as Side) : fetchSide(repo, baseSha, file.previousPath ?? file.path),
       deleted ? ({ ok: true, text: "" } as Side) : fetchSide(repo, headSha, file.path),
     ]).then(
       ([o, m]) => {
@@ -112,7 +125,7 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
       (m) => {
         if (dead || !box.current) return;
         const lang = monacoLanguage(file.path);
-        const d = body.whole ? m.createWholeFile(box.current, body.whole === "added" ? body.modified : body.original, lang, darkRef.current, file.path, body.whole) : m.createDiff(box.current, body.original, body.modified, lang, darkRef.current, file.path);
+        const d = body.whole ? m.createWholeFile(box.current, body.whole === "added" ? body.modified : body.original, lang, darkRef.current, file.path, body.whole) : m.createDiff(box.current, body.original, body.modified, lang, darkRef.current, file.path, sideRef.current);
         const ed = d.editor as any; // getContentHeight / onDidContentSizeChange exist on the diff widget but not in its typings
         const sync = () => setHeight(ed.getContentHeight());
         ed.onDidContentSizeChange(sync);
@@ -145,7 +158,7 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
         .map((a) => {
           const node = document.createElement("div");
           node.className = "gh-zone";
-          ReactDOM.render(<InlineThreads repo={repo} number={pr.number} baseRef={pr.baseRef} ids={a.threadIds} />, node);
+          ReactDOM.render(<InlineThreads repo={repo} number={pr.number!} baseRef={pr.baseRef!} ids={a.threadIds} />, node);
           nodes.push(node);
           return { side: a.side, line: a.line, node };
         });
@@ -156,6 +169,8 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey stands for anchors
   }, [target, anchorKey, repo, pr.number, pr.baseRef]);
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
+  // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
+  React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
 
   return (
     <div ref={root} className="gh-pr-diff">
@@ -169,10 +184,10 @@ function DiffBody({ file, repo, pr, dark, anchors }: { file: PrFile; repo: strin
 
 // ---------- a file's card ----------
 
-function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors }: { file: PrFile; repo: string; pr: PrPageData; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[] }) {
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, sideBySide }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; sideBySide?: boolean }) {
   const href = useRepoHref();
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
-  const view = { repo, ref: file.changeType === "DELETED" ? pr.baseSha : pr.headSha, path: file.path };
+  const view = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
   return (
     <Card
       className="gh-pr-card gh-pr-file"
@@ -195,7 +210,7 @@ function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors }: { file: 
         </div>
       )}
     >
-      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} />
+      <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} sideBySide={sideBySide} />
     </Card>
   );
 }
@@ -205,7 +220,7 @@ function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors }: { file: 
 const toItem = (n: PrTreeNode): ITreeItem<PrTreeNode> =>
   n.kind === "folder" ? { id: n.path, data: n, expanded: true, childItems: n.children.map(toItem) } : { id: n.path, data: n };
 
-function FileTree({ nodes, selected, select, threadCounts }: { nodes: PrTreeNode[]; selected?: string; select: (path: string) => void; threadCounts: Map<string, number> }) {
+export function FileTree({ nodes, selected, select, threadCounts = NO_COUNTS }: { nodes: PrTreeNode[]; selected?: string; select: (path: string) => void; threadCounts?: Map<string, number> }) {
   const provider = React.useMemo(() => new TreeItemProvider<PrTreeNode>(nodes.map(toItem)), [nodes]);
   const selection = React.useMemo(() => new ListSelection({ selectOnFocus: false }), []);
   const current = React.useRef(selected);
@@ -261,16 +276,9 @@ function FileTree({ nodes, selected, select, threadCounts }: { nodes: PrTreeNode
 
 // ---------- the tab ----------
 
-function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; repo: string; pr: PrPageData; selected?: string; select: (path: string) => void; dark: boolean }) {
+/** The tree and the cards, with `bar` above them. Shared by the PR Files tab and commit detail. `treeHeader` sits above the tree (native's repo name row). */
+export function FilesView({ files, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, bar, treeHeader }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; bar: React.ReactNode; treeHeader?: React.ReactNode }) {
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
-  const feed = useFeed(repo, pr.number);
-  const threads = React.useMemo(() => feed.items.filter((i): i is ThreadItem => i.kind === "thread"), [feed.items]);
-  const anchors = React.useMemo(() => threadsByFile(threads), [threads]);
-  const threadCounts = React.useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
-    return m;
-  }, [threads]);
   const [collapsed, setCollapsed] = React.useState(() => new Set(files.slice(OPEN_CARDS).map((f) => f.path)));
   const els = React.useRef(new Map<string, HTMLElement>());
 
@@ -283,7 +291,7 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
 
   return (
     <div className="gh-pr-files flex-column">
-      <div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div>
+      {bar}
       <div className="gh-shell gh-pr-files-shell">
         <Splitter
           className="bolt-page-grey"
@@ -295,6 +303,7 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
           farElementClassName="gh-right"
           onRenderNearElement={() => (
             <nav className="gh-left-inner flex-column" aria-label="Changed files">
+              {treeHeader}
               <div className="gh-tree-wrap"><FileTree nodes={nodes} selected={selected} select={select} threadCounts={threadCounts} /></div>
             </nav>
           )}
@@ -305,8 +314,9 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
                   <FileCard
                     file={f}
                     repo={repo}
-                    pr={pr}
+                    pr={ctx}
                     dark={dark}
+                    sideBySide={sideBySide}
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
                     collapsed={collapsed.has(f.path)}
                     toggle={() => setCollapsed((c) => { const n = new Set(c); n.has(f.path) ? n.delete(f.path) : n.add(f.path); return n; })}
@@ -318,6 +328,23 @@ function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; 
         />
       </div>
     </div>
+  );
+}
+
+function Loaded({ files, repo, pr, selected, select, dark }: { files: PrFile[]; repo: string; pr: PrPageData; selected?: string; select: (path: string) => void; dark: boolean }) {
+  const feed = useFeed(repo, pr.number);
+  const threads = React.useMemo(() => feed.items.filter((i): i is ThreadItem => i.kind === "thread"), [feed.items]);
+  const anchors = React.useMemo(() => threadsByFile(threads), [threads]);
+  const threadCounts = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
+    return m;
+  }, [threads]);
+  return (
+    <FilesView
+      files={files} repo={repo} ctx={pr} selected={selected} select={select} dark={dark} anchors={anchors} threadCounts={threadCounts}
+      bar={<div className="gh-pr-files-bar flex-row flex-center body-m">{files.length} changed {files.length === 1 ? "file" : "files"}</div>}
+    />
   );
 }
 

@@ -72,8 +72,8 @@ export function createViewer(el: HTMLElement, value: string, language: string, d
 
 export const setTheme = (dark: boolean) => monaco.editor.setTheme(themeName(dark));
 
-/** A read-only unified (inline) diff with unchanged regions collapsed. Dispose the editor and both models when done. */
-export function createDiff(el: HTMLElement, original: string, modified: string, language: string, dark: boolean, label: string) {
+/** A read-only diff, inline unless `sideBySide`, with unchanged regions collapsed. Dispose the editor and both models when done. */
+export function createDiff(el: HTMLElement, original: string, modified: string, language: string, dark: boolean, label: string, sideBySide = false) {
   monaco.editor.setTheme(themeName(dark));
   const o = monaco.editor.createModel(original, language);
   const m = monaco.editor.createModel(modified, language);
@@ -81,7 +81,7 @@ export function createDiff(el: HTMLElement, original: string, modified: string, 
     readOnly: true,
     originalEditable: false,
     domReadOnly: true,
-    renderSideBySide: false,
+    renderSideBySide: sideBySide,
     useInlineViewWhenSpaceIsLimited: false,
     hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 3, revealLineCount: 20 },
     renderOverviewRuler: false,

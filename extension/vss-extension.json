@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "name": "GitHub Repos",
   "description": "Lists and browses the GitHub repositories connected to a project, in its own GitHub Repos section.",
   "publisher": "TrueNorthIT",
@@ -35,10 +35,54 @@
       "type": "ms.vss-web.hub",
       "targets": [".github-repos-hub-group"],
       "properties": {
-        "name": "Repositories",
+        "name": "Files",
         "order": 1,
         "uri": "dist/hub.html",
-        "iconName": "OpenSource"
+        "iconName": "FileCode"
+      }
+    },
+    {
+      "id": "github-repos-commits-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Commits",
+        "order": 2,
+        "uri": "dist/hub.html",
+        "iconName": "BranchCommit"
+      }
+    },
+    {
+      "id": "github-repos-pushes-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Pushes",
+        "order": 3,
+        "uri": "dist/hub.html",
+        "iconName": "BranchShelveset"
+      }
+    },
+    {
+      "id": "github-repos-branches-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Branches",
+        "order": 4,
+        "uri": "dist/hub.html",
+        "iconName": "BranchFork2"
+      }
+    },
+    {
+      "id": "github-repos-tags-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Tags",
+        "order": 5,
+        "uri": "dist/hub.html",
+        "iconName": "Tag"
       }
     },
     {
@@ -47,7 +91,7 @@
       "targets": [".github-repos-hub-group"],
       "properties": {
         "name": "Pull requests",
-        "order": 2,
+        "order": 6,
         "uri": "dist/hub.html",
         "iconName": "BranchPullRequest"
       }
@@ -55,7 +99,7 @@
     {
       "id": "github-repos-breadcrumb",
       "type": "ms.vss-web.breadcrumb-provider",
-      "targets": [".github-repos-hub", ".github-repos-prs-hub"],
+      "targets": [".github-repos-hub", ".github-repos-commits-hub", ".github-repos-pushes-hub", ".github-repos-branches-hub", ".github-repos-tags-hub", ".github-repos-prs-hub"],
       "properties": {
         "serviceName": "github-repos-breadcrumb",
         "registeredObjectId": "github-repos-breadcrumb",

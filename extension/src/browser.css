@@ -257,3 +257,80 @@
 /* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */
 .gh-vote-callout .bolt-contextual-menu { max-width: 480px; }
 .gh-vote-callout .bolt-menuitem-cell-secondary { white-space: normal; max-width: 240px; }
+
+/* ---------- Repos pages (batch R1): Commits, Pushes, Branches, Tags. Native values from the measured spec; the components supply the rest. ---------- */
+.gh-person { gap: 4px; min-width: 0; }
+.gh-person .bolt-persona, .gh-person .vss-Persona { flex: none; }
+.gh-person-name { min-width: 0; }
+.gh-commit-line2 { gap: 8px; min-width: 0; white-space: nowrap; }
+.gh-commit-line2 .gh-commit-sha, .gh-commit-sha { font-size: 11px; font-weight: 400; font-family: "Cascadia Mono", Consolas, "Courier New", monospace; }
+.gh-commit-date { white-space: nowrap; }
+.gh-commit-title.bolt-link { padding: 0; font-size: 14px; font-weight: 600; min-width: 0; max-width: 100%; }
+.gh-commit-table .bolt-table-row { box-sizing: border-box; height: 61px; min-height: 0; }
+.gh-commit-table .bolt-table-header-row { height: auto; }
+.gh-commit-table .bolt-table-header-cell-text, .gh-commit-table .bolt-table-header-cell { font-size: 12px; font-weight: 600; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-graph-cell.bolt-table-cell { padding: 0; }
+.gh-graph-cell .bolt-table-cell-content { padding: 0; align-items: stretch; }
+.gh-graph { display: block; flex: none; margin: -1px 0; } /* the row is 61px including its 1px borders; the lines run over them so they stay joined */
+.gh-status { gap: 6px; }
+.gh-status-ok { color: var(--status-success-foreground, rgb(16, 124, 16)); }
+.gh-status-bad { color: var(--status-error-text, rgb(168, 0, 0)); }
+.gh-status-run { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-pr-ref { gap: 4px; text-decoration: none; }
+.gh-pr-ref-icon { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-load-more { padding: 16px 0; }
+.gh-graph-toggle.bolt-button { margin-left: 4px; }
+.gh-commit-id { width: 217px; }
+.gh-commit-id.bolt-textfield { height: 29px; min-height: 29px; }
+.gh-hub-header .bolt-header-command-bar, .repos-files-header .bolt-header-command-bar { align-items: center; gap: 4px; }
+.gh-commits-card, .gh-refs-card, .gh-pushes-card { width: 100%; box-sizing: border-box; }
+
+/* Commit detail: the tab body fills the frame; the meta row follows the PR page's. */
+.gh-pr-meta-text .gh-person { margin-right: 2px; }
+.gh-commit-files-bar { gap: 8px; padding: 8px 20px; min-height: 56px; flex: 0 0 auto; border-bottom: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); box-sizing: border-box; }
+.gh-commit-files-bar .gh-changed-count { margin-left: 8px; white-space: nowrap; }
+.gh-parent-picker, .gh-layout-picker { flex: none; }
+.gh-file-filter { width: 220px; }
+.gh-detail { gap: 12px; }
+.gh-detail-row { gap: 16px; align-items: baseline; }
+.gh-detail-label { width: 96px; flex: none; }
+.gh-detail-value { min-width: 0; overflow-wrap: anywhere; }
+.gh-detail-message { margin: 0; font: inherit; white-space: pre-wrap; }
+.gh-pr-files > .bolt-zero-data, .gh-pr-files > .flex-column { flex: 1 1 auto; }
+
+/* Pushes: a card of day headers and rows (no azure-devops-ui grouped list exists). */
+.gh-pushes { padding: 0; }
+.gh-push-day { margin: 0; padding: 12px 16px 8px; font-size: 14px; font-weight: 600; line-height: 20px; }
+.gh-push-list { list-style: none; margin: 0; padding: 0; }
+.gh-push { border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0, 0, 0, .08)); }
+.gh-push-row { min-height: 52px; padding: 8px 16px 8px 4px; gap: 8px; box-sizing: border-box; }
+.gh-push-text { min-width: 0; gap: 2px; }
+.gh-push-line1 { gap: 6px; min-width: 0; }
+.gh-push-title.bolt-link { padding: 0; font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-push-line2 { gap: 12px; white-space: nowrap; }
+.gh-push-commits { padding: 0 0 0 52px; border-top: 1px solid var(--component-grid-cell-bottom-border-color, rgba(0, 0, 0, .08)); }
+.gh-push-commits .bolt-table { width: 100%; }
+
+/* Branches and tags */
+.gh-ref-search { width: 217px; }
+.gh-ref-search .bolt-textfield { background: var(--palette-black-alpha-4, rgba(0, 0, 0, .04)); }
+.gh-ref-tree { background: transparent; }
+.gh-sha-link { text-decoration: underline; font-weight: 600; font-size: 12px; color: var(--text-primary-color, inherit); }
+.gh-ba { gap: 0; }
+.gh-ba-side { display: flex; flex-direction: column; width: 40px; }
+.gh-ba-behind { align-items: flex-end; }
+.gh-ba-ahead { align-items: flex-start; }
+.gh-ba-num { line-height: 16px; font-size: 12px; padding: 0 4px; }
+.gh-ba-bar { height: 2px; background: var(--communication-background, #0078d4); min-width: 0; }
+.gh-ba-split { align-self: stretch; width: 1px; background: var(--palette-black-alpha-20, rgba(0, 0, 0, .2)); margin: 0 1px; min-height: 18px; }
+.gh-branch-lock { margin-left: 6px; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-tag-kind { margin-left: 8px; }
+.gh-fav.bolt-button .fabric-icon.ms-Icon--FavoriteStarFill { color: rgb(214, 127, 60); }
+.gh-tags-empty { min-height: 320px; justify-content: center; }
+.gh-dialog-form { gap: 16px; min-width: 360px; }
+.gh-tags-empty > .bolt-card-content { justify-content: center; align-items: center; }
+.gh-ref-tree .bolt-table-header-cell, .gh-ref-tree .bolt-table-header-cell-text, .gh-commit-table .bolt-table-header-cell-text { font-size: 12px; font-weight: 600; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-ref-tree .bolt-table-row { min-height: 37px; }
+.gh-ref-tree .bolt-table-cell { padding-top: 0; padding-bottom: 0; }
+.gh-ref-tree .bolt-button, .gh-ref-tree .bolt-menu-button { height: 28px; min-height: 28px; }
+.gh-ref-tree .gh-ba-num { line-height: 14px; }

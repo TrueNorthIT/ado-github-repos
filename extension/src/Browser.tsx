@@ -475,7 +475,7 @@ function FolderTree({ repo, tree, folder, current, go, onEntries }: { repo: stri
 
 // ---------- branch picker ----------
 
-function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: { refName: string; items: { id: string; text: string }[]; loading: boolean; onOpen: () => void; setQuery: (q: string) => void; onSelect: (b: string) => void }) {
+export function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: { refName: string; items: { id: string; text: string }[]; loading: boolean; onOpen: () => void; setQuery: (q: string) => void; onSelect: (b: string) => void }) {
   return (
     <Dropdown
       ariaLabel={`Branch: ${refName}`}
@@ -654,7 +654,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
 
   const refName = ctx?.ref ?? state.ref ?? "";
   const nav = React.useCallback((p: string) => go({ repo, ref: state.ref, path: p }), [go, repo, state.ref]);
-  const toList = () => go({});
+  const toList = () => go({ view: "repos" });
   const isFile = view.t === "file";
   const err = ctxErr ?? (view.t === "error" ? view.err : null);
 

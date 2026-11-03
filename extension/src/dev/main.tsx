@@ -2,7 +2,7 @@
 import { AUTH_MESSAGE_TYPE } from "../../../shared/contract";
 import { AUTH_BASE } from "../config";
 import { installMockFetch } from "./mockFetch";
-import { fakeTokens, isMockDark, mockHub, resetStorage, scenario, setMockTheme } from "./mockSdk";
+import { MOCK_HUBS, fakeTokens, isMockDark, resetStorage, scenario, setMockTheme } from "./mockSdk";
 
 installMockFetch();
 
@@ -20,7 +20,7 @@ window.open = (url?: string | URL, ...rest: any[]) => {
   return popup as unknown as Window;
 };
 
-const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly"];
+const SCENARIOS = ["ok", "signedOut", "noConnections", "forbidden", "rateLimit", "commitsFail", "noAccess", "workItemsDenied", "slow", "actionsFail", "headMoved", "workItemsReadOnly", "refsFail"];
 
 function toolbar() {
   const bar = document.createElement("div");
@@ -39,12 +39,13 @@ function toolbar() {
   const theme = btn("", () => { setMockTheme(!isMockDark()); theme.textContent = isMockDark() ? "Light" : "Dark"; });
   theme.textContent = isMockDark() ? "Light" : "Dark";
   theme.title = "Switch theme";
-  const hub = btn(mockHub() === "github-repos-prs-hub" ? "Hub: Pull requests" : "Hub: Repositories", () => {
-    const u = new URL(location.href);
-    u.searchParams.set("hub", mockHub() === "github-repos-prs-hub" ? "repos" : "prs");
-    location.href = u.href;
-  });
-  hub.title = "Switch between the Repositories and Pull requests hubs";
+  const hub = document.createElement("select");
+  hub.title = "Which hub this page pretends to be";
+  hub.setAttribute("aria-label", "Hub");
+  hub.style.cssText = "font:inherit;background:#555;color:#fff;border:1px solid #777";
+  const cur = new URLSearchParams(location.search).get("hub") ?? "repos";
+  for (const h of MOCK_HUBS) hub.add(new Option(h === "repos" ? "Files" : h === "prs" ? "Pull requests" : h[0].toUpperCase() + h.slice(1), h, false, h === cur));
+  hub.onchange = () => { const u = new URL(location.href); u.searchParams.set("hub", hub.value); location.href = u.href; };
   const label = document.createElement("label");
   label.append("Scenario ");
   const sel = document.createElement("select");

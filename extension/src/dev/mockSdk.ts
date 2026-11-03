@@ -2,8 +2,12 @@
 import type { GitHubTokenSet } from "../../../shared/contract";
 
 export const scenario = () => new URLSearchParams(location.search).get("scenario") || "ok";
-/** Which hub contribution the mock page pretends to be: `?hub=prs` is the Pull requests hub. Read only here. */
-export const mockHub = () => (new URLSearchParams(location.search).get("hub") === "prs" ? "github-repos-prs-hub" : "github-repos-hub");
+/** Which hub contribution the mock page pretends to be: `?hub=commits|pushes|branches|tags|prs`; anything else is Files. Read only here. */
+export const MOCK_HUBS = ["repos", "commits", "pushes", "branches", "tags", "prs"] as const;
+export const mockHub = () => {
+  const h = new URLSearchParams(location.search).get("hub");
+  return h === "repos" || !h || !(MOCK_HUBS as readonly string[]).includes(h) ? "github-repos-hub" : `github-repos-${h}-hub`;
+};
 
 // ---------- storage: ADO extension data (User scope), mirrored to localStorage so a refresh keeps it ----------
 const PREFIX = "tn-mock:";
@@ -62,7 +66,7 @@ const nav = {
   setHash: (h: string) => { location.hash = h; },
   replaceHash: (h: string) => { history.replaceState(null, "", "#" + h.replace(/^#+/, "")); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host adds the "#" itself; the host does notify
   // The real host loads the other hub's page; mock mode swaps the ?hub= switch and keeps the hash.
-  navigate: (u: string) => { const n = new URL(location.href); n.searchParams.set("hub", /-prs-hub\//.test(u) ? "prs" : "repos"); n.hash = new URL(u).hash; location.href = n.href; },
+  navigate: (u: string) => { const n = new URL(location.href); n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs)-hub\//.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
