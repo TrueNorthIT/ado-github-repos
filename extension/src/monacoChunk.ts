@@ -420,6 +420,7 @@ export function createLogViewer(el: HTMLElement, label: string, onLineClick: (li
       editor.setPosition({ lineNumber: n, column: 1 });
       hl.set(mark ? [{ range: new monaco.Range(n, 1, n, 1), options: { isWholeLine: true, className: "gh-log-hl" } }] : []);
     },
+    find() { editor.focus(); void editor.getAction("actions.find")?.run(); },
     dispose() { down.dispose(); provider.dispose(); const m = editor.getModel(); editor.dispose(); m?.dispose(); },
   };
 }

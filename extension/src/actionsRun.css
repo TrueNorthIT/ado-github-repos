@@ -32,53 +32,39 @@
 .gh-act-stage-title h3 { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; }
 .gh-act-stage-progress { font-size: 12px; padding: 6px 8px 0 0; gap: 8px; }
 .gh-act-stage-info { font-size: 12px; padding-top: 9px; gap: 6px; }
-.gh-act-stage-jobs { list-style: none; margin: 0; padding: 2px 8px; }
-.gh-act-stage-job { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 2px 4px; background: none; border: 0; border-radius: 2px; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; min-width: 0; }
-.gh-act-stage-job:hover { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
-.gh-act-stage-job:focus-visible, .gh-act-stepbtn:focus-visible { outline: 2px solid rgba(var(--palette-primary, 0, 120, 212), 1); outline-offset: -2px; }
 .gh-act-stage-foot { padding: 12px; border-top: 1px solid rgba(var(--palette-neutral-10, 234, 234, 234), 1); }
 .gh-act-stage-foot .bolt-button { width: 100%; justify-content: center; }
 .gh-act-title { flex: 1 1 auto; min-width: 0; }
 .gh-act-dur { flex: 0 0 auto; font-size: .8rem; }
 
 /* tables */
-.gh-act-jobs { width: 100%; border-collapse: collapse; }
-.gh-act-jobs th { text-align: left; font-weight: 600; font-size: .8rem; padding: 8px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); color: rgba(var(--palette-neutral-60, 100, 100, 100), 1); }
-.gh-act-jobs td { padding: 4px 12px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); max-width: 260px; }
-.gh-act-jobname { gap: 8px; min-width: 0; }
-.gh-act-jobtable th { height: 45px; padding: 0 20px; font-size: 12px; }
-.gh-act-jobtable td { height: 48px; padding: 0 20px; font-size: 14px; }
-.gh-act-jobtable td:first-child, .gh-act-jobtable th:first-child { width: 50%; }
-.gh-act-jobtable tr:last-child td { border-bottom: 0; }
-.gh-act-rowmenu { width: 40px; text-align: right; }
 .gh-act-pill { margin-left: 8px; }
-.gh-act-notes { padding: 4px 12px 8px; }
-.gh-act-notes-h { margin: 8px 0 4px; font-size: 1rem; gap: 8px; }
-.gh-act-notes ul { list-style: none; margin: 0; padding: 0; }
-.gh-act-notes li { padding: 6px 0; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); }
 .gh-act-note-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
 .gh-act-review { gap: 12px; }
 .gh-act-envs { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 
-/* log view */
-.gh-act-logpage { display: flex; flex-direction: column; }
-.gh-act-log { display: flex; margin: 0 0 20px; height: calc(100vh - 190px); min-height: 420px; border: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); border-radius: 4px; overflow: hidden; background: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
-.gh-act-steps { flex: 0 0 380px; overflow: auto; border-right: 1px solid rgba(var(--palette-neutral-10, 220, 220, 220), 1); padding: 4px 0; }
-.gh-act-stepbtn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
-.gh-act-stepbtn:hover:not(:disabled) { background: rgba(var(--palette-neutral-6, 0, 0, 0), .06); }
-.gh-act-stepbtn:disabled { cursor: default; opacity: .6; }
-.gh-act-stepbtn.selected { background: rgba(var(--palette-primary, 0, 120, 212), .12); }
-.gh-act-jobbtn { font-weight: 600; }
-.gh-act-steplist { list-style: none; margin: 0; padding: 0 0 4px 16px; }
+/* log view: native's full-height master/detail, no page header */
+.gh-act-logpage { height: calc(100vh - 56px); min-height: 420px; align-items: stretch; }
+.gh-act-master { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
+.gh-act-master .bolt-master-panel-header { padding-bottom: 8px; }
+.gh-act-jobtree { flex: 1 1 auto; min-height: 0; }
+.gh-act-treecell-time { margin-left: auto; padding-left: 8px; font-size: 12px; flex: none; }
+.gh-act-treecell-group { font-size: 14px; }
+.gh-act-tabs-gap { height: 0; }
+.gh-act-pagetabs { margin: 0; }
+.gh-act-pipeline { gap: 4px; font-size: 12px; }
+.gh-act-sum-ver { gap: 16px; }
+.gh-act-sum-ver > span { gap: 6px; }
+.gh-act-notescard .bolt-card-content { padding: 0; flex-direction: column; }
 /* native's log pane is dark whatever the ADO theme: these remap the palette for the buttons and checkbox in it */
-.gh-act-logpane { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; background: #201f1e; color: #e1dfdd; color-scheme: dark;
+.gh-act-logpane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #201f1e; color: #e1dfdd; color-scheme: dark;
   --palette-neutral-0: 32, 31, 30; --palette-neutral-2: 37, 36, 35; --palette-neutral-4: 43, 42, 41; --palette-neutral-6: 255, 255, 255; --palette-neutral-8: 59, 58, 57; --palette-neutral-10: 72, 70, 68; --palette-neutral-20: 96, 94, 92; --palette-neutral-30: 121, 119, 116; --palette-neutral-60: 161, 159, 157; --palette-neutral-100: 225, 223, 221;
   --text-primary-color: 225, 223, 221; --text-secondary-color: 161, 159, 157; --palette-primary: 79, 160, 255; --palette-primary-shade-30: 121, 183, 255; }
 .gh-act-logpane .bolt-button, .gh-act-logpane .bolt-checkbox-label, .gh-act-logpane .bolt-button .bolt-button-text { color: #e1dfdd; }
 .gh-act-logpane .bolt-button:hover:not(.disabled), .gh-act-logpane .bolt-button.subtle:hover:not(.disabled) { background: rgba(255, 255, 255, .1); }
 .gh-act-logpane .bolt-button.disabled, .gh-act-logpane .bolt-button.disabled .bolt-button-text { color: #797774; }
-.gh-act-logtitle { margin: 0; padding: 16px 20px; font-size: 17px; font-weight: 400; line-height: 24px; flex: 0 0 auto; color: #e1dfdd; }
-.gh-act-logbar { gap: 4px; padding: 4px 20px; border-bottom: 1px solid #484644; flex: 0 0 auto; }
+.gh-act-loghead { padding: 16px 20px 8px; gap: 8px; flex: 0 0 auto; }
+.gh-act-logtitle { margin: 0; font-size: 17px; font-weight: 400; line-height: 24px; color: #e1dfdd; min-width: 0; }
 .gh-act-editor { flex: 1 1 0; min-height: 0; }
 .gh-act-logwait { padding: 24px; color: #a19f9d; }
 
@@ -92,3 +78,5 @@
 .gh-act-cardbody { display: flex; flex-direction: column; min-width: 0; width: 100%; }
 .gh-act-card .bolt-card-content { min-width: 0; flex-direction: column; }
 .gh-act-body .bolt-pill { display: inline-flex; width: auto; }
+.gh-act-body .bolt-table-cell-content > .bolt-status, .gh-act-body .bolt-table-cell-content > .bolt-icon { margin-right: 8px; }
+.gh-act-jobtree .bolt-status { margin-right: 8px; flex: none; }

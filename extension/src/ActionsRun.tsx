@@ -9,6 +9,8 @@ import { Tab, TabBar } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { Link } from "azure-devops-ui/Link";
 import { MenuButton, MoreButton } from "azure-devops-ui/Menu";
+import { ITableColumn, SimpleTableCell, Table, TwoLineTableCell } from "azure-devops-ui/Table";
+import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Panel } from "azure-devops-ui/Panel";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -24,7 +26,6 @@ import {
 import { ErrorView } from "./Browser";
 import { Loading } from "./RepoHub";
 import { commitDateText } from "./lib/dateText";
-import { RepoIcon } from "./fileIcons";
 import { openInHub, useHubHref } from "./repoHref";
 import { GhError } from "./githubBrowse";
 import { LogView } from "./ActionsLog";
@@ -175,6 +176,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   const href = useHubHref();
   const defs = useWorkflowDefs(repo, run);
   const notes = useAnnotations(repo, jobs);
+  const [page, setPage] = React.useState<"summary" | "artifacts">("summary");
   const [tab, setTab] = React.useState<"stages" | "jobs">("stages");
   const [failure, setFailure] = React.useState<string>();
   const [reviewing, setReviewing] = React.useState(false);
@@ -198,14 +200,22 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
     }
   };
 
+  // Native: one primary button and a More menu.
+  const rerunItem = failed
+    ? { id: "rerunFailed", text: "Re-run failed jobs", iconProps: { iconName: "Refresh" }, onActivate: () => void act("re-run the failed jobs", () => rerunFailed(repo, run.id)) }
+    : { id: "rerun", text: "Re-run all jobs", iconProps: { iconName: "Refresh" }, onActivate: () => void act("re-run the jobs", () => rerunAll(repo, run.id)) };
+  const primary = approvable.length
+    ? { id: "review", text: "Review deployments", isPrimary: true, important: true, iconProps: { iconName: "Completed" }, onActivate: () => setReviewing(true) }
+    : write ? { ...rerunItem, isPrimary: true, important: true, disabled: isActive(run.state) } : undefined;
+  const more = [
+    ...(write && primary?.id !== "review" && failed ? [{ id: "rerun", text: "Re-run all jobs", iconProps: { iconName: "Refresh" }, disabled: isActive(run.state), onActivate: () => void act("re-run the jobs", () => rerunAll(repo, run.id)) }] : []),
+    ...(write && primary?.id === "review" ? [{ ...rerunItem, disabled: isActive(run.state) }] : []),
+    ...(write && isActive(run.state) ? [{ id: "cancel", text: "Cancel run", iconProps: { iconName: "Cancel" }, onActivate: () => void act("cancel the run", () => cancelRun(repo, run.id)) }] : []),
+    { id: "github", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(run.htmlUrl, "_blank", "noopener,noreferrer") },
+  ];
   const items = [
-    ...(approvable.length ? [{ id: "review", text: "Review deployments", isPrimary: true, important: true, iconProps: { iconName: "Completed" }, onActivate: () => setReviewing(true) }] : []),
-    ...(write ? [
-      { id: "rerun", text: "Re-run all jobs", important: true, iconProps: { iconName: "Refresh" }, disabled: isActive(run.state), onActivate: () => void act("re-run the jobs", () => rerunAll(repo, run.id)) },
-      ...(failed ? [{ id: "rerunFailed", text: "Re-run failed jobs", important: true, iconProps: { iconName: "Refresh" }, disabled: isActive(run.state), onActivate: () => void act("re-run the failed jobs", () => rerunFailed(repo, run.id)) }] : []),
-      ...(isActive(run.state) ? [{ id: "cancel", text: "Cancel run", important: true, iconProps: { iconName: "Cancel" }, onActivate: () => void act("cancel the run", () => cancelRun(repo, run.id)) }] : []),
-    ] : []),
-    { id: "github", text: "Open on GitHub", important: true, iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(run.htmlUrl, "_blank", "noopener,noreferrer") },
+    ...(primary ? [primary] : []),
+    { id: "more", ariaLabel: "More", important: true, iconProps: { iconName: "More" }, subMenuProps: { id: "gh-act-more", items: more } },
   ];
 
   const commit = { repo, commit: run.headSha };
@@ -219,19 +229,23 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
     <div className="page-content gh-act-run">
       <Header
         className="gh-hub-header gh-act-header gh-act-subheader"
-        title={`#${run.runNumber} · ${run.title}`}
+        title={`#${run.runNumber} • ${run.title}`}
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
-        titleIconProps={{ render: () => <StateIcon state={run.state} size={StatusSize.l} /> }}
-        description={`${run.name} · ${STATE_TEXT[run.state]}`}
-        backButtonProps={{ ariaLabel: "Back to the workflow's runs", onClick: () => go({ workflow: run.workflowId }) }}
+        titleIconProps={{ render: () => <StateIcon state={run.state} size={StatusSize.m} /> }}
+        description={<span className="flex-row flex-center gh-act-pipeline"><Icon iconName="Rocket" />{run.name}</span>}
         commandBarItems={items}
       />
+      <TabBar ariaLabel="Run" selectedTabId={page} onSelectedTabChanged={(id) => setPage(id as "summary" | "artifacts")} className="gh-act-pagetabs" disableSticky>
+        <Tab id="summary" name="Summary" />
+        {data.artifacts.length > 0 && <Tab id="artifacts" name="Artifacts" badgeCount={data.artifacts.length} />}
+      </TabBar>
       <div className="gh-act-body flex-column">
         {failure && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailure(undefined)}>{failure}</MessageCard>}
         {!latest && <MessageCard severity={MessageCardSeverity.Info} buttonProps={[{ text: "Go to the latest attempt", onClick: () => go({ run: run.id }) }]}>You are looking at attempt {run.attempt} of {data.latestAttempt}.</MessageCard>}
         {data.pending.length > 0 && <MessageCard severity={MessageCardSeverity.Warning}>Waiting for review: {data.pending.map((p) => p.environmentName).join(", ")}.</MessageCard>}
 
+        {page === "artifacts" && data.artifacts.length > 0 ? <Artifacts repo={repo} artifacts={data.artifacts} /> : <>
         <Card className="gh-act-card gh-act-summary">
           <div className="gh-act-sum-top flex-row flex-center">
             <h2 className="gh-act-sum-title flex-row flex-center flex-grow">
@@ -255,18 +269,20 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
           <div className="gh-act-sum-cols">
             <section aria-label="Repository and version">
               <h3 className="secondary-text">Repository and version</h3>
-              <div className="flex-row flex-center"><RepoIcon /><span className="text-ellipsis">{repo.split("/").pop()}</span></div>
-              {run.branch && <div className="flex-row flex-center"><Icon iconName="BranchFork2" /><span className="text-ellipsis">{run.branch}</span></div>}
-              <div className="flex-row flex-center"><Icon iconName="BranchCommit" /><Link className="gh-sha-link monospaced-xs" href={href("commits", commit)} onClick={openInHub("commits", commit)} ariaLabel={`Commit ${run.headSha.slice(0, 8)}`}>{run.headSha.slice(0, 8)}</Link></div>
+              <div className="flex-row flex-center"><Icon iconName="GitLogo" /><span className="text-ellipsis">{repo.split("/").pop()}</span></div>
+              <div className="flex-row flex-center gh-act-sum-ver">
+                {run.branch && <span className="flex-row flex-center"><Icon iconName="BranchFork2" /><span className="text-ellipsis">{run.branch}</span></span>}
+                <span className="flex-row flex-center"><Icon iconName="BranchCommit" /><Link subtle removeUnderline href={href("commits", commit)} onClick={openInHub("commits", commit)} ariaLabel={`Commit ${run.headSha.slice(0, 8)}`}>{run.headSha.slice(0, 8)}</Link></span>
+              </div>
             </section>
             <section aria-label="Related">
               <h3 className="secondary-text">Related</h3>
               {run.prNumbers.length ? run.prNumbers.map((n) => {
                 const pr = { repo, view: "prs", pr: n } as const;
-                return <div key={n} className="flex-row flex-center"><Icon iconName="BranchPullRequest" /><Link href={href("prs", pr)} onClick={openInHub("prs", pr)}>#{n}</Link></div>;
-              }) : <div className="flex-row flex-center secondary-text"><Icon iconName="BranchPullRequest" />No pull requests</div>}
+                return <div key={n} className="flex-row flex-center"><Icon iconName="BranchPullRequest" /><Link subtle removeUnderline href={href("prs", pr)} onClick={openInHub("prs", pr)}>#{n}</Link></div>;
+              }) : <div className="flex-row flex-center"><Icon iconName="BranchPullRequest" />No pull requests</div>}
               {data.artifacts.length > 0 && (
-                <div className="flex-row flex-center"><Icon iconName="Package" /><Link href="#" onClick={(e) => { e.preventDefault(); document.getElementById("gh-act-artifacts")?.scrollIntoView({ block: "start" }); }}>{data.artifacts.length} published</Link></div>
+                <div className="flex-row flex-center"><Icon iconName="Package" /><Link subtle removeUnderline href="#" onClick={(e) => { e.preventDefault(); setPage("artifacts"); }}>{data.artifacts.length} published</Link></div>
               )}
             </section>
             <section aria-label="Checks">
@@ -278,6 +294,8 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
             </section>
           </div>
         </Card>
+
+        <Annotations notes={notes} repo={repo} sha={run.headSha} open={openJob} />
 
         <Card className="gh-act-card gh-act-stagecard">
           <TabBar ariaLabel="Stages and jobs" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as "stages" | "jobs")} className="gh-act-innertabs" disableSticky>
@@ -292,9 +310,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
             <JobsTable jobs={jobs} now={now} canRerun={write && !isActive(run.state)} open={openJob} rerun={(j) => void act(`re-run ${j.name}`, () => rerunJob(repo, j.id))} />
           )}
         </Card>
-
-        <Artifacts repo={repo} artifacts={data.artifacts} />
-        <Annotations notes={notes} repo={repo} sha={run.headSha} open={openJob} />
+        </>}
       </div>
       {reviewing && <ReviewPanel repo={repo} runId={run.id} pending={approvable} close={() => setReviewing(false)} done={() => { setReviewing(false); void data.reload(); setTimeout(() => void data.quietReload(), 1500); }} />}
     </div>
@@ -363,22 +379,12 @@ function StageGraph({ groups, notes, artifactCount, now, canRerun, open, rerun }
               return (
                 <section key={g.key} className="gh-act-stage" aria-label={`${g.title}, ${STATE_TEXT[g.state]}`} ref={(el) => { if (el) cards.current.set(g.key, el); else cards.current.delete(g.key); }}>
                   <div className="gh-act-stage-primary">
-                    <div className="gh-act-stage-title flex-row flex-center"><StateIcon state={g.state} size={StatusSize.l} /><h3 className="text-ellipsis">{g.title}</h3></div>
+                    <div className="gh-act-stage-title flex-row flex-center"><StateIcon state={g.state} size={StatusSize.m} /><h3 className="text-ellipsis">{g.title}</h3></div>
                     <div className="gh-act-stage-progress secondary-text flex-row"><span className="flex-grow">{progressText(g)}</span><span>{dur(groupMs(g.jobs, now))}</span></div>
                     {arts && <div className="gh-act-stage-info flex-row flex-center"><Icon iconName="Package" />{plural(artifactCount, "artifact")}</div>}
                     {info && <div className="gh-act-stage-info flex-row flex-center"><Icon iconName={errs ? "ErrorBadge" : "Warning"} />{info}</div>}
                   </div>
-                  <ul className="gh-act-stage-jobs">
-                    {g.jobs.map((j) => (
-                      <li key={j.id}>
-                        <button type="button" className="gh-act-stage-job" onClick={() => open(j)} aria-label={`${j.name}, ${STATE_TEXT[j.state]}`}>
-                          <StateIcon state={j.state} size={StatusSize.m} />
-                          <span className="gh-act-title text-ellipsis">{g.jobs.length > 1 ? j.name.slice(g.title.length).trim().replace(/^\((.*)\)$/, "$1") || j.name : j.name}</span>
-                          <span className="secondary-text">{dur(jobMs(j, now))}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <StageJobs group={g} now={now} open={open} />
                   {canRerun && finished && (
                     <div className="gh-act-stage-foot"><Button text="Re-run stage" ariaLabel={`Re-run stage ${g.title}`} onClick={() => rerun(failedJobs.length ? failedJobs : g.jobs)} /></div>
                   )}
@@ -392,28 +398,40 @@ function StageGraph({ groups, notes, artifactCount, now, canRerun, open, rerun }
   );
 }
 
+/** A job's label in its group: a matrix variant drops the group's title. */
+const jobLabel = (g: JobGroup, j: Job) => (g.jobs.length > 1 ? j.name.slice(g.title.length).trim().replace(/^\((.*)\)$/, "$1") || j.name : j.name);
+
+function StageJobs({ group, now, open }: { group: JobGroup; now: number; open: (j: Job) => void }) {
+  const provider = React.useMemo(() => new ArrayItemProvider(group.jobs), [group.jobs]);
+  const cols = React.useMemo<ITableColumn<Job>[]>(() => [
+    { id: "name", width: -100, renderCell: (_r, i, c, j) => (
+      <SimpleTableCell key="name" columnIndex={i} tableColumn={c}><StateIcon state={j.state} size={StatusSize.m} /><span className="gh-act-title text-ellipsis">{jobLabel(group, j)}</span></SimpleTableCell>
+    ) },
+    { id: "dur", width: 60, renderCell: (_r, i, c, j) => (
+      <SimpleTableCell key="dur" columnIndex={i} tableColumn={c}><span className="secondary-text">{dur(jobMs(j, now))}</span></SimpleTableCell>
+    ) },
+  ], [group, now]);
+  return <Table<Job> ariaLabel={`Jobs in ${group.title}`} role="table" className="gh-act-stage-jobs" columns={cols} itemProvider={provider} showHeader={false} showLines={false} singleClickActivation onActivate={(_e, r) => open(r.data)} />;
+}
+
 function JobsTable({ jobs, now, canRerun, open, rerun }: { jobs: Job[]; now: number; canRerun: boolean; open: (j: Job) => void; rerun: (j: Job) => void }) {
+  const provider = React.useMemo(() => new ArrayItemProvider(jobs), [jobs]);
+  const cols = React.useMemo<ITableColumn<Job>[]>(() => [
+    { id: "name", name: "Name", width: -60, renderCell: (_r, i, c, j) => (
+      <SimpleTableCell key="name" columnIndex={i} tableColumn={c}><StateIcon state={j.state} size={StatusSize.m} /><Link className="bolt-table-link text-ellipsis" subtle removeUnderline href="#" onClick={(e) => { e.preventDefault(); open(j); }}>{j.name}</Link></SimpleTableCell>
+    ) },
+    { id: "status", name: "Status", width: -20, renderCell: (_r, i, c, j) => <SimpleTableCell key="status" columnIndex={i} tableColumn={c}>{JOB_STATUS_TEXT[j.state]}</SimpleTableCell> },
+    { id: "dur", name: "Duration", width: -20, renderCell: (_r, i, c, j) => (
+      <SimpleTableCell key="dur" columnIndex={i} tableColumn={c}><Icon iconName="Clock" /><span className="secondary-text">{dur(jobMs(j, now)) || "–"}</span></SimpleTableCell>
+    ) },
+    { id: "more", width: 48, renderCell: (_r, i, c, j) => (
+      <SimpleTableCell key="more" columnIndex={i} tableColumn={c}>
+        {canRerun && j.status === "completed" && <MoreButton ariaLabel={`Actions for ${j.name}`} contextualMenuProps={{ menuProps: { id: `gh-act-job-${j.id}`, items: [{ id: "rerun", text: "Re-run job", iconProps: { iconName: "Refresh" }, onActivate: () => rerun(j) }] } }} />}
+      </SimpleTableCell>
+    ) },
+  ], [now, canRerun, open, rerun]);
   if (!jobs.length) return <div className="secondary-text gh-act-empty">No jobs have started yet.</div>;
-  return (
-    <table className="gh-act-jobs gh-act-jobtable">
-      <caption className="gh-visually-hidden">Jobs</caption>
-      <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col"><span className="gh-visually-hidden">Actions</span></th></tr></thead>
-      <tbody>
-        {jobs.map((j) => (
-          <tr key={j.id}>
-            <td><span className="flex-row flex-center gh-act-jobname"><StateIcon state={j.state} size={StatusSize.m} /><Link className="bolt-table-link text-ellipsis" href="#" onClick={(e) => { e.preventDefault(); open(j); }}>{j.name}</Link></span></td>
-            <td>{JOB_STATUS_TEXT[j.state]}</td>
-            <td className="secondary-text"><span className="flex-row flex-center gh-act-jobname"><Icon iconName="Clock" />{dur(jobMs(j, now)) || "–"}</span></td>
-            <td className="gh-act-rowmenu">
-              {canRerun && j.status === "completed" && (
-                <MoreButton ariaLabel={`Actions for ${j.name}`} contextualMenuProps={{ menuProps: { id: `gh-act-job-${j.id}`, items: [{ id: "rerun", text: "Re-run job", iconProps: { iconName: "Refresh" }, onActivate: () => rerun(j) }] } }} />
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  return <Table<Job> ariaLabel="Jobs" role="table" className="gh-act-jobtable" columns={cols} itemProvider={provider} showHeader spacerWidth={8} />;
 }
 
 // ---------- artifacts (ACT-10) ----------
@@ -421,8 +439,7 @@ function JobsTable({ jobs, now, canRerun, open, rerun }: { jobs: Job[]; now: num
 function Artifacts({ repo, artifacts }: { repo: string; artifacts: Artifact[] }) {
   const [busy, setBusy] = React.useState<number>();
   const [failed, setFailed] = React.useState<string>();
-  if (!artifacts.length) return null;
-  const download = async (a: Artifact) => {
+  const download = React.useCallback(async (a: Artifact) => {
     setBusy(a.id);
     setFailed(undefined);
     try {
@@ -439,64 +456,71 @@ function Artifacts({ repo, artifacts }: { repo: string; artifacts: Artifact[] })
     } finally {
       setBusy(undefined);
     }
-  };
+  }, [repo]);
+  const provider = React.useMemo(() => new ArrayItemProvider(artifacts), [artifacts]);
+  const cols = React.useMemo<ITableColumn<Artifact>[]>(() => [
+    { id: "name", name: "Name", width: -60, renderCell: (_r, i, c, a) => (
+      <SimpleTableCell key="name" columnIndex={i} tableColumn={c}><Icon iconName="Package" /><span className="text-ellipsis">{a.name}</span>{a.expired && <Pill className="gh-act-pill" size={PillSize.compact} variant={PillVariant.outlined}>Expired</Pill>}</SimpleTableCell>
+    ) },
+    { id: "size", name: "Size", width: -20, renderCell: (_r, i, c, a) => <SimpleTableCell key="size" columnIndex={i} tableColumn={c}>{formatBytes(a.sizeInBytes)}</SimpleTableCell> },
+    { id: "dl", width: -20, renderCell: (_r, i, c, a) => (
+      <SimpleTableCell key="dl" columnIndex={i} tableColumn={c}>
+        {a.expired ? <span className="secondary-text">No longer available</span> : <Button subtle iconProps={{ iconName: "Download" }} text="Download" ariaLabel={`Download ${a.name}`} disabled={busy === a.id} onClick={() => void download(a)} />}
+      </SimpleTableCell>
+    ) },
+  ], [busy, download]);
   return (
-    <div id="gh-act-artifacts"><Card className="gh-act-card" titleProps={{ text: `Artifacts (${artifacts.length})` }}>
+    <Card className="gh-act-card" titleProps={{ text: `Artifacts (${artifacts.length})` }}>
       {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}
-      <table className="gh-act-jobs">
-        <caption className="gh-visually-hidden">Artifacts</caption>
-        <thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col"><span className="gh-visually-hidden">Download</span></th></tr></thead>
-        <tbody>
-          {artifacts.map((a) => (
-            <tr key={a.id}>
-              <td>{a.name}{a.expired && <Pill className="gh-act-pill" size={PillSize.compact} variant={PillVariant.outlined}>Expired</Pill>}</td>
-              <td>{formatBytes(a.sizeInBytes)}</td>
-              <td>{a.expired ? <span className="secondary-text">No longer available</span> : <Button subtle iconProps={{ iconName: "Download" }} text="Download" ariaLabel={`Download ${a.name}`} disabled={busy === a.id} onClick={() => void download(a)} />}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card></div>
+      <Table<Artifact> ariaLabel="Artifacts" role="table" className="gh-act-jobtable" columns={cols} itemProvider={provider} showHeader spacerWidth={8} />
+    </Card>
   );
 }
 
 // ---------- annotations (ACT-11) ----------
 
 const LEVELS: { level: Annotation["level"]; label: string; status: typeof Statuses.Success }[] = [
-  { level: "failure", label: "Failures", status: Statuses.Failed },
+  { level: "failure", label: "Errors", status: Statuses.Failed },
   { level: "warning", label: "Warnings", status: Statuses.Warning },
   { level: "notice", label: "Notices", status: Statuses.Information },
 ];
 
+/** Native: a card whose header is a tab per level with a count; the rows are status icon, message, then "job · file:line". */
 function Annotations({ notes, repo, sha, open }: { notes: JobNote[]; repo: string; sha: string; open: (j: Job) => void }) {
   const href = useHubHref();
-  if (!notes.length) return null;
+  const [picked, setPicked] = React.useState<Annotation["level"]>("failure");
+  const present = LEVELS.filter((l) => notes.some((n) => n.level === l.level));
+  const sel = present.find((l) => l.level === picked) ?? present[0];
+  const shown = sel ? notes.filter((n) => n.level === sel.level) : [];
+  const rows = React.useMemo(() => new ArrayItemProvider(shown), [notes, sel?.level]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cols = React.useMemo<ITableColumn<JobNote>[]>(() => [
+    { id: "note", width: -100, renderCell: (_r, i, c, n) => {
+      const file = { repo, ref: sha, path: n.path };
+      return (
+        <TwoLineTableCell
+          key="note"
+          columnIndex={i}
+          tableColumn={c}
+          iconProps={{ render: () => <Status {...sel!.status} size={StatusSize.m} ariaLabel={sel!.label} /> }}
+          line1={<span className="gh-act-note-msg">{n.title && <strong>{n.title}: </strong>}{n.message}</span>}
+          line2={
+            <span className="secondary-text body-s">
+              <Link subtle href="#" onClick={(e) => { e.preventDefault(); open(n.job); }}>{n.job.name}</Link>
+              {" · "}
+              <Link subtle href={href("files", file)} onClick={openInHub("files", file)}>{n.path}:{n.startLine}{n.endLine !== n.startLine ? `-${n.endLine}` : ""}</Link>
+            </span>
+          }
+        />
+      );
+    } },
+  ], [repo, sha, sel?.level, open, href]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!sel) return null;
   return (
-    <Card className="gh-act-card" titleProps={{ text: `Annotations (${notes.length})` }}>
-      {LEVELS.map(({ level, label, status }) => {
-        const list = notes.filter((n) => n.level === level);
-        if (!list.length) return null;
-        return (
-          <section key={level} className="gh-act-notes" aria-label={`${label}, ${list.length}`}>
-            <h3 className="gh-act-notes-h flex-row flex-center"><Status {...status} size={StatusSize.m} ariaLabel="" />{label} ({list.length})</h3>
-            <ul>
-              {list.map((n, i) => {
-                const file = { repo, ref: sha, path: n.path };
-                return (
-                  <li key={i}>
-                    <div className="gh-act-note-msg">{n.title && <strong>{n.title}: </strong>}{n.message}</div>
-                    <div className="secondary-text body-s">
-                      <Link href={href("files", file)} onClick={openInHub("files", file)}>{n.path}:{n.startLine}{n.endLine !== n.startLine ? `-${n.endLine}` : ""}</Link>
-                      {" · "}
-                      <Link href="#" onClick={(e) => { e.preventDefault(); open(n.job); }}>{n.job.name}</Link>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
+    <Card className="gh-act-card gh-act-notescard">
+      <TabBar ariaLabel="Annotation levels" selectedTabId={sel.level} onSelectedTabChanged={(id) => setPicked(id as Annotation["level"])} className="gh-act-innertabs" disableSticky>
+        {present.map((l) => <Tab key={l.level} id={l.level} name={l.label} badgeCount={notes.filter((n) => n.level === l.level).length} />)}
+      </TabBar>
+      <Table<JobNote> ariaLabel={`${sel.label}, ${shown.length}`} role="table" className="gh-act-jobtable" columns={cols} itemProvider={rows} showHeader={false} spacerWidth={8} />
     </Card>
   );
 }
