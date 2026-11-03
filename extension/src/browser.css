@@ -559,3 +559,8 @@
 .gh-compare-bar { gap: 8px; margin-bottom: 12px; }
 .gh-compare-bar .gh-topbar { padding: 0; }
 .gh-compare-card { width: 100%; box-sizing: border-box; }
+/* Branch compare page */
+.gh-compare-pickers { gap: 12px; padding: 0 20px 12px; }
+.gh-compare-pickers .gh-topbar { padding: 0; }
+.gh-compare-label { margin-right: 8px; font-weight: 600; }
+.gh-compare-summary { padding-bottom: 4px; }
