@@ -3,6 +3,7 @@
 import "monaco-editor/editor/browser/coreCommands.js";
 import "monaco-editor/editor/contrib/clipboard/browser/clipboard.js";
 import "monaco-editor/editor/contrib/find/browser/findController.js";
+import "monaco-editor/editor/contrib/folding/browser/folding.js";
 // Only the editable variant needs these two: Ctrl+M lets Tab leave the editor (a keyboard trap otherwise), and the line shortcuts people expect when typing.
 import "monaco-editor/editor/contrib/toggleTabFocusMode/browser/toggleTabFocusMode.js";
 import "monaco-editor/editor/contrib/linesOperations/browser/linesOperations.js";

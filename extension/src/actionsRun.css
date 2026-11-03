@@ -63,3 +63,6 @@
 .monaco-editor .gh-a-bold { font-weight: 700; }
 .monaco-editor .gh-a-italic { font-style: italic; }
 .monaco-editor .gh-a-underline { text-decoration: underline; }
+.gh-act-cardbody { display: flex; flex-direction: column; min-width: 0; width: 100%; }
+.gh-act-card .bolt-card-content { min-width: 0; flex-direction: column; }
+.gh-act-body .bolt-pill { display: inline-flex; width: auto; }

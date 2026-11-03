@@ -12,7 +12,7 @@ import { getJobLog } from "./actionsApi";
 import { loadMonaco } from "./Browser";
 import { watchTheme } from "./theme";
 import { Loading } from "./RepoHub";
-import { StateIcon, STATE_TEXT, dur, isActive, spanMs, type RunPageProps } from "./ActionsRun";
+import { StateIcon, STATE_TEXT, dur, isActive, jobMs, spanMs, type RunPageProps } from "./ActionsRun";
 import "./actionsRun.css";
 
 type Viewer = ReturnType<typeof import("./monacoChunk").createLogViewer>;
@@ -147,7 +147,7 @@ export function LogView({ repo, state, go, run, jobs, jobId, now, canWrite, onRe
               <button type="button" className={`gh-act-stepbtn gh-act-jobbtn${j.id === jobId ? " selected" : ""}`} aria-current={j.id === jobId ? "true" : undefined} onClick={() => j.id !== jobId && go({ run: run.id, attempt: state.attempt, job: j.id })}>
                 <StateIcon state={j.state} />
                 <span className="text-ellipsis">{j.name}</span>
-                <span className="gh-act-dur secondary-text">{dur(spanMs(j.startedAt, j.completedAt, now))}</span>
+                <span className="gh-act-dur secondary-text">{dur(jobMs(j, now))}</span>
               </button>
               {j.id === jobId && (
                 <ul className="gh-act-steplist">

@@ -24,6 +24,7 @@ import { RelDate } from "./RelDate";
 import { openInHub, useHubHref } from "./repoHref";
 import { GhError } from "./githubBrowse";
 import { LogView } from "./ActionsLog";
+import { RunStatusIcon, RUN_STATE_TEXT } from "./ActionsUi";
 import "./actionsRun.css";
 
 export interface RunPageProps {
@@ -39,14 +40,8 @@ export interface RunPageProps {
 
 // ---------- shared bits ----------
 
-const STATUS_OF: Record<RunState, typeof Statuses.Success> = {
-  succeeded: Statuses.Success, failed: Statuses.Failed, cancelled: Statuses.Canceled, skipped: Statuses.Skipped,
-  inProgress: Statuses.Running, queued: Statuses.Queued, waiting: Statuses.Waiting, neutral: Statuses.Skipped,
-};
-export const STATE_TEXT: Record<RunState, string> = {
-  succeeded: "Succeeded", failed: "Failed", cancelled: "Cancelled", skipped: "Skipped", inProgress: "In progress", queued: "Queued", waiting: "Waiting", neutral: "Neutral",
-};
-export const StateIcon = ({ state, size = StatusSize.m }: { state: RunState; size?: StatusSize }) => <Status {...STATUS_OF[state]} size={size} ariaLabel={STATE_TEXT[state]} />;
+export const STATE_TEXT = RUN_STATE_TEXT;
+export const StateIcon = ({ state, size = StatusSize.m }: { state: RunState; size?: StatusSize }) => <RunStatusIcon state={state} size={size} />;
 
 export const isActive = (s: RunState) => s === "queued" || s === "waiting" || s === "inProgress";
 
@@ -54,9 +49,12 @@ export const isActive = (s: RunState) => s === "queued" || s === "waiting" || s 
 export function spanMs(start: Date | undefined, end: Date | undefined, now: number): number | undefined {
   return start ? Math.max(0, (end ? end.getTime() : now) - start.getTime()) : undefined;
 }
+/** A job's duration; blank while it waits (GitHub stamps queued jobs with a start time). */
+export const jobMs = (j: Job, now: number) => (j.state === "queued" || j.state === "waiting" ? undefined : spanMs(j.startedAt, j.completedAt, now));
 export const dur = (ms: number | undefined) => (ms === undefined ? "" : formatDuration(ms));
 
-function groupMs(jobs: Job[], now: number): number | undefined {
+function groupMs(all: Job[], now: number): number | undefined {
+  const jobs = all.filter((j) => j.state !== "queued" && j.state !== "waiting");
   const starts = jobs.map((j) => j.startedAt?.getTime()).filter((x): x is number => x !== undefined);
   if (!starts.length) return undefined;
   const ends = jobs.map((j) => j.completedAt?.getTime()).filter((x): x is number => x !== undefined);
@@ -254,12 +252,14 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
         </Card>
 
         <Card className="gh-act-card" titleProps={{ text: "Jobs" }}>
+          <div className="gh-act-cardbody">
           <div className="gh-act-graph-wrap">
             {defs === undefined ? <Loading label="Loading the job graph" /> : (
               <JobGraph groups={groups} now={now} expanded={expanded} toggle={(k) => setExpanded((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; })} open={openJob} />
             )}
           </div>
           <JobsTable jobs={jobs} now={now} canRerun={write && !isActive(run.state)} open={openJob} rerun={(j) => void act(`re-run ${j.name}`, () => rerunJob(repo, j.id))} />
+          </div>
         </Card>
 
         <Artifacts repo={repo} artifacts={data.artifacts} />
@@ -327,7 +327,7 @@ function JobGraph({ groups, now, expanded, toggle, open }: { groups: JobGroup[][
                           <button type="button" className="gh-act-cardbtn" onClick={() => open(j)} aria-label={`${j.name}, ${STATE_TEXT[j.state]}`}>
                             <StateIcon state={j.state} />
                             <span className="gh-act-title text-ellipsis">{j.name.slice(g.title.length).trim() || j.name}</span>
-                            <span className="gh-act-dur secondary-text">{dur(spanMs(j.startedAt, j.completedAt, now))}</span>
+                            <span className="gh-act-dur secondary-text">{dur(jobMs(j, now))}</span>
                           </button>
                         </li>
                       ))}
@@ -354,7 +354,7 @@ function JobsTable({ jobs, now, canRerun, open, rerun }: { jobs: Job[]; now: num
           <tr key={j.id}>
             <td><span className="flex-row flex-center gh-act-jobname"><StateIcon state={j.state} /><Link className="bolt-table-link text-ellipsis" href="#" onClick={(e) => { e.preventDefault(); open(j); }}>{j.name}</Link></span></td>
             <td>{STATE_TEXT[j.state]}</td>
-            <td>{dur(spanMs(j.startedAt, j.completedAt, now)) || "–"}</td>
+            <td>{dur(jobMs(j, now)) || "–"}</td>
             <td className="text-ellipsis">{j.runnerName || "–"}</td>
             <td className="gh-act-rowmenu">
               {canRerun && j.status === "completed" && (

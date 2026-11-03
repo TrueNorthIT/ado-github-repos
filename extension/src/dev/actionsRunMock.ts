@@ -71,7 +71,7 @@ function jobState(s: Sim, d: JobDef, e: number): { status: string; conclusion: s
   }
   if (s.final === "failure") {
     if (d.fail) return { status: "completed", conclusion: "failure", start: t(d.start), end: t(d.end) };
-    if (d.start >= 26) return { status: "completed", conclusion: "skipped" };
+    if (d.start >= 26) return { status: "completed", conclusion: "skipped", start: t(d.start), end: t(d.start) };
     return { status: "completed", conclusion: "success", start: t(d.start), end: t(d.end) };
   }
   if (s.final === "cancelled") return d.start >= 8 ? { status: "completed", conclusion: "cancelled", start: t(d.start), end: t(d.start + 3) } : { status: "completed", conclusion: "success", start: t(d.start), end: t(d.end) };
