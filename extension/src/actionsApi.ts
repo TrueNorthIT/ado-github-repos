@@ -30,7 +30,7 @@ export interface RunsPage {
   next?: number;
 }
 
-export async function listRuns(repo: string, opts: { workflowId?: number; page?: number } & RunFilters): Promise<RunsPage> {
+export async function listRuns(repo: string, opts: { workflowId?: number; page?: number; perPage?: number } & RunFilters): Promise<RunsPage> {
   const { body, link } = await restJson(listRunsRequest(repo, opts));
   return { runs: (body.workflow_runs ?? []).map(toRun), next: nextPage(link) };
 }
