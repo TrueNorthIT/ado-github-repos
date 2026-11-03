@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ansiSpans, parseLog, foldRanges, stepRanges, logCounts, type AnsiSpan, type LogKind, type LogLine } from "./workflowLog";
+import { ansiSpans, parseLog, foldRanges, stepRanges, stepRangesByTime, logCounts, type AnsiSpan, type LogKind, type LogLine } from "./workflowLog";
 
 // Module under test: src/lib/workflowLog.ts (frozen contract; every body throws "not implemented" until the developers fill them in).
 // Requirement IDs: ACT-7 is the job log view (ANSI colours, timestamps, ##[group] folding, error/warning highlighting, per-step jump) and ACT-8 is the
@@ -451,5 +451,64 @@ describe("ACT-7: stepRanges assigns lines to steps by timestamp", () => {
   it("uses line numbers (n), not array positions, in the ranges", () => {
     const lines = [line(40, "normal", at("01.000")), line(41, "normal", at("02.000")), line(42, "normal", at("11.000"))];
     expect([...stepRanges(lines, steps)], "Expected [40,41] and [42,42]").toEqual([[1, [40, 41]], [2, [42, 42]]]);
+  });
+});
+
+describe("stepRanges anchored on the runner's markers (named steps)", () => {
+  // The shape of a real job log (TrueNorthIT/ado-github-repos publish job, 2026-11-03), trimmed.
+  const log = [
+    "2026-11-03T13:24:26.1000000Z Current runner version: '2.338.2'",
+    "2026-11-03T13:24:26.2000000Z ##[group]Operating System",
+    "2026-11-03T13:24:26.3000000Z Ubuntu",
+    "2026-11-03T13:24:26.4000000Z ##[endgroup]",
+    "2026-11-03T13:24:27.2689995Z ##[group]Run ./.github/actions/setup",
+    "2026-11-03T13:24:27.3000000Z ##[endgroup]",
+    "2026-11-03T13:24:27.4000000Z ##[group]Run npm config set fund false", // a composite action's own inner step, same step
+    "2026-11-03T13:24:27.5000000Z ##[endgroup]",
+    "2026-11-03T13:24:29.7847670Z ##[group]Run pkg=$(node -p \"require('./package.json').version\")", // named step "Check versions agree"
+    "2026-11-03T13:24:29.7900000Z ##[endgroup]",
+    "2026-11-03T13:24:29.8000000Z versions agree",
+    "2026-11-03T13:24:29.8562509Z ##[group]Run npm ci", // same second as the step above
+    "2026-11-03T13:24:29.8600000Z ##[endgroup]",
+    "2026-11-03T13:24:52.0000000Z added 400 packages",
+    "2026-11-03T13:29:55.7013885Z Post job cleanup.",
+    "2026-11-03T13:29:55.8000000Z removed cache",
+    "2026-11-03T13:29:57.9766824Z Cleaning up orphan processes",
+    "2026-11-03T13:29:58.0000000Z done",
+  ].join("\n");
+  const lines = parseLog(log);
+  const t = (s: string) => new Date(`2026-11-03T${s}Z`);
+  const steps = [
+    { number: 1, name: "Set up job", conclusion: "success", startedAt: t("13:24:26") },
+    { number: 2, name: "Run ./.github/actions/setup", conclusion: "success", startedAt: t("13:24:27") },
+    { number: 3, name: "Deploy preview", conclusion: "skipped", startedAt: t("13:24:29") },
+    { number: 4, name: "Check versions agree", conclusion: "success", startedAt: t("13:24:29") },
+    { number: 5, name: "Run npm ci", conclusion: "success", startedAt: t("13:24:29") },
+    { number: 23, name: "Post Run ./.github/actions/setup", conclusion: "success", startedAt: t("13:29:55") },
+    { number: 25, name: "Complete job", conclusion: "success", startedAt: t("13:29:57") },
+  ];
+  const r = stepRanges(lines, steps);
+
+  it("starts Set up job at line 1 and runs it to the first Run header", () => {
+    expect(r.get(1)).toEqual([1, 4]);
+  });
+  it("keeps a composite action's inner Run header inside its step", () => {
+    expect(r.get(2)).toEqual([5, 8]);
+  });
+  it("gives a named step its header even though the header echoes the command", () => {
+    expect(r.get(4)).toEqual([9, 11]);
+  });
+  it("separates two steps that started in the same second", () => {
+    expect(r.get(5)).toEqual([12, 14]);
+  });
+  it("gives a skipped step no lines", () => {
+    expect(r.has(3)).toBe(false);
+  });
+  it("starts a Post step at 'Post job cleanup.' and Complete job at the orphan clean-up", () => {
+    expect(r.get(23)).toEqual([15, 16]);
+    expect(r.get(25)).toEqual([17, 18]);
+  });
+  it("falls back to timestamps when the steps have no names", () => {
+    expect(stepRanges(lines, steps.map(({ number, startedAt }) => ({ number, startedAt })))).toEqual(stepRangesByTime(lines, steps));
   });
 });

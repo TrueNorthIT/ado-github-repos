@@ -44,7 +44,7 @@
 .gh-act-envs { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 
 /* log view: native's full-height master/detail, no page header */
-.gh-act-logpage { height: calc(100vh - 56px); min-height: 420px; align-items: stretch; }
+.gh-act-logpage { height: 100vh; min-height: 420px; align-items: stretch; } /* the whole page, as native: nothing else shares it (the hub iframe is the content area) */
 .gh-act-master { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
 .gh-act-master .bolt-master-panel-header { padding-bottom: 8px; }
 .gh-act-jobtree { flex: 1 1 auto; min-height: 0; }

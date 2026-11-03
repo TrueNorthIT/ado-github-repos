@@ -121,10 +121,60 @@ export function foldRanges(lines: LogLine[]): { start: number; end: number }[] {
   return out;
 }
 
+export interface LogStep {
+  number: number;
+  startedAt?: Date;
+  /** With names, steps are anchored on the runner's own markers (see stepRanges); without, by timestamp alone. */
+  name?: string;
+  conclusion?: string | null;
+}
+
+const SETUP_STEP = "Set up job";
+const COMPLETE_STEP = "Complete job";
+/** Step starts are whole seconds; a marker line may be stamped a moment before the step's recorded start. */
+const SLACK_MS = 1000;
+
+/** Step number -> [first, last] line numbers. When the steps carry names, each step starts at the runner's marker for it:
+ *  "Set up job" at line 1, every other step that ran (not skipped) at the next `##[group]Run …` header (in step order, the header at or
+ *  after the step's start, so a composite action's own inner "Run" headers are passed over), each "Post …" step at the next
+ *  "Post job cleanup." line, and "Complete job" at "Cleaning up orphan processes". A step runs to the line before the next anchored step.
+ *  Named steps echo their command, not their name, in the header, so headers are matched by order and time, not by text.
+ *  Without names, or when no marker is found, it falls back to stepRangesByTime. */
+export function stepRanges(lines: LogLine[], steps: LogStep[]): Map<number, [number, number]> {
+  if (!lines.length || !steps.some((s) => s.name)) return stepRangesByTime(lines, steps);
+  const anchors: { number: number; line: number }[] = [];
+  let pos = 0; // index into lines: markers are searched forwards only
+  const find = (test: (l: LogLine) => boolean, after?: Date) => {
+    for (let i = pos; i < lines.length; i++) {
+      const l = lines[i];
+      if (!test(l)) continue;
+      if (after && l.ts && l.ts.getTime() < after.getTime() - SLACK_MS) continue;
+      pos = i + 1;
+      return l.n;
+    }
+    return undefined;
+  };
+  for (const s of steps) {
+    if (s.conclusion === "skipped") continue;
+    const name = s.name ?? "";
+    let line: number | undefined;
+    if (name === SETUP_STEP) line = lines[0].n;
+    else if (name === COMPLETE_STEP) line = find((l) => l.text.startsWith("Cleaning up orphan processes"));
+    else if (name.startsWith("Post ")) line = find((l) => l.text === "Post job cleanup.", s.startedAt);
+    else line = find((l) => l.kind === "group" && l.text.startsWith("Run "), s.startedAt);
+    if (line !== undefined) anchors.push({ number: s.number, line });
+  }
+  if (!anchors.length) return stepRangesByTime(lines, steps);
+  const out = new Map<number, [number, number]>();
+  const last = lines[lines.length - 1].n;
+  anchors.forEach((a, i) => out.set(a.number, [a.line, i + 1 < anchors.length ? anchors[i + 1].line - 1 : last]));
+  return out;
+}
+
 /** Assigns lines to steps by timestamp: a line belongs to the last step whose startedAt is at or before the line's ts. Lines before the first
  *  step, or without a ts, follow the previous line's step (the first ones go to the first step). Returns step number -> [first, last] line
  *  numbers, for steps that got any lines. Steps without startedAt get none. */
-export function stepRanges(lines: LogLine[], steps: { number: number; startedAt?: Date }[]): Map<number, [number, number]> {
+export function stepRangesByTime(lines: LogLine[], steps: { number: number; startedAt?: Date }[]): Map<number, [number, number]> {
   const timed = steps.filter((s) => s.startedAt).map((s, i) => ({ number: s.number, t: s.startedAt!.getTime(), i })).sort((a, b) => a.t - b.t || a.i - b.i);
   const out = new Map<number, [number, number]>();
   if (!timed.length) return out;
