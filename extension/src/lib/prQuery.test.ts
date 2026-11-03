@@ -193,3 +193,11 @@ describe("PR-5, PR-6: detailQuery", () => {
     expect(ops, "Expected one operation keyword, so one request fetches the whole page").toEqual(["query"]);
   });
 });
+
+describe("detailQuery: review requests for bots and teams", () => {
+  // Live bug (0.25.0): a requested Copilot review (a Bot) and team requests came back as {} because only
+  // `... on User` was selected, so the Reviewers panel never showed them.
+  const q = detailQuery({ owner: "o", name: "r", number: 1 }).query.replace(/\s+/g, " ");
+  it("selects Bot reviewers' login and avatar", () => expect(q).toMatch(/requestedReviewer \{.*\.\.\. on Bot \{ login avatarUrl \}/));
+  it("selects Team reviewers as login: name", () => expect(q).toMatch(/\.\.\. on Team \{ login: name avatarUrl \}/));
+});
