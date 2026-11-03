@@ -34,19 +34,23 @@ import { watchTheme } from "./theme";
 import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
-import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, getViewerLogin, getWriteContext, listBranches, listDir, pathExistsOn } from "./githubBrowse";
+import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, getViewerLogin, getWriteContext, listBranches, listDir, pathExistsOn, renderMarkdown } from "./githubBrowse";
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
 import { BlameTab, CompareTab, HistoryTab } from "./FileTabs";
 import { applyAgainst, resolveTab, tabsFor, type FileTab } from "./lib/fileTabs";
 import { compareBaseFor } from "./lib/compareHash";
-import { openHub, patchHash, useHashExtras } from "./hostNav";
+import { openHub, patchHash, repoHubHref, useHashExtras } from "./hostNav";
 import { EditPane, WriteDialogs, type WriteDialog } from "./FileWrites";
 import { decodeForEdit, treeLookup, validatePath, type CommitPlan, type WriteContext } from "./lib/fileCommit";
 import { branchRowNewPrHash } from "./lib/newPrHash";
 import { useRefWrites } from "./refWrites";
 import { usePrefs } from "./prefs";
+import { Toast } from "azure-devops-ui/Toast";
+import { CloneButton } from "./CloneButton";
+import { archiveUrl, cloneUrls, type CloneUrls } from "./lib/cloneUrls";
+import { copyLinkText, selectionLines, withLines, type LineRange } from "./lib/lineHash";
 import "./browser.css";
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
@@ -162,20 +166,28 @@ export function loadMonaco() {
   })().catch((e) => ((monacoReady = undefined), Promise.reject(e))));
 }
 
-function CodeView({ text, name, dark }: { text: string; name: string; dark: boolean }) {
+/** `lines` (from a link) are tinted and scrolled to; `onSelect` hears each selection the user makes, for "Copy link to lines". */
+function CodeView({ text, name, dark, lines, onSelect }: { text: string; name: string; dark: boolean; lines?: LineRange | null; onSelect?: (r: LineRange) => void }) {
   const box = React.useRef<HTMLDivElement>(null);
   const [failed, setFailed] = React.useState(false);
-  const editor = React.useRef<{ dispose(): void } | null>(null);
+  const [ready, setReady] = React.useState(0);
+  const editor = React.useRef<ReturnType<typeof import("./monacoChunk")["createViewer"]> | null>(null);
+  const select = React.useRef(onSelect);
+  select.current = onSelect;
   React.useEffect(() => {
     let dead = false;
+    let sub: { dispose(): void } | undefined;
     loadMonaco()
       .then((m) => {
         if (dead || !box.current) return;
-        editor.current = m.createViewer(box.current, text, monacoLanguage(name), dark, name);
+        const ed = (editor.current = m.createViewer(box.current, text, monacoLanguage(name), dark, name));
+        sub = m.onUserSelection(ed, (s) => select.current?.(selectionLines(s)));
+        setReady((n) => n + 1);
       })
       .catch(() => !dead && setFailed(true));
     return () => {
       dead = true;
+      sub?.dispose();
       editor.current?.dispose();
       editor.current = null;
     };
@@ -184,6 +196,14 @@ function CodeView({ text, name, dark }: { text: string; name: string; dark: bool
   React.useEffect(() => {
     if (editor.current) void loadMonaco().then((m) => m.setTheme(dark));
   }, [dark]);
+  const [from, to] = [lines?.line ?? 0, lines?.lineEnd ?? 0];
+  React.useEffect(() => {
+    const ed = editor.current;
+    if (!ed || !from) return;
+    let clear: (() => void) | undefined;
+    void loadMonaco().then((m) => { if (editor.current === ed) clear = m.highlightLines(ed, from, to); });
+    return () => clear?.();
+  }, [ready, from, to]);
   // If Monaco can't load, still show the text rather than nothing.
   return failed ? <pre className="gh-plain">{text}</pre> : <div ref={box} className="gh-code" />;
 }
@@ -236,7 +256,7 @@ function ImageView({ repo, refName, path }: { repo: string; refName: string; pat
 
 type FileData = { entry: TreeEntry; kind: FileKind; text?: string; md?: PreparedMarkdown };
 
-function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: string; refName: string; dark: boolean; go: (s: BrowseState) => void; tab: string }) {
+function FileView({ f, repo, refName, dark, go, tab, lines, onSelect }: { f: FileData; repo: string; refName: string; dark: boolean; go: (s: BrowseState) => void; tab: string; lines?: LineRange | null; onSelect?: (r: LineRange) => void }) {
   // A markdown file's Contents tab shows its source, which the rendered-HTML fetch doesn't have.
   const source = f.kind === "markdown" && tab === "contents";
   const [rawText, setRawText] = React.useState<string>();
@@ -267,8 +287,8 @@ function FileView({ f, repo, refName, dark, go, tab }: { f: FileData; repo: stri
   if (f.kind === "tooLarge") return cant("This file is too large to preview.");
   if (f.kind === "markdown" && !source) return <Card className="no-padding gh-readme" contentProps={{ contentPadding: false }}><Markdown prepared={f.md!} repo={repo} refName={refName} go={go} /></Card>;
   if (f.kind === "markdown")
-    return <CardFill>{rawText === undefined ? <Spinner size={SpinnerSize.large} ariaLabel="Loading" /> : <CodeView text={rawText} name={f.entry.name} dark={dark} />}</CardFill>;
-  return <CardFill><CodeView text={f.text ?? ""} name={f.entry.name} dark={dark} /></CardFill>;
+    return <CardFill>{rawText === undefined ? <Spinner size={SpinnerSize.large} ariaLabel="Loading" /> : <CodeView text={rawText} name={f.entry.name} dark={dark} lines={lines} onSelect={onSelect} />}</CardFill>;
+  return <CardFill><CodeView text={f.text ?? ""} name={f.entry.name} dark={dark} lines={lines} onSelect={onSelect} /></CardFill>;
 }
 
 // ---------- listing ----------
@@ -569,7 +589,29 @@ export function RepoSwitcher({ repo, openTick, onPick, compact }: { repo: string
 
 // ---------- the browser ----------
 
-type Ctx = { ref: string; defaultBranch: string; tree: GitTree; write: WriteContext | null };
+type Ctx = { ref: string; defaultBranch: string; tree: GitTree; write: WriteContext | null; clone: CloneUrls };
+
+/** The Edit pane's Preview tab: GitHub renders the unsaved text (POST /markdown), through the same sanitiser and renderer as the Preview tab. */
+function MarkdownPreview({ text, repo, refName, dir, go }: { text: string; repo: string; refName: string; dir: string; go: (s: BrowseState) => void }) {
+  const [prepared, setPrepared] = React.useState<PreparedMarkdown | null>();
+  React.useEffect(() => {
+    let dead = false;
+    setPrepared(undefined);
+    renderMarkdown(repo, text).then(
+      (html) => !dead && setPrepared(prepareMarkdownHtml(html, { owner: repo.split("/")[0], name: repo.split("/")[1], ref: refName, dir })),
+      () => !dead && setPrepared(null)
+    );
+    return () => { dead = true; };
+  }, [text, repo, refName, dir]);
+  if (prepared === null) return <MessageCard severity={MessageCardSeverity.Error}>Could not render the preview.</MessageCard>;
+  if (!prepared) return <Spinner size={SpinnerSize.large} ariaLabel="Rendering preview" />;
+  if (!text.trim()) return <ZeroData iconProps={{ iconName: "Preview" }} imageAltText="" primaryText="Nothing to preview" />;
+  return (
+    <Card className="no-padding gh-readme gh-edit-preview" contentProps={{ contentPadding: false }}>
+      <Markdown prepared={prepared} repo={repo} refName={refName} go={go} />
+    </Card>
+  );
+}
 type View =
   | { t: "loading" }
   | { t: "error"; err: unknown }
@@ -621,6 +663,11 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const [loadingEdit, setLoadingEdit] = React.useState(false);
   const [committed, setCommitted] = React.useState<string | null>(null);
   const [login, setLogin] = React.useState("");
+  const [sel, setSel] = React.useState<LineRange | null>(null);
+  const [toast, setToast] = React.useState<string | null>(null);
+  const toastTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const flash = (m: string) => { clearTimeout(toastTimer.current); setToast(m); toastTimer.current = setTimeout(() => setToast(null), 3000); };
+  React.useEffect(() => () => clearTimeout(toastTimer.current), []);
   const editText = React.useRef("");
   // In a truncated tree only the folders fetched so far are known; the finder searches those.
   const seen = React.useRef(new Set<string>());
@@ -647,7 +694,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
         const ref = state.ref ?? info.defaultBranch;
         // The head is read with the tree: a web edit commits against the head the page was loaded at. A failed lookup just means no edit actions.
         const [tree, write] = await Promise.all([getTree(repo, ref), getWriteContext(repo, ref).catch(() => null)]);
-        if (!dead) setCtx({ ref, defaultBranch: info.defaultBranch, tree, write });
+        if (!dead) setCtx({ ref, defaultBranch: info.defaultBranch, tree, write, clone: cloneUrls(repo, info) });
       } catch (e) {
         if (!dead) setCtxErr(e);
       }
@@ -704,7 +751,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const lastWhere = React.useRef(`${refName}:${path}`);
   React.useEffect(() => {
     const where = `${refName}:${path}`;
-    if (lastWhere.current !== where) { lastWhere.current = where; setEditing(null); }
+    if (lastWhere.current !== where) { lastWhere.current = where; setEditing(null); setSel(null); }
   }, [refName, path]);
   const cancelEdit = React.useCallback(() => setEditing(null), []);
   const write = ctx?.write;
@@ -749,6 +796,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
       : e.kind === "folder" ? [
         { id: "new", text: "New file here", iconProps: { iconName: "Add" }, disabled: writes.busy, onActivate: () => startNew(e.path) },
         { id: "upload", text: "Upload files here", iconProps: { iconName: "Upload" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "upload", dir: e.path }) },
+        ...(e.path ? [{ id: "deleteFolder", text: "Delete folder", iconProps: { iconName: "Delete" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "deleteFolder", path: e.path }) }] : []),
       ] : [
         { id: "rename", text: "Rename", iconProps: { iconName: "Rename" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "rename", path: e.path }) },
         { id: "delete", text: "Delete", iconProps: { iconName: "Delete" }, disabled: writes.busy, onActivate: () => openWrite({ kind: "delete", path: e.path }) },
@@ -794,20 +842,38 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const kind = view.t === "folder" || (view.t === "loading" && path === "") ? "folder" : "file";
   const hasTabs = view.t === "file" || view.t === "folder" || view.t === "loading";
   const tab = resolveTab(state.tab, kind, isMd && kind === "file");
-  const { against } = useHashExtras();
+  const { against, lines } = useHashExtras();
   const [prefs] = usePrefs();
   const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
   const tabProps = { repo, urlRef: state.ref, refName, path, signedIn, signIn: () => void doSignIn(), busy };
   const showable = view.t === "file" && (view.f.kind === "text" || view.f.kind === "markdown"); // Blame and Compare need text
-  const hereItems = view.t === "file" || view.t === "folder" ? entryMenu({ path, kind: view.t }) : [];
+  // A selection in the Contents view, else the lines the page was opened at, give "Copy link to lines".
+  const linkLines = view.t === "file" && tab === "contents" && showable ? sel ?? lines : null;
+  const copyLink = async (r: LineRange | null) => {
+    try {
+      const p = await loadProject();
+      await navigator.clipboard.writeText(withLines(repoHubHref(p.ctx, { repo, ref: state.ref, path, tab: r && isMd ? "contents" : state.tab }), r));
+      flash("Link copied to the clipboard.");
+    } catch {
+      flash("Could not copy the link.");
+    }
+  };
+  const downloadZip = () => window.open(archiveUrl(repo, refName), "_blank", "noopener");
+  const zipItem: IMenuItem = { id: "zip", text: "Download repository as zip", iconProps: { iconName: "ZipFolder" }, disabled: !refName, onActivate: () => { downloadZip(); } };
+  const hereItems = view.t === "file" || view.t === "folder" ? [
+    ...(view.t === "file" ? [{ id: "link", text: copyLinkText(linkLines), iconProps: { iconName: "Link" }, onActivate: () => { void copyLink(linkLines); } }] : [zipItem]),
+    ...entryMenu({ path, kind: view.t }),
+  ] : [];
   const editable = canEdit && view.t === "file" && tab === "contents" && (view.f.kind === "text" || view.f.kind === "markdown") && !editing;
   const headerItems = editing ? [] : [
+    ...(ctx ? [{ id: "clone", text: "Clone", important: true, renderButton: () => <CloneButton key="clone" urls={ctx.clone} /> }] : []),
     ...(editable ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, disabled: loadingEdit || writes.busy, onActivate: () => void startEdit() }] : []),
     ...(hereItems.length ? [{ id: "more", important: true, text: "More actions", renderButton: () => <MoreButton key="more" ariaLabel={`Actions for ${baseOf(path) || "the repository root"}`} contextualMenuProps={{ menuProps: { id: "gh-files-menu", items: hereItems } }} /> }] : []),
   ];
   const newProblem = editing?.kind === "new" ? validatePath(newPath, lookup) : null;
   const menuItems = [
     { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => { window.open(githubUrl(repo, refName || "HEAD", path, isFile), "_blank", "noopener"); } },
+    { id: "zip", text: "Download as zip", iconProps: { iconName: "ZipFolder" }, disabled: !refName, onActivate: () => { downloadZip(); } },
     { id: "list", text: "All repositories", iconProps: { iconName: "Back" }, onActivate: toList },
     ...commandBarItems.map((c) => ({ id: c.id, text: c.text, iconProps: c.iconProps, disabled: c.disabled, onActivate: c.onActivate })),
   ];
@@ -887,6 +953,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                           target={editing.kind === "edit" ? editing.path : newPath || "the new file"}
                           setText={(t) => { editText.current = t; }}
                           cancel={cancelEdit}
+                          renderPreview={classifyFile(baseOf(editing.kind === "edit" ? editing.path : newPath.trim()), 0) === "markdown" ? (t) => <MarkdownPreview text={t} repo={repo} refName={ctx.ref} dir={dirOf(editing.kind === "edit" ? editing.path : newPath.trim())} go={go} /> : undefined}
                           commit={() => openWrite(editing.kind === "edit" ? { kind: "edit", path: editing.path, text: editText.current, original: editing.initial, bom: editing.bom } : { kind: "new", path: newPath, text: editText.current })}
                         />
                       )}
@@ -910,7 +977,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       {view.t === "file" && tab === "compare" && showable && (
                         <CompareTab {...tabProps} dark={dark} against={compareWith} defaultBranch={ctx.defaultBranch} setAgainst={(r) => patchHash((h) => applyAgainst(h, r))} />
                       )}
-                      {view.t === "file" && (tab === "contents" || tab === "preview") && !editing && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} />}
+                      {view.t === "file" && (tab === "contents" || tab === "preview") && !editing && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} lines={lines} onSelect={setSel} />}
                     </div>
                   </>
                 )
@@ -919,6 +986,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
           )}
         />
       </div>
+      {toast && <Toast message={toast} />}
       {dialog && ctx?.write && (
         <WriteDialogs
           dialog={dialog}

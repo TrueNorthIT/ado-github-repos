@@ -127,11 +127,14 @@ const json = async <T>(url: string): Promise<T> => (await request(url, "applicat
 export interface RepoInfo {
   defaultBranch: string;
   isPrivate: boolean;
+  /** GitHub's `clone_url` and `ssh_url`, for the Files page's Clone callout. */
+  cloneUrl?: string;
+  sshUrl?: string;
 }
 
 export async function getRepo(repo: string): Promise<RepoInfo> {
-  const j = await json<{ default_branch: string; private: boolean }>(repoPath(repo));
-  return { defaultBranch: j.default_branch, isPrivate: j.private };
+  const j = await json<{ default_branch: string; private: boolean; clone_url?: string; ssh_url?: string }>(repoPath(repo));
+  return { defaultBranch: j.default_branch, isPrivate: j.private, cloneUrl: j.clone_url, sshUrl: j.ssh_url };
 }
 
 /** Branch names, following Link pagination up to 1000. */
@@ -1025,3 +1028,26 @@ export const deleteRelease = async (repo: string, releaseId: number) => {
   await rest(deleteReleaseRequest(repo, releaseId));
   invalidateReleases();
 };
+
+// ---------- deleting a folder (Files) ----------
+
+/** Too many files under a folder for one tree listing; nothing is deleted. */
+export class FolderTooLarge extends Error {}
+
+/** Every item under `folder` as repo paths: from the recursive tree, or (when that was truncated) the folder's own recursive tree.
+ *  Throws FolderTooLarge when even that is truncated, rather than delete part of the folder. */
+export async function listItemsUnder(repo: string, tree: GitTree, folder: string): Promise<GitTree["tree"]> {
+  if (!needsFolderFetch(tree, folder)) return tree.tree.filter((i) => i.path.startsWith(`${folder}/`));
+  let sha = tree.sha;
+  for (const seg of folder.split("/").filter(Boolean)) {
+    const item = (await getFolderTree(repo, sha)).tree.find((i) => i.path === seg && i.type === "tree");
+    if (!item) return [];
+    sha = item.sha;
+  }
+  const t = await json<GitTree>(`${repoPath(repo)}/git/trees/${sha}?recursive=1`);
+  if (t.truncated) throw new FolderTooLarge();
+  return t.tree.map((i) => ({ ...i, path: `${folder}/${i.path}` }));
+}
+
+/** The tree of a commit, for a write's base_tree. */
+export const getCommitTree = async (repo: string, sha: string): Promise<string> => (await json<{ tree: { sha: string } }>(`${repoPath(repo)}/git/commits/${sha}`)).tree.sha;
