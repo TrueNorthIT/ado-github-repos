@@ -25,6 +25,7 @@ import { createTagMutation, createTagObjectRequest, mapTagsPage, tagListQuery, t
 import { deleteRefMutation } from "./lib/actionsQuery";
 import { mapWriteContext, writeContextQuery, type WriteContext } from "./lib/fileCommit";
 import { mapRestCommit, type RestCommit } from "./lib/restCommit";
+import { commitExtrasQuery, commitsRestPath, mapCommitExtras, nextPageOf, normalizeCommitFilters, withExtras, type CommitFilters } from "./lib/commitsRest";
 import { blameQuery, mapBlame, type BlameRange } from "./lib/blame";
 import { mergeCompare, type BranchCompare, type RestComparePage } from "./lib/branchCompare";
 import { annotationsQuery, type AnnotatedContext } from "./lib/annotations";
@@ -625,6 +626,32 @@ export const listCommits = (repo: string, ref: string, after?: string, path?: st
   refTtl(`commits|${repo}|${ref}|${after ?? ""}|${path ?? ""}`, async () => {
     const [owner, name] = split(repo);
     return mapCommitsPage(await graphql(path?.trim() ? commitsByPathQuery({ owner, name, ref, after, path }) : commitsQuery({ owner, name, ref, after })));
+  });
+
+/** One page (50) of a ref's history over REST, with the author, date and path filters applied by GitHub. PR, check status and signature come from one
+ *  best-effort GraphQL lookup; without it the rows still show. `page` is 1-based; `endCursor` is the next page number. An empty repository (409) or an
+ *  unknown ref (422) is an empty list. */
+export const listCommitsRest = (repo: string, ref: string, filters: CommitFilters = {}, page = 1): Promise<CommitsPage> =>
+  refTtl(`commitsRest|${repo}|${ref}|${page}|${JSON.stringify(normalizeCommitFilters({ ...filters, text: undefined }))}`, async () => {
+    let res: Response;
+    try {
+      res = await request(commitsRestPath(repo, ref, filters, page), "application/vnd.github+json");
+    } catch (e) {
+      if (e instanceof GhError && (e.status === 409 || e.status === 422)) return { rows: [], hasNextPage: false, endCursor: null };
+      throw e;
+    }
+    const next = nextPageOf(res.headers.get("link"));
+    let rows = ((await res.json()) as RestCommit[]).map(mapRestCommit);
+    if (rows.length) {
+      const [owner, name] = split(repo);
+      try {
+        const q = commitExtrasQuery({ owner, name, shas: rows.map((r) => r.sha) });
+        rows = withExtras(rows, mapCommitExtras(await graphql(q), q.aliases));
+      } catch {
+        /* no PR or status values; the list itself still works */
+      }
+    }
+    return { rows, hasNextPage: next !== undefined, endCursor: next !== undefined ? String(next) : null };
   });
 
 /** One commit by SHA prefix for the Commit ID box; null when there is none. */

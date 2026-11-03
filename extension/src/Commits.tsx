@@ -15,13 +15,15 @@ import { Filter, FILTER_CHANGE_EVENT } from "azure-devops-ui/Utilities/Filter";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { computeGraph, type GraphLayout, type GraphRow } from "./lib/commitGraph";
-import { isShaPrefix, normalizeHistoryPath, type CommitRow } from "./lib/commitsQuery";
+import { isShaPrefix, type CommitRow } from "./lib/commitsQuery";
+import { applyCommitFilters, formatDayText, hasServerFilters, matchesKeyword, noMatchText, normalizeCommitFilters, parseDayText, type CommitFilters } from "./lib/commitsRest";
+import { patchHash, useHashExtras } from "./hostNav";
 import { ErrorView, hubClick } from "./Browser";
 import { CommitDetailPage } from "./CommitDetail";
 import { useCommitActions } from "./CommitActions";
 import { GraphCell, graphWidth } from "./CommitGraph";
 import { BranchBar, CheckStatusCell, CommitTime, HubProps, PersonLine, PrCell, RepoHubPage, skeletonRows, titleSwitcher, useDefaultBranch } from "./RepoHub";
-import { findCommit, invalidateRefs, listCommits } from "./githubBrowse";
+import { findCommit, invalidateRefs, listCommitsRest } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
 import { SignaturePill } from "./Signature";
@@ -159,43 +161,59 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const [load, setLoad] = React.useState<Load>({ t: "loading" });
   const [more, setMore] = React.useState(false);
   const [reload, setReload] = React.useState(0);
-  const [filterOpen, setFilterOpen] = React.useState(false);
-  const [keyword, setKeyword] = React.useState("");
-  const [path, setPath] = React.useState("");
+  const { commitFilters: fromHash } = useHashExtras();
+  const [filterOpen, setFilterOpen] = React.useState(() => Object.keys(fromHash).length > 0);
+  const [keyword, setKeyword] = React.useState(fromHash.text ?? "");
+  // Author, dates and path are asked of GitHub (REST /commits author, since, until, path); the keyword narrows the loaded rows.
+  const [server, setServer] = React.useState<CommitFilters>(() => ({ ...fromHash, text: undefined }));
+  const [badDate, setBadDate] = React.useState(false);
   const [idText, setIdText] = React.useState("");
   const [notice, setNotice] = React.useState<string | null>(null);
-  const filter = React.useMemo(() => new Filter(), []);
+  const filter = React.useMemo(() => {
+    const f = new Filter();
+    f.setState({ keyword: { value: fromHash.text ?? "" }, author: { value: fromHash.author ?? "" }, from: { value: formatDayText(fromHash.from) }, to: { value: formatDayText(fromHash.to) }, path: { value: fromHash.path ?? "" } }, true);
+    return f;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- the hash only seeds it
   const actions = useCommitActions(repo, signedIn);
 
   React.useEffect(() => {
-    // The keyword narrows the loaded rows at once; the path is asked of GitHub (history(path:)), so it waits for typing to pause.
+    // The keyword applies at once; the server-side filters wait for typing to pause. A date that does not parse is left out (and said so).
     let t: ReturnType<typeof setTimeout> | undefined;
     const onChange = () => {
-      setKeyword((filter.getFilterItemValue<string>("keyword") ?? "").trim().toLowerCase());
+      const v = (k: string) => (filter.getFilterItemValue<string>(k) ?? "").trim();
+      setKeyword(v("keyword"));
       clearTimeout(t);
-      t = setTimeout(() => setPath(normalizeHistoryPath(filter.getFilterItemValue<string>("path") ?? "")), 400);
+      t = setTimeout(() => {
+        const from = parseDayText(v("from"));
+        const to = parseDayText(v("to"));
+        setBadDate(from === null || to === null);
+        const next = normalizeCommitFilters({ author: v("author"), from: from || undefined, to: to || undefined, path: v("path") });
+        setServer((s) => (JSON.stringify(s) === JSON.stringify(next) ? s : next));
+        patchHash((h) => applyCommitFilters(h, { ...next, text: v("keyword") })); // kept in the hash, so a reload or a link keeps them
+      }, 400);
     };
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]);
 
-  // First page, again whenever the repo, branch or sign-in changes.
+  // First page, again whenever the repo, branch, sign-in or a server-side filter changes.
+  const serverKey = JSON.stringify(normalizeCommitFilters(server));
   React.useEffect(() => {
     if (!ref) return;
     let dead = false;
     setLoad({ t: "loading" });
     setRows([]);
-    listCommits(repo, ref, undefined, path).then(
+    listCommitsRest(repo, ref, server, 1).then(
       (p) => { if (dead) return; setRows(p.rows); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setLoad({ t: "ready" }); },
       (err) => !dead && setLoad({ t: "error", err })
     );
     return () => { dead = true; };
-  }, [repo, ref, signedIn, reload, path]);
+  }, [repo, ref, signedIn, reload, serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMore = () => {
     if (!ref || !next.cursor) return;
     setMore(true);
-    listCommits(repo, ref, next.cursor, path).then(
+    listCommitsRest(repo, ref, server, Number(next.cursor)).then(
       (p) => { setRows((r) => [...r, ...p.rows]); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setMore(false); },
       (err) => { setMore(false); setLoad({ t: "error", err }); }
     );
@@ -206,9 +224,11 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const commitHref = React.useCallback((sha: string) => href("commits", { repo, ref: state.ref, commit: sha }), [href, repo, state.ref]);
   const prHref = React.useCallback((n: number) => href("prs", { repo, view: "prs", pr: n }), [href, repo]);
 
-  const filtered = keyword ? rows.filter((r) => `${r.title} ${r.author.name} ${r.author.login ?? ""}`.toLowerCase().includes(keyword)) : rows;
-  // The graph needs every row in order, so it hides while a filter drops some (a path filter skips commits too).
-  const graph = React.useMemo(() => (prefs.graph && !keyword && !path ? computeGraph(rows) : undefined), [prefs.graph, keyword, path, rows]);
+  const filtered = React.useMemo(() => (keyword ? rows.filter((r) => matchesKeyword(r, keyword)) : rows), [rows, keyword]);
+  const filtering = !!keyword || hasServerFilters(server);
+  // The graph needs every row in order, so it hides while a filter drops some (author, date and path filters skip commits too).
+  const graph = React.useMemo(() => (prefs.graph && !filtering ? computeGraph(rows) : undefined), [prefs.graph, filtering, rows]);
+  const clearFilters = () => ["keyword", "author", "from", "to", "path"].forEach((k) => filter.setFilterItemState(k, { value: "" }));
 
   const search = async () => {
     const t = idText.trim();
@@ -263,11 +283,15 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {actions.ui}
         {filterOpen && (
-          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); filter.setFilterItemState("keyword", { value: "" }); filter.setFilterItemState("path", { value: "" }); }} searchRoleAriaLabel="Filter commits">
-            <KeywordFilterBarItem filterItemKey="keyword" placeholder="Author or message (loaded commits)" />
+          <FilterBar filter={filter} onDismissClicked={() => { setFilterOpen(false); clearFilters(); }} searchRoleAriaLabel="Filter commits">
+            <KeywordFilterBarItem filterItemKey="keyword" placeholder="Message (loaded commits)" />
+            <TextFilterBarItem filterItemKey="author" placeholder="Author (GitHub username or email)" ariaLabel="Author" />
+            <TextFilterBarItem filterItemKey="from" placeholder="From date (dd/mm/yyyy)" ariaLabel="From date, as dd/mm/yyyy" maxTextLength={10} />
+            <TextFilterBarItem filterItemKey="to" placeholder="To date (dd/mm/yyyy)" ariaLabel="To date, as dd/mm/yyyy" maxTextLength={10} />
             <TextFilterBarItem filterItemKey="path" placeholder="Path (file or folder)" ariaLabel="Path" />
           </FilterBar>
         )}
+        {filterOpen && badDate && <MessageCard severity={MessageCardSeverity.Warning}>Enter dates as dd/mm/yyyy, for example 03/11/2026. A date that isn't valid is ignored.</MessageCard>}
         {error ? (
           <ErrorView err={error} signIn={doSignIn} busy={props.busy} retry={retry} subject="see this repository's commits" permission="Contents" />
         ) : load.t === "loading" || !ref ? (
@@ -275,7 +299,14 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
             <CommitTable rows={undefined} label="Loading commits" commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} />
           </Card>
         ) : !filtered.length ? (
-          <ZeroData iconProps={{ iconName: "BranchCommit" }} imageAltText="" primaryText={keyword || path ? "No commits match" : "No commits"} secondaryText={path ? `No commits on ${ref} touched ${path}.` : undefined} />
+          <ZeroData
+            iconProps={{ iconName: filtering ? "Filter" : "BranchCommit" }}
+            imageAltText=""
+            primaryText={filtering ? "No commits match" : "No commits"}
+            secondaryText={filtering ? noMatchText(ref, server, keyword) : undefined}
+            actionText={filtering ? "Clear filters" : undefined}
+            onActionClick={filtering ? clearFilters : undefined}
+          />
         ) : (
           <>
             <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>

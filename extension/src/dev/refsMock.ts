@@ -160,6 +160,26 @@ export function refsRest(fullName: string, rest: string, u: URL, init: RequestIn
       files: page === 1 ? filesOf(rr, commits) : [],
     });
   }
+  if (rest === "/commits" && (init?.method ?? "GET") === "GET") {
+    // The Commits list (REST): sha, path, author (login or name, case-insensitive), since, until, paged by page and per_page with a Link header.
+    if (sc === "commitsFail") return new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) } });
+    const tip = resolve(rr, u.searchParams.get("sha") ?? "main");
+    if (!tip) return json({ message: "No commit found for SHA" }, 422);
+    const path = u.searchParams.get("path");
+    const author = u.searchParams.get("author")?.toLowerCase();
+    const since = u.searchParams.get("since") ? Date.parse(u.searchParams.get("since")!) : -Infinity;
+    const until = u.searchParams.get("until") ? Date.parse(u.searchParams.get("until")!) : Infinity;
+    const all = historyOf(rr, tip).filter((c) =>
+      (!path || filesOf(rr, [c]).some((f: any) => f.filename === path || f.filename.startsWith(`${path}/`))) &&
+      (!author || c.author.login?.toLowerCase() === author || c.author.name.toLowerCase() === author) &&
+      c.at + 60e3 >= since && c.at + 60e3 <= until);
+    const page = Number(u.searchParams.get("page") || 1);
+    const per = Number(u.searchParams.get("per_page") || 30);
+    const more = page * per < all.length;
+    const q = new URLSearchParams(u.searchParams);
+    q.set("page", String(page + 1));
+    return json(all.slice((page - 1) * per, page * per).map(restCommit), 200, more ? { link: `<https://api.github.com${u.pathname}?${q}>; rel="next"` } : {});
+  }
   const one = /^\/commits\/([0-9a-f]{4,40})$/.exec(rest);
   if (one) {
     const c = rr.commits.find((x) => x.sha.startsWith(one[1]));
