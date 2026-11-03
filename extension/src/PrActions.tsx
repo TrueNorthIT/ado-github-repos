@@ -5,6 +5,7 @@ import { ContentSize } from "azure-devops-ui/Callout";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
 import { ClipboardButton } from "azure-devops-ui/Components/ClipboardButton/ClipboardButton";
+import { Button } from "azure-devops-ui/Button";
 import { Dialog } from "azure-devops-ui/Dialog";
 import { Dropdown } from "azure-devops-ui/Dropdown";
 import { FormItem } from "azure-devops-ui/FormItem";
@@ -21,7 +22,9 @@ import { DropdownSelection } from "azure-devops-ui/Utilities/DropdownSelection";
 import { ActionStore } from "./actionStore";
 import { getBranchNames, getMergeMessages } from "./githubBrowse";
 import { mergeMethodLabel, supportsCustomMessage, type MergeMethod } from "./lib/mergeOptions";
-import type { PolicyRow, PolicyState } from "./lib/policies";
+import type { PolicyState } from "./lib/policies";
+import type { ActionablePolicyRow } from "./lib/updateBranch";
+import type { CheckRerun } from "./lib/reruns";
 import type { StateActionId } from "./lib/stateActions";
 import type { VoteId } from "./lib/votes";
 import type { WorkItemRef } from "./lib/workItems";
@@ -77,6 +80,8 @@ const Approve = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void 
   );
 };
 
+const mainIcon = (kind: string) => (kind === "dequeue" ? "Cancel" : kind === "complete" || kind === "autoComplete" || kind === "enqueue" || kind === "none" ? "BranchMerge" : "BranchPullRequest");
+
 const Complete = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void }) => {
   const v = store.view;
   if (v?.pr.state === "MERGED") return null;
@@ -86,10 +91,12 @@ const Complete = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void
     if (main.kind === "complete" || main.kind === "autoComplete") setUi({ panel: main.kind });
     else if (main.kind === "publish" || main.kind === "reactivate") void store.setState(main.kind);
     else if (main.kind === "cancelAuto") void store.cancelAutoComplete();
+    else if (main.kind === "enqueue") void store.enqueue();
+    else if (main.kind === "dequeue") void store.dequeue();
   };
   const items: IMenuItem[] = [];
   if (main) {
-    items.push({ id: "main", text: main.label, secondaryText: main.reason?.split("\n")[0], disabled: main.disabled || store.busy, iconProps: { iconName: main.kind === "complete" || main.kind === "autoComplete" || main.kind === "none" ? "BranchMerge" : "BranchPullRequest" }, onActivate: run });
+    items.push({ id: "main", text: main.label, secondaryText: main.reason?.split("\n")[0], disabled: main.disabled || store.busy, iconProps: { iconName: mainIcon(main.kind) }, onActivate: run });
     for (const a of v!.states) {
       if (a.id === main.kind) continue; // publish / reactivate are already the main action
       items.push({ id: a.id, text: a.label, secondaryText: a.disabledReason, disabled: !a.enabled || store.busy, iconProps: STATE_ICON[a.id] ? { iconName: STATE_ICON[a.id] } : undefined, onActivate: () => void store.setState(a.id) });
@@ -101,7 +108,7 @@ const Complete = ({ store, setUi }: { store: ActionStore; setUi: (u: Ui) => void
       className="gh-split gh-split-complete"
       buttonProps={{
         text: main?.label ?? "Complete",
-        iconProps: { iconName: "BranchMerge" },
+        iconProps: { iconName: main ? mainIcon(main.kind) : "BranchMerge" },
         onClick: run,
         disabled: !main || main.disabled || store.busy,
         tooltipProps: main?.reason ? { text: main.reason } : undefined,
@@ -325,15 +332,46 @@ export function PrActionDialogs({ store, repo, number, workItemIds, ui, setUi }:
 
 const safeUrl = (u?: string) => (u && /^https?:\/\//i.test(u) ? u : undefined);
 
-function PolicyItem({ r }: { r: PolicyRow }) {
+/** CI-2: "Re-run failed jobs" with "Re-run all jobs" in its menu; a disabled button carrying the reason when the row can't be re-run. */
+function RerunButton({ store, title, rerun }: { store: ActionStore; title: string; rerun: CheckRerun }) {
+  if (!rerun.canRerun) return <Button className="gh-policy-action" subtle disabled iconProps={{ iconName: "Refresh" }} text="Re-run failed jobs" ariaLabel={`Re-run failed jobs for ${title}: ${rerun.reason}`} tooltipProps={{ text: rerun.reason }} />;
+  const runId = rerun.runId;
+  const items: IMenuItem[] = [{ id: "all", text: "Re-run all jobs", iconProps: { iconName: "Refresh" }, disabled: store.busy, onActivate: () => void store.rerun(runId, true) }];
+  return (
+    <SplitButton
+      className="gh-policy-action"
+      buttonProps={{ text: "Re-run failed jobs", iconProps: { iconName: "Refresh" }, ariaLabel: `Re-run failed jobs for ${title}`, disabled: store.busy, onClick: () => void store.rerun(runId, false) }}
+      menuButtonProps={{ ariaLabel: `More re-run options for ${title}`, contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: `gh-rerun-${runId}`, items } } }}
+    />
+  );
+}
+
+/** CI-3: "Update branch" merges the base into the head; the menu offers Rebase, disabled with its reason where the head can't be pushed to. */
+function UpdateBranchButton({ store, methods }: { store: ActionStore; methods: NonNullable<ActionablePolicyRow["action"]>["methods"] }) {
+  const items: IMenuItem[] = methods.map((m) => ({ id: m.method, text: m.label, secondaryText: m.reason, disabled: m.disabled || store.busy, iconProps: { iconName: m.method === "MERGE" ? "BranchMerge" : "BranchPullRequest" }, onActivate: () => void store.updateBranch(m.method) }));
+  const merge = methods.find((m) => m.method === "MERGE")!;
+  return (
+    <SplitButton
+      className="gh-policy-action"
+      buttonProps={{ text: "Update branch", iconProps: { iconName: "Download" }, disabled: merge.disabled || store.busy, onClick: () => void store.updateBranch("MERGE") }}
+      menuButtonProps={{ ariaLabel: "More update branch options", contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: "gh-update-menu", items } } }}
+    />
+  );
+}
+
+function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }) {
   const href = safeUrl(r.url);
+  const info = r.kind === "check" ? store.view?.checkInfo.get(r.title) : undefined;
   return (
     <li className="gh-policy flex-row flex-center">
       <Status {...STATUS_OF[r.state]} size={StatusSize.m} ariaLabel={{ success: "Passed", failure: "Failed", pending: "Waiting", neutral: "Skipped" }[r.state]} />
       <span className="gh-policy-title body-m text-ellipsis">{r.title}</span>
       {r.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
+      {!!info?.annotations && <span className="gh-policy-annotations secondary-text body-s">{info.annotations} {info.annotations === 1 ? "annotation" : "annotations"}</span>}
       {r.detail && <span className="gh-policy-detail secondary-text body-s text-ellipsis">{r.detail}</span>}
       {href && <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>}
+      {info && (info.rerun.canRerun || r.state === "failure") && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
+      {r.action?.kind === "updateBranch" && <UpdateBranchButton store={store} methods={r.action.methods} />}
     </li>
   );
 }
@@ -344,20 +382,22 @@ export function PoliciesCard({ store }: { store: ActionStore }) {
   const v = store.view;
   if (!v || v.pr.state !== "OPEN") return null;
   const ok = v.decision.canComplete;
-  const text = ok ? "This pull request can be completed" : v.decision.primaryAction === "publish" ? "This pull request is a draft" : "This pull request can't be completed yet";
+  const queued = v.decision.primaryAction === "dequeue";
+  const text = queued ? "This pull request is in the merge queue" : ok ? "This pull request can be completed" : v.decision.primaryAction === "publish" ? "This pull request is a draft" : "This pull request can't be completed yet";
   return (
     <Card className="gh-pr-card gh-pr-merge gh-pr-policies bolt-card-no-vertical-padding">
       <div className="gh-policies flex-column">
         <div className="flex-row flex-center gh-pr-merge-row">
-          <Status {...(ok ? Statuses.Success : Statuses.Warning)} size={StatusSize.l} ariaLabel={text} />
+          <Status {...(queued ? Statuses.Running : ok ? Statuses.Success : Statuses.Warning)} size={StatusSize.l} ariaLabel={text} />
           <div className="flex-column">
             <span className="body-m font-weight-semibold">{text}</span>
-            {v.decision.autoCompleteEnabled && <span className="secondary-text body-s">Auto-complete is set: GitHub will merge when the requirements are met.</span>}
+            {v.decision.queueText && <span className="secondary-text body-s">{v.decision.queueText}</span>}
+            {!queued && v.decision.autoCompleteEnabled && <span className="secondary-text body-s">Auto-complete is set: GitHub will merge when the requirements are met.</span>}
           </div>
         </div>
         {v.rows.length > 0 && (
           <ul className="gh-policy-list" aria-label="Policies">
-            {v.rows.map((r, i) => <PolicyItem key={`${r.kind}-${r.title}-${i}`} r={r} />)}
+            {v.rows.map((r, i) => <PolicyItem key={`${r.kind}-${r.title}-${i}`} r={r} store={store} />)}
           </ul>
         )}
       </div>

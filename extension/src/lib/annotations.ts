@@ -20,7 +20,7 @@ export interface AnnotationNode {
 
 /** One entry of statusCheckRollup.contexts.nodes. StatusContext entries carry no annotations and are ignored. */
 export type AnnotatedContext =
-  | { __typename: "CheckRun"; databaseId: number; name: string; annotations: { totalCount: number; nodes: AnnotationNode[] } | null }
+  | { __typename: "CheckRun"; databaseId: number; name: string; /** Where the check's own page is; the UI links the check name to it. */ detailsUrl?: string | null; annotations: { totalCount: number; nodes: AnnotationNode[] } | null }
   | { __typename: "StatusContext" };
 
 /** The head commit's check runs with annotations. Variables { owner, name, number }. Selects, per CheckRun, databaseId, name and annotations(first: 50) { totalCount nodes { path location { start { line } end { line } } annotationLevel title message rawDetails } }. */
@@ -30,7 +30,7 @@ export function annotationsQuery({ owner, name, number }: { owner: string; name:
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       statusCheckRollup { contexts(first: 100) { nodes { __typename
-        ... on CheckRun { databaseId name annotations(first: 50) { totalCount nodes { path location { start { line } end { line } } annotationLevel title message rawDetails } } }
+        ... on CheckRun { databaseId name detailsUrl annotations(first: 50) { totalCount nodes { path location { start { line } end { line } } annotationLevel title message rawDetails } } }
       } } }
     }
   }

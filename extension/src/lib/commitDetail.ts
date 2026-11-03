@@ -1,6 +1,7 @@
 // Commit detail: query, mapper, parent options and REST paths (C-3). Also owns comparePath, which C-4 and B-4 reuse.
 // REST paths start with `/repos/{owner}/{name}`, as githubBrowse.ts builds them; `repo` is a validated "owner/name".
 import type { GraphQlRequest } from "./prQuery";
+import { signatureSelection, type CommitSignature } from "./signatures";
 import { mapCheckState, mapPerson, type CheckStatus, type GqlActor, type Person } from "./commitsQuery";
 
 export interface GqlCommitDetailNode {
@@ -16,7 +17,7 @@ export interface GqlCommitDetailNode {
   associatedPullRequests?: { nodes: { number: number; title: string; state: "OPEN" | "CLOSED" | "MERGED" }[] } | null;
   statusCheckRollup?: { state: string } | null;
   tree?: { oid: string } | null;
-  signature?: { isValid: boolean; state: string } | null;
+  signature?: CommitSignature | null;
 }
 
 export interface CommitDetail {
@@ -37,13 +38,13 @@ export interface CommitDetail {
   /** The commit's tree SHA, for the Details tab. */
   treeSha: string | null;
   /** The signature check, when the commit is signed. */
-  signature: { valid: boolean; state: string } | null;
+  signature: CommitSignature | null;
 }
 
 /** One commit by SHA (or prefix) with headline, body, author, committer, dates, parents(first: 10), status and associatedPullRequests(first: 1). Variables { owner, name, sha }. */
 export function commitDetailQuery(p: { owner: string; name: string; sha: string }): GraphQlRequest {
   return {
-    query: `query($owner: String!, $name: String!, $sha: String!) { repository(owner: $owner, name: $name) { object(expression: $sha) { ... on Commit { oid messageHeadline messageBody message authoredDate committedDate author { name user { login avatarUrl } } committer { name user { login avatarUrl } } parents(first: 10) { nodes { oid } } associatedPullRequests(first: 1) { nodes { number title state } } statusCheckRollup { state } tree { oid } signature { isValid state } } } } }`,
+    query: `query($owner: String!, $name: String!, $sha: String!) { repository(owner: $owner, name: $name) { object(expression: $sha) { ... on Commit { oid messageHeadline messageBody message authoredDate committedDate author { name user { login avatarUrl } } committer { name user { login avatarUrl } } parents(first: 10) { nodes { oid } } associatedPullRequests(first: 1) { nodes { number title state } } statusCheckRollup { state } tree { oid } ${signatureSelection()} } } } }`,
     variables: { owner: p.owner, name: p.name, sha: p.sha },
   };
 }
@@ -67,7 +68,7 @@ export function mapCommitDetail(body: any): CommitDetail | null {
     status: mapCheckState(n.statusCheckRollup?.state),
     pullRequest: pr && (pr.state === "MERGED" || pr.state === "OPEN") ? { number: pr.number, title: pr.title } : null,
     treeSha: n.tree?.oid ?? null,
-    signature: n.signature ? { valid: n.signature.isValid, state: n.signature.state } : null,
+    signature: n.signature ?? null,
   };
 }
 

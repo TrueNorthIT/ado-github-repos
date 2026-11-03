@@ -252,6 +252,8 @@
 .gh-policy-title { flex: 0 1 auto; min-width: 0; }
 .gh-policy-detail { flex: 1 1 0; min-width: 0; }
 .gh-policy-link { margin-left: auto; flex: none; }
+.gh-policy-annotations { flex: none; }
+.gh-policy-action { flex: none; }
 .gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
 .gh-complete { width: 100%; }
 /* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */
@@ -334,3 +336,15 @@
 .gh-ref-tree .bolt-table-cell { padding-top: 0; padding-bottom: 0; }
 .gh-ref-tree .bolt-button, .gh-ref-tree .bolt-menu-button { height: 28px; min-height: 28px; }
 .gh-ref-tree .gh-ba-num { line-height: 14px; }
+
+/* CI-1: annotations under a diff line */
+.gh-annotation { margin: 4px 0; }
+.gh-annotation-body { gap: 2px; min-width: 0; }
+.gh-annotation-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.gh-annotation-details summary { cursor: pointer; width: fit-content; color: var(--communication-foreground, #0078d4); }
+.gh-annotation-details pre { margin: 4px 0 0; padding: 8px; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--palette-black-alpha-4, rgba(0,0,0,.04)); border-radius: 2px; }
+.gh-annotation-count { margin-left: 8px; flex: none; }
+.gh-deployment { padding: 0; }
+.gh-pr-copilot-msg { margin-top: 8px; }
+.gh-signature { display: inline-flex; }
+.gh-signature:focus-visible { outline: 2px solid var(--communication-background, #0078d4); outline-offset: 1px; }

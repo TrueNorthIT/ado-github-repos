@@ -22,7 +22,7 @@ import { commitUrl } from "./lib/commits";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import type { WorkItemRef } from "./lib/workItems";
 import { PermissionError } from "./connections";
-import { getPr, invalidatePr } from "./githubBrowse";
+import { getCommitSignatures, getDeployments, getPr, invalidatePr } from "./githubBrowse";
 import { fetchWorkItems, type WorkItemsResult } from "./workItemsApi";
 import { openRepoHub } from "./hostNav";
 import { openInRepos, useRepoHref } from "./repoHref";
@@ -33,6 +33,9 @@ import { ActivityFeed } from "./Feed";
 import { feedStore } from "./feedStore";
 import { actionStore, useActions, type ActionStore } from "./actionStore";
 import { PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
+import { SignaturePill } from "./Signature";
+import { latestDeployments, type DeploymentRow, type DeploymentTone } from "./lib/deployments";
+import type { CommitSignature } from "./lib/signatures";
 import "./browser.css";
 
 const PAGES: { id: PrPageId; name: string }[] = [
@@ -119,10 +122,10 @@ function Description({ pr, repo }: { pr: PrPageData; repo: string }) {
 }
 
 /** A right-column section: native draws these straight on the page background (no card), title 17px/400 (Header, TitleSize.Medium). */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, commandBarItems }: { title: string; children: React.ReactNode; commandBarItems?: any[] }) {
   return (
     <section className="gh-pr-section">
-      <Header title={title} titleSize={TitleSize.Medium} titleAriaLevel={2} />
+      <Header title={title} titleSize={TitleSize.Medium} titleAriaLevel={2} commandBarItems={commandBarItems} />
       {children}
     </section>
   );
@@ -136,9 +139,13 @@ const REVIEW: Record<ReviewState, { text: string; icon: React.ReactNode }> = {
   PENDING: { text: "Waiting", icon: <Icon iconName="Clock" ariaLabel="Waiting for review" /> },
 };
 
-function Reviewers({ list }: { list: PrReviewer[] }) {
+function Reviewers({ list, store }: { list: PrReviewer[]; store: ActionStore }) {
+  // CI-7: GitHub has no field that says whether Copilot code review is on, so it is offered and GitHub's own reason is shown if refused.
+  const copilot = store.view?.copilot;
+  const items = copilot?.offered ? [{ id: "copilot", important: false, text: "Request Copilot review", iconProps: { iconName: "Contact" }, disabled: store.busy, onActivate: () => void store.requestCopilotReview() }] : undefined;
   return (
-    <Section title="Reviewers">
+    <Section title="Reviewers" commandBarItems={items}>
+      {store.copilotMessage && <MessageCard className="gh-pr-copilot-msg" severity={MessageCardSeverity.Warning} onDismiss={() => store.dismissCopilot()}>{store.copilotMessage}</MessageCard>}
       {list.length ? (
         <>
         <div className="gh-pr-sublabel body-s secondary-text font-weight-semibold">Requested</div>
@@ -232,6 +239,42 @@ function WorkItems({ ids, version }: { ids: number[]; version: number }) {
   return <Section title="Work items">{body}</Section>;
 }
 
+// ---------- deployments (CI-5) ----------
+
+const TONE_STATUS: Record<DeploymentTone, typeof Statuses.Success> = { success: Statuses.Success, failure: Statuses.Failed, pending: Statuses.Running, neutral: Statuses.Skipped };
+const TONE_LABEL: Record<DeploymentTone, string> = { success: "Succeeded", failure: "Failed", pending: "In progress", neutral: "Inactive" };
+
+function hostOf(url: string) {
+  try { return new URL(url).host; } catch { return url; }
+}
+
+/** The newest deployment per environment for this pull request. Hidden when GitHub reports none (or the Deployments permission is missing). */
+function Deployments({ repo, number, version }: { repo: string; number: number; version: number }) {
+  const [rows, setRows] = React.useState<DeploymentRow[]>([]);
+  React.useEffect(() => {
+    let dead = false;
+    getDeployments(repo, number).then((n) => !dead && setRows(latestDeployments(n)), () => !dead && setRows([]));
+    return () => { dead = true; };
+  }, [repo, number, version]);
+  if (!rows.length) return null;
+  return (
+    <Section title="Deployments">
+      <ul className="gh-pr-list gh-deployments" aria-label="Deployments">
+        {rows.map((r) => (
+          <li key={r.environment} className="gh-deployment flex-row flex-center">
+            <Status {...TONE_STATUS[r.tone]} size={StatusSize.m} ariaLabel={TONE_LABEL[r.tone]} />
+            <div className="flex-column gh-pr-grow">
+              <span className="body-m font-weight-semibold text-ellipsis">{r.environment}</span>
+              {r.url && /^https?:\/\//i.test(r.url) && <Link className="body-s text-ellipsis" href={r.url} target="_blank" rel="noopener noreferrer" ariaLabel={`Open ${r.environment} deployment: ${r.url}`}>{hostOf(r.url)}</Link>}
+            </div>
+            <span className="secondary-text body-s"><Ago date={new Date(r.updatedAt)} format={AgoFormat.Compact} /></span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 function Overview({ pr, repo, prTab, openFile, signIn, busy, actions }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean; actions: ActionStore }) {
   return (
     <div className="gh-pr-overview">
@@ -241,7 +284,8 @@ function Overview({ pr, repo, prTab, openFile, signIn, busy, actions }: { pr: Pr
         <ActivityFeed repo={repo} number={pr.number} baseRef={pr.baseRef} prTab={prTab} openFile={openFile} signIn={signIn} busy={busy} />
       </div>
       <div className="gh-pr-aside">
-        <Reviewers list={pr.reviewers} />
+        <Deployments repo={repo} number={pr.number} version={actions.version} />
+        <Reviewers list={pr.reviewers} store={actions} />
         <Labels pr={pr} />
         <WorkItems ids={pr.workItemIds} version={actions.version} />
       </div>
@@ -251,7 +295,7 @@ function Overview({ pr, repo, prTab, openFile, signIn, busy, actions }: { pr: Pr
 
 // ---------- Commits (PR-9) ----------
 
-interface CommitRow { sha: string; shortSha: string; title: string; author: string; avatar: string; date: Date }
+interface CommitRow { sha: string; shortSha: string; title: string; author: string; avatar: string; date: Date; signature?: CommitSignature | null }
 
 function commitColumns(repo: string): ITableColumn<CommitRow>[] {
   return [
@@ -270,6 +314,7 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
               <VssPersona imageUrl={c.avatar} displayName={c.author} size="extra-small" suppressPersonaCard showInitialsOnImageError />
               <span>{c.author}</span>
               <Ago date={c.date} format={AgoFormat.Extended} />
+              <SignaturePill signature={c.signature} />
             </span>
           }
         />
@@ -280,7 +325,14 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
 
 function Commits({ pr, repo }: { pr: PrPageData; repo: string }) {
   const cols = React.useMemo(() => commitColumns(repo), [repo]);
-  const provider = React.useMemo(() => new ArrayItemProvider<CommitRow>(pr.commits.map((c, i) => ({ ...c, avatar: pr.commitAvatars[i] ?? "" }))), [pr]);
+  // CI-6: signatures arrive in a second request, so the rows render at once and the badges follow.
+  const [sigs, setSigs] = React.useState<Map<string, CommitSignature | null>>(() => new Map());
+  React.useEffect(() => {
+    let dead = false;
+    getCommitSignatures(repo, pr.number).then((m) => !dead && setSigs(m), () => {});
+    return () => { dead = true; };
+  }, [repo, pr.number]);
+  const provider = React.useMemo(() => new ArrayItemProvider<CommitRow>(pr.commits.map((c, i) => ({ ...c, avatar: pr.commitAvatars[i] ?? "", signature: sigs.get(c.sha) }))), [pr, sigs]);
   return (
     <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
       <Table<CommitRow> ariaLabel="Commits" role="table" columns={cols} itemProvider={provider} showHeader={false} spacerWidth={8} />
