@@ -8,6 +8,8 @@ import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPref
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
 import { parseNewPr, type NewPrHashState } from "./lib/newPrHash";
 import { parseSecurity, type SecurityHashState } from "./lib/securityHash";
+import { parseAgainst } from "./lib/fileTabs";
+import { parseCompare, type CompareHashState } from "./lib/compareHash";
 import * as React from "react";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
@@ -33,10 +35,10 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; compare: CompareHashState | null; against: string | undefined } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */

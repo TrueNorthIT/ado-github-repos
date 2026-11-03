@@ -36,6 +36,11 @@ import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, g
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
+import { BlameTab, CompareTab, HistoryTab } from "./FileTabs";
+import { applyAgainst, resolveTab, tabsFor, type FileTab } from "./lib/fileTabs";
+import { compareBaseFor } from "./lib/compareHash";
+import { patchHash, useHashExtras } from "./hostNav";
+import { usePrefs } from "./prefs";
 import "./browser.css";
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
@@ -558,6 +563,8 @@ export interface BrowserProps {
   commandBarItems: { id: string; text: string; iconProps?: { iconName: string }; isPrimary?: boolean; disabled?: boolean; onActivate: () => void }[];
 }
 
+const TAB_NAMES: Record<FileTab, string> = { contents: "Contents", preview: "Preview", history: "History", compare: "Compare", blame: "Blame" };
+
 const WIDTH_KEY = "gh.leftPaneWidth";
 const readWidth = () => {
   try {
@@ -690,7 +697,15 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   );
 
   const isMd = classifyFile(baseOf(path), 0) === "markdown";
-  const tab = isMd && state.tab !== "contents" ? "preview" : "contents";
+  // Folders get Contents and History; files add Compare and Blame. Until the path resolves, the root is a folder and anything else a file.
+  const kind = view.t === "folder" || (view.t === "loading" && path === "") ? "folder" : "file";
+  const hasTabs = view.t === "file" || view.t === "folder" || view.t === "loading";
+  const tab = resolveTab(state.tab, kind, isMd && kind === "file");
+  const { against } = useHashExtras();
+  const [prefs] = usePrefs();
+  const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
+  const tabProps = { repo, urlRef: state.ref, refName, path, signedIn, signIn: () => void doSignIn(), busy };
+  const showable = view.t === "file" && (view.f.kind === "text" || view.f.kind === "markdown"); // Blame and Compare need text
   const menuItems = [
     { id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => { window.open(githubUrl(repo, refName || "HEAD", path, isFile), "_blank", "noopener"); } },
     { id: "list", text: "All repositories", iconProps: { iconName: "Back" }, onActivate: toList },
@@ -750,8 +765,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       tabSize={TabSize.Tall}
                       disableSticky
                     >
-                      <Tab id="contents" name="Contents" />
-                      {isMd && <Tab id="preview" name="Preview" />}
+                      {(hasTabs ? tabsFor(kind, isMd && kind === "file") : (["contents"] as FileTab[])).map((t) => <Tab key={t} id={t} name={TAB_NAMES[t]} />)}
                     </TabBar>
                     <div className="page-content page-content-top gh-body flex-column">
                       {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
@@ -762,13 +776,20 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                         </MessageCard>
                       )}
                       {view.t === "submodule" && <MessageCard severity={MessageCardSeverity.Info}>{view.entry.name} is a submodule, which can't be opened here.</MessageCard>}
-                      {view.t === "folder" && (
+                      {view.t === "folder" && tab === "history" && <HistoryTab {...tabProps} />}
+                      {view.t === "folder" && tab !== "history" && (
                         <>
                           <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} folder={path} />
                           <Readme entries={view.entries} repo={repo} refName={ctx.ref} go={go} />
                         </>
                       )}
-                      {view.t === "file" && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} />}
+                      {view.t === "file" && tab === "history" && <HistoryTab {...tabProps} />}
+                      {view.t === "file" && (tab === "blame" || tab === "compare") && !showable && <MessageCard severity={MessageCardSeverity.Info}>{tab === "blame" ? "Blame" : "Compare"} is only available for text files.</MessageCard>}
+                      {view.t === "file" && tab === "blame" && showable && <BlameTab {...tabProps} dark={dark} />}
+                      {view.t === "file" && tab === "compare" && showable && (
+                        <CompareTab {...tabProps} dark={dark} against={compareWith} defaultBranch={ctx.defaultBranch} setAgainst={(r) => patchHash((h) => applyAgainst(h, r))} />
+                      )}
+                      {view.t === "file" && (tab === "contents" || tab === "preview") && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} />}
                     </div>
                   </>
                 )

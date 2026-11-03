@@ -529,3 +529,33 @@
 .gh-sec-target td { background: var(--status-warning-background, rgba(var(--palette-warning, 255, 185, 0), 0.25)); }
 .gh-sec-target .gh-sec-code { box-shadow: inset 3px 0 0 var(--status-warning-icon-foreground, rgba(var(--palette-warning, 255, 185, 0), 1)); }
 .gh-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Blame tab: a gutter of one block per run of lines from a commit, beside Monaco laid out at 16px a line */
+.gh-blame-card { width: 100%; box-sizing: border-box; overflow: hidden; }
+.gh-blame { align-items: flex-start; }
+.gh-blame-gutter { width: 420px; max-width: 45%; overflow: hidden; border-right: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-blame-code { min-width: 0; }
+.gh-blame-block { box-sizing: border-box; overflow: hidden; padding: 0 8px 0 6px; font-size: 12px; line-height: 16px; border-left: 4px solid transparent; border-top: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); margin-top: -1px; }
+.gh-blame-block:first-child { border-top-color: transparent; }
+.gh-blame-row { height: 16px; gap: 8px; white-space: nowrap; min-width: 0; }
+.gh-blame-sha { flex: none; }
+.gh-blame-author { flex: 0 1 140px; min-width: 0; }
+.gh-blame-date { flex: none; }
+.gh-blame-msg, .gh-blame-msg-row { flex: 1 1 0; min-width: 0; }
+.gh-blame-msg-row { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
+.gh-blame-none { border-left-color: transparent; }
+/* age heat: GitHub's 1 (newest, strongest) to 10 (oldest, faintest) */
+.gh-heat-1 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), 1); }
+.gh-heat-2 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .88); }
+.gh-heat-3 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .76); }
+.gh-heat-4 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .65); }
+.gh-heat-5 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .54); }
+.gh-heat-6 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .44); }
+.gh-heat-7 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .35); }
+.gh-heat-8 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .27); }
+.gh-heat-9 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .2); }
+.gh-heat-10 { border-left-color: rgba(var(--palette-primary, 0, 120, 212), .14); }
+/* Compare tab */
+.gh-compare-bar { gap: 8px; margin-bottom: 12px; }
+.gh-compare-bar .gh-topbar { padding: 0; }
+.gh-compare-card { width: 100%; box-sizing: border-box; }
