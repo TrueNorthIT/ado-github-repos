@@ -8,22 +8,29 @@
 //  - Ids come back unique and in the order of their position in the name.
 //  - Commits contribute through findWorkItemIds over each subject and body (so `AB#` in code is ignored).
 import type { NewPrCommit } from "./newPr";
-
-const todo = (): never => {
-  throw new Error("Not implemented");
-};
+import { addWorkItemToBody } from "./prEdit";
+import { findWorkItemIds, MAX_WORK_ITEMS } from "./workItems";
 
 /** Work item ids a branch name points at (rules above). */
 export function findBranchWorkItemIds(branch: string): number[] {
-  return todo();
+  const hits: { at: number; id: number }[] = [];
+  for (const id of findWorkItemIds(branch)) hits.push({ at: branch.search(new RegExp(`AB#${id}(?!\\w)`, "i")), id });
+  let offset = 0;
+  branch.split("/").forEach((seg, i) => {
+    const m = i > 0 ? /^([1-9]\d{0,6})[-_](?=[A-Za-z])/.exec(seg) : null;
+    if (m) hits.push({ at: offset, id: Number(m[1]) });
+    offset += seg.length + 1;
+  });
+  return [...new Set(hits.sort((a, b) => a.at - b.at).map((h) => h.id))];
 }
 
 /** The ids for the New pull request form: the branch's, then those of the commits' subjects and bodies; unique, first-seen order, capped at MAX_WORK_ITEMS. */
 export function newPrWorkItemIds(p: { branch: string | null; commits: Pick<NewPrCommit, "subject" | "body">[] }): number[] {
-  return todo();
+  const ids = [...(p.branch ? findBranchWorkItemIds(p.branch) : []), ...findWorkItemIds(...p.commits.flatMap((c) => [c.subject, c.body]))];
+  return [...new Set(ids)].slice(0, MAX_WORK_ITEMS);
 }
 
 /** `body` with each id added through prEdit.addWorkItemToBody, in order (so an id already mentioned changes nothing and the line-break style of the body is kept). No ids: the body unchanged. */
 export function prefillWorkItems(body: string, ids: number[]): string {
-  return todo();
+  return ids.reduce(addWorkItemToBody, body);
 }

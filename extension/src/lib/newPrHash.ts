@@ -10,9 +10,9 @@
 //  - applyNewPr keeps the other segments verbatim and in order, drops every earlier `view`, `source` and `target`, and appends `view=newpr` then source then target.
 //  - parseNewPr is null unless the hash has view=newpr AND a valid repo (browseState's own rule); blank source or target are dropped; it never throws.
 //  - The Branches row action carries the branch as source and no target (the page defaults the target); the PR list's button carries neither.
-const todo = (): never => {
-  throw new Error("Not implemented");
-};
+import { serialize } from "./browseState";
+
+const REPO = /^[\w.-]+\/[\w.-]+$/;
 
 export interface NewPrHashState {
   /** "owner/name". */
@@ -23,30 +23,44 @@ export interface NewPrHashState {
 
 /** The New pull request state of a hash, or null (see the decisions above). */
 export function parseNewPr(hash: string): NewPrHashState | null {
-  return todo();
+  const p = new URLSearchParams(hash.replace(/^#+/, ""));
+  const repo = p.get("repo");
+  if (p.get("view") !== "newpr" || !repo || !REPO.test(repo) || repo.split("/").some((s) => s === "." || s === "..")) return null;
+  const out: NewPrHashState = { repo };
+  const source = (p.get("source") ?? "").trim();
+  const target = (p.get("target") ?? "").trim();
+  if (source) out.source = source.slice(0, 255);
+  if (target) out.target = target.slice(0, 255);
+  return out;
 }
 
 /** `#repo=...&view=newpr&source=...&target=...` (see the decisions above). */
 export function serializeNewPr(s: NewPrHashState): string {
-  return todo();
+  return applyNewPr(`#repo=${encodeURIComponent(s.repo)}`, s);
 }
 
 /** `hash` (with or without "#") with view, source and target replaced by view=newpr and the given source and target; the other segments are kept. Always starts with "#". */
 export function applyNewPr(hash: string, s: { source?: string; target?: string }): string {
-  return todo();
+  const kept = hash.replace(/^#+/, "").split("&").filter((x) => x && !["view", "source", "target"].includes(x.split("=")[0]));
+  kept.push("view=newpr");
+  for (const k of ["source", "target"] as const) {
+    const v = (s[k] ?? "").trim().slice(0, 255);
+    if (v) kept.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  return "#" + kept.join("&");
 }
 
 /** Entry point: a branch row's (or the Branches page's) "New pull request" action. */
 export function branchRowNewPrHash(repo: string, branch: string): string {
-  return todo();
+  return serializeNewPr({ repo, source: branch });
 }
 
 /** Entry point: the PR list's "New pull request" button. */
 export function prListNewPrHash(repo: string): string {
-  return todo();
+  return serializeNewPr({ repo });
 }
 
 /** CP-1 "View the existing pull request": the same hash browseState.serialize gives for { repo, view: "prs", pr: number }. */
 export function existingPrHash(repo: string, number: number): string {
-  return todo();
+  return serialize({ repo, view: "prs", pr: number });
 }

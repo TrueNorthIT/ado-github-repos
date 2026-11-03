@@ -19,11 +19,12 @@
 //  - A follow-up failing does not stop the next ones, and never loses the created PR. If the create itself fails nothing else is sent.
 //  - `send` resolves to the GraphQL response body ({ data, errors? }) and may reject. A body with a non-empty `errors` array counts as a failure whose message joins the error messages with "; ".
 import type { GraphQlRequest } from "./prQuery";
-import type { MergeMethod } from "./actionsQuery";
-
-const todo = (): never => {
-  throw new Error("Not implemented");
-};
+import { enableAutoMergeMutation, type MergeMethod } from "./actionsQuery";
+import { addAssigneesMutation, requestReviewsMutation } from "./reviewerSearch";
+import { addLabelsMutation } from "./labels";
+import { setMilestoneMutation } from "./milestones";
+import { addProjectItemMutation } from "./projects";
+import { MAX_TITLE_LENGTH } from "./prEdit";
 
 export interface CreatePrParams {
   repositoryId: string;
@@ -77,12 +78,37 @@ export interface CreatePrPlan {
  * Throws "repositoryId is required", "baseRefName is required", "headRefName is required", "title is required" (blank after trimming) and `Title is too long (maximum is 256 characters)` (prEdit.MAX_TITLE_LENGTH code points).
  */
 export function createPullRequestMutation(p: Pick<CreatePrParams, "repositoryId" | "baseRefName" | "headRefName" | "title" | "body" | "draft" | "maintainerCanModify">): GraphQlRequest {
-  return todo();
+  if (!p.repositoryId.trim()) throw new Error("repositoryId is required");
+  if (!p.baseRefName.trim()) throw new Error("baseRefName is required");
+  if (!p.headRefName.trim()) throw new Error("headRefName is required");
+  const title = p.title.trim();
+  if (!title) throw new Error("title is required");
+  if ([...title].length > MAX_TITLE_LENGTH) throw new Error(`Title is too long (maximum is ${MAX_TITLE_LENGTH} characters)`);
+  return {
+    query: `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id number url headRefOid } } }`,
+    variables: { input: { repositoryId: p.repositoryId, baseRefName: p.baseRefName, headRefName: p.headRefName, title, body: p.body ?? "", draft: p.draft ?? false, maintainerCanModify: p.maintainerCanModify ?? true } },
+  };
 }
 
 /** The ordered requests for the form: `create` from createPullRequestMutation (same throws) and the follow-ups described above. */
 export function planCreatePr(p: CreatePrParams): CreatePrPlan {
-  return todo();
+  const followUps: FollowUp[] = [];
+  const users = p.reviewerUserIds ?? [];
+  const teams = p.reviewerTeamIds ?? [];
+  if (users.length || teams.length)
+    followUps.push({ kind: "reviewers", doing: "adding reviewers", build: (pr) => requestReviewsMutation({ pullRequestId: pr.id, userIds: users, teamIds: teams }) });
+  if (p.labelIds?.length) followUps.push({ kind: "labels", doing: "adding labels", build: (pr) => addLabelsMutation(pr.id, p.labelIds!) });
+  if (p.assigneeIds?.length) followUps.push({ kind: "assignees", doing: "adding assignees", build: (pr) => addAssigneesMutation(pr.id, p.assigneeIds!) });
+  if (p.milestoneId) followUps.push({ kind: "milestone", doing: "setting the milestone", build: (pr) => setMilestoneMutation(pr.id, p.milestoneId!) });
+  for (const projectId of p.projectIds ?? []) followUps.push({ kind: "project", doing: "adding to a project", build: (pr) => addProjectItemMutation({ projectId, contentId: pr.id }) });
+  const auto = p.autoComplete;
+  if (auto && p.autoMergeAllowed === true && !p.draft)
+    followUps.push({
+      kind: "autoComplete",
+      doing: "enabling auto-complete",
+      build: (pr) => enableAutoMergeMutation({ pullRequestId: pr.id, mergeMethod: auto.mergeMethod, expectedHeadOid: pr.headRefOid, commitHeadline: auto.commitHeadline, commitBody: auto.commitBody }),
+    });
+  return { create: createPullRequestMutation(p), followUps };
 }
 
 export interface FollowUpFailure {
@@ -101,6 +127,31 @@ export type CreateOutcome =
  * Runs the plan: sends `plan.create`, reads data.createPullRequest.pullRequest as the CreatedPr, then sends each follow-up's build(created) in order. `send` resolves to the response body and may reject
  * (the rejection's message, or String(value), is the failure reason). A create response without a pull request and without errors fails with the reason "createPullRequest returned no pull request".
  */
-export function executeCreatePlan(plan: CreatePrPlan, send: (req: GraphQlRequest) => Promise<any>): Promise<CreateOutcome> {
-  return todo();
+export async function executeCreatePlan(plan: CreatePrPlan, send: (req: GraphQlRequest) => Promise<any>): Promise<CreateOutcome> {
+  const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  /** Sends one request; throws on rejection or a body with errors. */
+  const run = async (req: GraphQlRequest) => {
+    const body = await send(req);
+    const errs: any[] = Array.isArray(body?.errors) ? body.errors : [];
+    if (errs.length) throw new Error(errs.map((e) => e?.message ?? String(e)).join("; "));
+    return body;
+  };
+  let created: CreatedPr;
+  try {
+    const pr = (await run(plan.create))?.data?.createPullRequest?.pullRequest;
+    if (!pr) throw new Error("createPullRequest returned no pull request");
+    created = pr;
+  } catch (e) {
+    return { created: null, message: `Could not create the pull request: ${reason(e)}` };
+  }
+  const failures: FollowUpFailure[] = [];
+  for (const f of plan.followUps) {
+    try {
+      await run(f.build(created));
+    } catch (e) {
+      failures.push({ kind: f.kind, doing: f.doing, message: reason(e) });
+    }
+  }
+  const message = failures.length ? `Created PR #${created.number}, but ${failures.map((f) => `${f.doing} failed: ${f.message}`).join("; ")}` : `Created PR #${created.number}`;
+  return { created, failures, message };
 }

@@ -19,18 +19,29 @@
 //  - Paths are returned exactly as given (their case matters for the blob lookup).
 import type { GraphQlRequest } from "./prQuery";
 
-const todo = (): never => {
-  throw new Error("Not implemented");
-};
-
 /** The folders the listing query reads, in the order of its aliases d0..d5 ("" is the root). */
 export const LISTING_DIRS = ["", ".github", "docs", "PULL_REQUEST_TEMPLATE", ".github/PULL_REQUEST_TEMPLATE", "docs/PULL_REQUEST_TEMPLATE"] as const;
+
+const SINGLE = /^(?:(\.github|docs)\/)?pull_request_template\.(?:md|txt)$/i;
+const FOLDER = /^(?:(\.github|docs)\/)?pull_request_template\/([^/]+\.(?:md|txt))$/i;
 
 export type TemplateResolution = { kind: "none" } | { kind: "single"; path: string } | { kind: "pick"; paths: string[] };
 
 /** Which of the repository file `paths` are pull request templates, and whether the user has to pick (see the decisions above). */
 export function resolveTemplates(paths: string[]): TemplateResolution {
-  return todo();
+  const order = (d?: string) => (d === ".github" ? 0 : d === "docs" ? 1 : 2);
+  const singles: { p: string; o: number }[] = [];
+  const folders: { p: string; o: number; n: string }[] = [];
+  for (const p of paths) {
+    const s = SINGLE.exec(p);
+    if (s) singles.push({ p, o: order(s[1]) });
+    const f = FOLDER.exec(p);
+    if (f) folders.push({ p, o: order(f[1]), n: f[2].toLowerCase() });
+  }
+  singles.sort((a, b) => a.o - b.o);
+  folders.sort((a, b) => a.o - b.o || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0));
+  const all = [...singles.slice(0, 1).map((x) => x.p), ...folders.map((x) => x.p)];
+  return all.length === 0 ? { kind: "none" } : all.length === 1 ? { kind: "single", path: all[0] } : { kind: "pick", paths: all };
 }
 
 /**
@@ -39,12 +50,23 @@ export function resolveTemplates(paths: string[]): TemplateResolution {
  * Nothing caller-supplied appears in the query text.
  */
 export function templateListingQuery(p: { owner: string; name: string; base: string }): GraphQlRequest {
-  return todo();
+  const decl = LISTING_DIRS.map((_, i) => `$d${i}: String!`).join(", ");
+  const aliases = LISTING_DIRS.map((_, i) => `d${i}: object(expression: $d${i}) { ... on Tree { entries { name type } } }`).join(" ");
+  const variables: Record<string, unknown> = { owner: p.owner, name: p.name };
+  LISTING_DIRS.forEach((d, i) => (variables[`d${i}`] = `${p.base}:${d}`));
+  return { query: `query($owner: String!, $name: String!, ${decl}) { repository(owner: $owner, name: $name) { ${aliases} } }`, variables };
 }
 
 /** The paths of the blob entries of a templateListingQuery response body ({ data }), each `${dir}/${name}` (just `name` for the root), in alias order then entry order. Null folders and tree entries give nothing; garbage gives []. */
 export function listedPaths(body: any): string[] {
-  return todo();
+  const repo = body?.data?.repository;
+  const out: string[] = [];
+  LISTING_DIRS.forEach((dir, i) => {
+    const entries = repo?.[`d${i}`]?.entries;
+    if (!Array.isArray(entries)) return;
+    for (const e of entries) if (e?.type === "blob" && typeof e.name === "string") out.push(dir ? `${dir}/${e.name}` : e.name);
+  });
+  return out;
 }
 
 /**
@@ -52,7 +74,12 @@ export function listedPaths(body: any): string[] {
  * Variables { owner, name, e0: `${base}:${paths[0]}`, e1: `${base}:${paths[1]}`, ... }. Throws "at least one template path is required" for an empty list.
  */
 export function templateBlobsQuery(p: { owner: string; name: string; base: string }, paths: string[]): GraphQlRequest {
-  return todo();
+  if (!paths.length) throw new Error("at least one template path is required");
+  const decl = paths.map((_, i) => `$e${i}: String!`).join(", ");
+  const aliases = paths.map((_, i) => `t${i}: object(expression: $e${i}) { ... on Blob { text byteSize isTruncated } }`).join(" ");
+  const variables: Record<string, unknown> = { owner: p.owner, name: p.name };
+  paths.forEach((path, i) => (variables[`e${i}`] = `${p.base}:${path}`));
+  return { query: `query($owner: String!, $name: String!, ${decl}) { repository(owner: $owner, name: $name) { ${aliases} } }`, variables };
 }
 
 export interface TemplateBlob {
@@ -62,5 +89,11 @@ export interface TemplateBlob {
 
 /** The templates of a templateBlobsQuery response body ({ data }) in the order of `paths`. Aliases that are null, not blobs (no string text) or truncated are left out; garbage gives []. */
 export function mapTemplateBlobs(body: any, paths: string[]): TemplateBlob[] {
-  return todo();
+  const repo = body?.data?.repository;
+  const out: TemplateBlob[] = [];
+  paths.forEach((path, i) => {
+    const b = repo?.[`t${i}`];
+    if (typeof b?.text === "string" && !b.isTruncated) out.push({ path, text: b.text });
+  });
+  return out;
 }

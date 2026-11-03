@@ -1,5 +1,4 @@
 // Batch 5, creating a pull request: source and target (CP-1), default title and description (CP-2) and validation before Create (CP-5).
-// STUBS: the developer implements them. Every function throws "Not implemented" except the constants.
 //
 // Schema facts (checked live with `gh api graphql` against cli/cli, 2026-11-03; nothing was written):
 //  - VALIDATION SOURCE (CP-1): GraphQL `Ref.compare(headRef: String!)` is used, not REST compare, because one request also returns the commits (needed for CP-2) and keeps branch names in variables.
@@ -23,10 +22,7 @@
 //  - A PR template (non-blank) overrides the description; a blank one falls back to the commit-based description. The template text is used verbatim.
 //  - createBlockers lists, in page order: source, target, same branch, missing branch, existing PR, no changes, title. Nothing about changes or an existing PR is said for the same branch or a missing branch.
 import type { GraphQlRequest } from "./prQuery";
-
-const todo = (): never => {
-  throw new Error("Not implemented");
-};
+import { MAX_TITLE_LENGTH } from "./prEdit";
 
 export const SAME_BRANCH_MESSAGE = "Choose two different branches";
 export const NO_CHANGES_MESSAGE = "There are no changes to merge";
@@ -76,7 +72,8 @@ export interface NewPrCompare {
 
 /** CP-1: target = the repository's default branch (null for an empty repository); source = the entry point's branch, null when there is none or it is blank. */
 export function defaultBranches(p: { defaultBranch: string | null; entrySource?: string | null }): { source: string | null; target: string | null } {
-  return todo();
+  const source = p.entrySource?.trim() ? p.entrySource : null;
+  return { source, target: p.defaultBranch };
 }
 
 /**
@@ -87,7 +84,13 @@ export function defaultBranches(p: { defaultBranch: string | null; entrySource?:
  *   pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 20) { nodes { number title url isDraft isCrossRepository } } } }`.
  */
 export function newPrQuery(p: { owner: string; name: string; base: string; head: string }): GraphQlRequest {
-  return todo();
+  return {
+    query: `query($owner: String!, $name: String!, $base: String!, $head: String!) { repository(owner: $owner, name: $name) { id defaultBranchRef { name } autoMergeAllowed
+  baseRef: ref(qualifiedName: $base) { compare(headRef: $head) { aheadBy behindBy status commits(first: ${MAX_COMPARE_COMMITS}) { totalCount nodes { oid messageHeadline messageBody } } } }
+  headRef: ref(qualifiedName: $head) { id }
+  pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 20) { nodes { number title url isDraft isCrossRepository } } } }`,
+    variables: { owner: p.owner, name: p.name, base: p.base, head: p.head },
+  };
 }
 
 /**
@@ -95,27 +98,48 @@ export function newPrQuery(p: { owner: string; name: string; base: string; head:
  * Never throws: null, {} or garbage gives repoId "", baseExists false, headExists false, ahead 0, behind 0, no commits, no existing PR.
  */
 export function mapNewPr(body: any): NewPrCompare {
-  return todo();
+  const repo = body?.data?.repository;
+  const cmp = repo?.baseRef?.compare;
+  const nodes: any[] = Array.isArray(cmp?.commits?.nodes) ? cmp.commits.nodes : [];
+  const own = (Array.isArray(repo?.pullRequests?.nodes) ? repo.pullRequests.nodes : []).find((n: any) => n && n.isCrossRepository === false);
+  return {
+    repoId: typeof repo?.id === "string" ? repo.id : "",
+    defaultBranch: repo?.defaultBranchRef?.name ?? null,
+    autoMergeAllowed: repo?.autoMergeAllowed === true,
+    baseExists: !!repo?.baseRef,
+    headExists: !!repo?.headRef,
+    ahead: cmp?.aheadBy ?? 0,
+    behind: cmp?.behindBy ?? 0,
+    status: cmp?.status ?? null,
+    commits: nodes.filter(Boolean).map((n) => ({ oid: n.oid, subject: n.messageHeadline ?? "", body: n.messageBody ?? "" })),
+    commitCount: cmp?.commits?.totalCount ?? nodes.length,
+    existingPr: own ? { number: own.number, title: own.title, url: own.url, isDraft: !!own.isDraft } : null,
+  };
 }
 
 /** The branch name as a title: see the decisions above. `feature/add-login` gives "Add login". "" gives "". */
 export function humaniseBranch(name: string): string {
-  return todo();
+  const last = name.split("/").pop() ?? "";
+  const text = last.replace(/^(?:AB#)?\d+[-_](?=.)/, "").replace(/[-_]+/g, " ").trim();
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** CP-2: the title for the form. One commit: its subject (trimmed). Otherwise humaniseBranch(source). Clamped to the title limit. */
 export function defaultTitle(source: string, commits: NewPrCommit[]): string {
-  return todo();
+  const t = (commits.length === 1 ? commits[0].subject.trim() : "") || humaniseBranch(source);
+  const cps = [...t];
+  return cps.length > MAX_TITLE_LENGTH ? cps.slice(0, MAX_TITLE_LENGTH - 1).join("") + "…" : t;
 }
 
 /** CP-2: one commit gives its trimmed body; several give "- subject" lines joined with "\n" (no trailing newline); none gives "". */
 export function defaultDescription(commits: NewPrCommit[]): string {
-  return todo();
+  if (commits.length === 1) return commits[0].body.trim();
+  return commits.map((c) => `- ${c.subject}`).join("\n");
 }
 
 /** CP-2: `template` when it has any non-whitespace text (verbatim), else defaultDescription(commits). */
 export function initialDescription(template: string | null | undefined, commits: NewPrCommit[]): string {
-  return todo();
+  return template?.trim() ? template : defaultDescription(commits);
 }
 
 export interface NewPrFormState {
@@ -133,5 +157,23 @@ export interface NewPrFormState {
  *  With two different branches chosen and compare null the branch reasons stay silent and CHECKING_MESSAGE is listed (before the title reason).
  */
 export function createBlockers(s: NewPrFormState): string[] {
-  return todo();
+  const out: string[] = [];
+  const source = s.source?.trim() ? s.source : null;
+  const target = s.target?.trim() ? s.target : null;
+  const c = s.compare;
+  if (!source) out.push(NO_SOURCE_MESSAGE);
+  if (!target) out.push(NO_TARGET_MESSAGE);
+  if (source && target) {
+    if (source === target) out.push(SAME_BRANCH_MESSAGE);
+    else if (!c) out.push(CHECKING_MESSAGE);
+    else if (!c.headExists || !c.baseExists) {
+      if (!c.headExists) out.push(`The source branch '${source}' was not found`);
+      if (!c.baseExists) out.push(`The target branch '${target}' was not found`);
+    } else {
+      if (c.existingPr) out.push(`Pull request #${c.existingPr.number} already exists for these branches`);
+      if (c.ahead === 0) out.push(NO_CHANGES_MESSAGE);
+    }
+  }
+  if (!s.title.trim()) out.push(NO_TITLE_MESSAGE);
+  return out;
 }
