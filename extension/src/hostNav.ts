@@ -8,6 +8,18 @@ import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
 const NAV_SERVICE = "ms.vss-features.host-navigation-service";
 
+/**
+ * On a cold full load the host's getHash() can answer "" before it has read the address bar (seen live in 0.26.0: a
+ * #...&pr=234 link opened the PR list, because the empty state made the PR hub fill in its default repo and replace
+ * the real hash). An empty first answer is therefore read once more after a short wait before it is trusted.
+ */
+export async function readInitialHash(get: () => Promise<string>, waitMs = 400): Promise<string> {
+  const first = await get();
+  if (first.replace(/^#+/, "")) return first;
+  await new Promise((r) => setTimeout(r, waitMs));
+  return get();
+}
+
 export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s: BrowseState, replace?: boolean) => void> {
   const svc = await SDK.getService<IHostNavigationService>(NAV_SERVICE);
   let current: BrowseState = {};
@@ -29,7 +41,7 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     onChange(s);
   };
 
-  emit(await svc.getHash());
+  emit(await readInitialHash(() => svc.getHash()));
   svc.onHashChanged(emit);
   return (s, replace) => {
     if (replace) svc.replaceHash(serialize(s).slice(1)); // e.g. the PR hub filling in its default repo: no extra history entry
