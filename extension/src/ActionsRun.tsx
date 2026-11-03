@@ -3,6 +3,7 @@ import * as React from "react";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
+import { FormItem } from "azure-devops-ui/FormItem";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon } from "azure-devops-ui/Icon";
 import { Tab, TabBar } from "azure-devops-ui/Tabs";
@@ -530,6 +531,7 @@ function Annotations({ notes, repo, sha, open }: { notes: JobNote[]; repo: strin
 function ReviewPanel({ repo, runId, pending, close, done }: { repo: string; runId: number; pending: PendingDeployment[]; close: () => void; done: () => void }) {
   const [picked, setPicked] = React.useState<Set<number>>(() => new Set(pending.map((p) => p.environmentId)));
   const [comment, setComment] = React.useState("");
+  const [envsLabel, setEnvsLabel] = React.useState<string>();
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string>();
   const submit = async (state: "approved" | "rejected") => {
@@ -559,14 +561,16 @@ function ReviewPanel({ repo, runId, pending, close, done }: { repo: string; runI
     >
       <div className="gh-act-review flex-column">
         {err && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setErr(undefined)}>{err}</MessageCard>}
-        <fieldset className="gh-act-envs">
-          <legend className="font-weight-semibold">Environments</legend>
-          {pending.map((p) => (
-            <Checkbox key={p.environmentId} label={p.environmentName} checked={picked.has(p.environmentId)} onChange={(_e, c) => setPicked((s) => { const n = new Set(s); c ? n.add(p.environmentId) : n.delete(p.environmentId); return n; })} />
-          ))}
-        </fieldset>
-        <label className="font-weight-semibold" htmlFor="gh-act-review-comment">Comment (optional)</label>
-        <TextField inputId="gh-act-review-comment" ariaLabel="Comment" multiline rows={4} width={TextFieldWidth.auto} value={comment} onChange={(_e, t) => setComment(t)} />
+        <FormItem label="Environments" emitGeneratedLabelId={setEnvsLabel}>
+          <div className="gh-act-envs flex-column" role="group" aria-labelledby={envsLabel}>
+            {pending.map((p) => (
+              <Checkbox key={p.environmentId} label={p.environmentName} checked={picked.has(p.environmentId)} onChange={(_e, c) => setPicked((s) => { const n = new Set(s); c ? n.add(p.environmentId) : n.delete(p.environmentId); return n; })} />
+            ))}
+          </div>
+        </FormItem>
+        <FormItem label="Comment (optional)">
+          <TextField className="gh-act-comment" multiline rows={4} width={TextFieldWidth.auto} value={comment} onChange={(_e, t) => setComment(t)} />
+        </FormItem>
       </div>
     </Panel>
   );

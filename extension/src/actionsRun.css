@@ -40,8 +40,9 @@
 /* tables */
 .gh-act-pill { margin-left: 8px; }
 .gh-act-note-msg { white-space: pre-wrap; overflow-wrap: anywhere; }
-.gh-act-review { gap: 12px; }
-.gh-act-envs { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.gh-act-review { gap: 12px; flex: 1 1 auto; min-width: 0; } /* the panel body is a flex row */
+.gh-act-envs { gap: 8px; }
+.gh-act-comment { width: 100%; }
 
 /* log view: native's full-height master/detail, no page header */
 .gh-act-logpage { height: 100vh; min-height: 420px; align-items: stretch; } /* the whole page, as native: nothing else shares it (the hub iframe is the content area) */
