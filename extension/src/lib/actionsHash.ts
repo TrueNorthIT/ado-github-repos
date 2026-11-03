@@ -42,14 +42,74 @@ export interface ActionsHashState {
   event?: string;
 }
 
+const REPO = /^[\w.-]+\/[\w.-]+$/;
+const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent"];
+const TABS: ActTab[] = ["recent", "all", "runs"];
+
+const id = (v: string | null): number | undefined => (v && /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+
+function params(hash: string): URLSearchParams {
+  const body = hash.replace(/^#+/, "");
+  try {
+    return new URLSearchParams(body);
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
 export function parseActions(hash: string): ActionsHashState | null {
-  throw new Error("not implemented");
+  const p = params(hash);
+  const repo = p.get("repo");
+  if (p.get("view") !== "actions" || !repo || !REPO.test(repo) || repo.split("/").some((x) => x === "." || x === "..")) return null;
+  const out: ActionsHashState = { repo };
+  const tab = p.get("actTab") as ActTab;
+  if (TABS.includes(tab) && tab !== "recent") out.tab = tab;
+  const workflow = id(p.get("actWorkflow"));
+  if (workflow) out.workflow = workflow;
+  const run = id(p.get("actRun"));
+  if (run) {
+    out.run = run;
+    const attempt = id(p.get("actAttempt"));
+    if (attempt) out.attempt = attempt;
+    const job = id(p.get("actJob"));
+    if (job) {
+      out.job = job;
+      const line = id(p.get("actLine"));
+      if (line) out.line = line;
+    }
+  }
+  if (workflow || out.tab === "runs") {
+    const status = p.get("actStatus") as RunStatusFilter;
+    for (const [k, key, cap] of [["branch", "actBranch", 255], ["actor", "actActor", 100], ["event", "actEvent", 50]] as const) {
+      const v = (p.get(key) ?? "").trim().slice(0, cap);
+      if (v) out[k] = v;
+    }
+    if (RUN_STATUS_FILTERS.includes(status)) out.status = status;
+  }
+  return out;
 }
 
 export function serializeActions(s: ActionsHashState): string {
-  throw new Error("not implemented");
+  const { repo, ...rest } = s;
+  return applyActions(`#repo=${encodeURIComponent(repo)}`, rest);
 }
 
 export function applyActions(hash: string, s: Omit<ActionsHashState, "repo">): string {
-  throw new Error("not implemented");
+  const kept = hash.replace(/^#+/, "").split("&").filter((x) => x && !KEYS.includes(x.split("=")[0]));
+  kept.push("view=actions");
+  const add = (k: string, v: string | number | undefined) => {
+    const t = String(v ?? "").trim();
+    if (t) kept.push(`${k}=${encodeURIComponent(t)}`);
+  };
+  if (s.tab !== "recent") add("actTab", s.tab);
+  add("actWorkflow", s.workflow);
+  add("actRun", s.run);
+  add("actAttempt", s.attempt);
+  add("actJob", s.job);
+  add("actLine", s.line);
+  add("actBranch", s.branch);
+  add("actStatus", s.status);
+  add("actActor", s.actor);
+  add("actEvent", s.event);
+  return "#" + kept.join("&");
 }
