@@ -21,6 +21,7 @@ import { PushesHub } from "./Pushes";
 import { BranchesHub } from "./Branches";
 import { TagsHub } from "./Tags";
 import { SecurityHub } from "./Security";
+import { ActionsHub } from "./Actions";
 import { Loading, useDefaultRepo } from "./RepoHub";
 import { clearCache } from "./githubBrowse";
 import { BrowseState, serialize } from "./lib/browseState";
@@ -160,6 +161,7 @@ export function App() {
   if (hub === "pushes") return <PushesHub {...hubProps} />;
   if (hub === "branches") return <BranchesHub {...hubProps} />;
   if (hub === "tags") return <TagsHub {...hubProps} />;
+  if (hub === "actions") return <ActionsHub {...hubProps} />;
   if (hub === "security") return <SecurityHub {...hubProps} />;
   if (wantsDefault && !fallback.none) return <Page className="flex-grow"><Loading label="Opening the first repository" /></Page>;
   if (nav.repo)

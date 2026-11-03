@@ -114,6 +114,11 @@ export async function restSend<T = any>(r: RestRequest): Promise<T> {
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
+/** A GET whose answer is not JSON. Job logs and artifact zips 302 to Azure blob storage with a signed URL; both hops send
+ *  Access-Control-Allow-Origin: * (checked 2026-11-03) and fetch drops Authorization on the cross-origin hop. (Actions) */
+export const restText = async (path: string): Promise<string> => (await request(path, "application/vnd.github+json")).text();
+export const restBlob = async (path: string): Promise<Blob> => (await request(path, "application/vnd.github+json")).blob();
+
 const json = async <T>(url: string): Promise<T> => (await request(url, "application/vnd.github+json")).json();
 
 export interface RepoInfo {

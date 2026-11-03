@@ -13,11 +13,13 @@
     "azure-devops-extension-sdk": "^4.2.0",
     "azure-devops-ui": "^2.281.0",
     "dompurify": "^3.4.17",
+    "js-yaml": "^4.3.2",
     "monaco-editor": "^0.57.0",
     "react": "^16.14.0",
     "react-dom": "^16.14.0"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/react": "^16.14.70",
     "@types/react-dom": "^16.9.25",
     "esbuild": "^0.28.2",

@@ -8,6 +8,7 @@ import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPref
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
 import { parseNewPr, type NewPrHashState } from "./lib/newPrHash";
 import { parseSecurity, type SecurityHashState } from "./lib/securityHash";
+import { parseActions, type ActionsHashState } from "./lib/actionsHash";
 import { decideNav } from "./lib/dirtyGuard";
 import { parseAgainst } from "./lib/fileTabs";
 import { parseCompare, type CompareHashState } from "./lib/compareHash";
@@ -39,10 +40,10 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; compare: CompareHashState | null; against: string | undefined } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; actions: ActionsHashState | null; compare: CompareHashState | null; against: string | undefined } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), actions: parseActions(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
@@ -153,7 +154,7 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
   };
 }
 
-export type HubId = "files" | "commits" | "pushes" | "branches" | "tags" | "prs" | "security";
+export type HubId = "files" | "commits" | "pushes" | "branches" | "tags" | "prs" | "actions" | "security";
 /** The contribution id of each hub, as in vss-extension.json. Files keeps the original id so old links survive. */
 export const HUB_CONTRIBUTION: Record<HubId, string> = {
   files: "github-repos-hub",
@@ -162,13 +163,14 @@ export const HUB_CONTRIBUTION: Record<HubId, string> = {
   branches: "github-repos-branches-hub",
   tags: "github-repos-tags-hub",
   prs: "github-repos-prs-hub",
+  actions: "github-repos-actions-hub",
   security: "github-repos-security-hub",
 };
 const HUB_SUFFIX = /github-repos(?:-[a-z]+)?-hub$/;
 
 /** Which hub this page is, from the contribution id (every hub loads the same hub.html). */
 export const currentHub = (contributionId: string = SDK.getContributionId()): HubId =>
-  (/github-repos-(commits|pushes|branches|tags|prs|security)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
+  (/github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
 
 /** Another hub's URL for a state: the current contribution id with its hub suffix swapped. */
 export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState | string) =>

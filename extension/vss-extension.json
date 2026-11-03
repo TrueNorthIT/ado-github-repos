@@ -97,12 +97,23 @@
       }
     },
     {
+      "id": "github-repos-actions-hub",
+      "type": "ms.vss-web.hub",
+      "targets": [".github-repos-hub-group"],
+      "properties": {
+        "name": "Actions",
+        "order": 7,
+        "uri": "dist/hub.html",
+        "iconName": "Rocket"
+      }
+    },
+    {
       "id": "github-repos-security-hub",
       "type": "ms.vss-web.hub",
       "targets": [".github-repos-hub-group"],
       "properties": {
         "name": "Advanced Security",
-        "order": 7,
+        "order": 8,
         "uri": "dist/hub.html",
         "iconName": "Shield"
       }
