@@ -58,6 +58,8 @@ export interface NewPrCompare {
   autoMergeAllowed: boolean;
   baseExists: boolean;
   headExists: boolean;
+  /** The head branch's tip commit (headRef.target.oid), for the Files preview. */
+  headOid?: string;
   /** Comparison.aheadBy / behindBy; 0 when either branch is missing. */
   ahead: number;
   behind: number;
@@ -87,7 +89,7 @@ export function newPrQuery(p: { owner: string; name: string; base: string; head:
   return {
     query: `query($owner: String!, $name: String!, $base: String!, $head: String!) { repository(owner: $owner, name: $name) { id defaultBranchRef { name } autoMergeAllowed
   baseRef: ref(qualifiedName: $base) { compare(headRef: $head) { aheadBy behindBy status commits(first: ${MAX_COMPARE_COMMITS}) { totalCount nodes { oid messageHeadline messageBody } } } }
-  headRef: ref(qualifiedName: $head) { id }
+  headRef: ref(qualifiedName: $head) { id target { oid } }
   pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 20) { nodes { number title url isDraft isCrossRepository } } } }`,
     variables: { owner: p.owner, name: p.name, base: p.base, head: p.head },
   };
@@ -108,6 +110,7 @@ export function mapNewPr(body: any): NewPrCompare {
     autoMergeAllowed: repo?.autoMergeAllowed === true,
     baseExists: !!repo?.baseRef,
     headExists: !!repo?.headRef,
+    headOid: typeof repo?.headRef?.target?.oid === "string" ? repo.headRef.target.oid : undefined,
     ahead: cmp?.aheadBy ?? 0,
     behind: cmp?.behindBy ?? 0,
     status: cmp?.status ?? null,

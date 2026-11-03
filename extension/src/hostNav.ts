@@ -6,6 +6,7 @@ import { getProjectCtx } from "./connections";
 import { onRepoMessage, post, sibling } from "./lib/repoChannel";
 import { applyDiffHash, parseDiffHash, type DiffHashState } from "./lib/diffPrefs";
 import { applyListFilters, parseListFilters, type ListFilters } from "./lib/prListFilters";
+import { parseNewPr, type NewPrHashState } from "./lib/newPrHash";
 import * as React from "react";
 
 // CommonServiceIds is a const enum, which esbuild cannot inline, so use the literal.
@@ -31,14 +32,18 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
 export const patchHash = (fn: (hash: string) => string) => patcher?.(fn);
+
+/** Sets the whole hash (with a history entry). For states BrowseState cannot carry, such as the New pull request page (view=newpr, source, target). */
+let hasher: ((hash: string) => void) | undefined;
+export const gotoHash = (hash: string) => hasher?.(hash);
 
 const carry = (next: BrowseState, prev: string) => {
   const h = serialize(next);
@@ -64,6 +69,14 @@ export async function connectNav(onChange: (s: BrowseState) => void): Promise<(s
     const h = fn(rawHash || "#");
     svc.replaceHash(h.slice(1));
     setRaw(h);
+  };
+
+  hasher = (h) => {
+    setRaw(h);
+    svc.setHash(h);
+    const next = parse(h);
+    announce(next);
+    onChange(next);
   };
 
   const emit = (h: string) => {
@@ -114,10 +127,11 @@ export const currentHub = (contributionId: string = SDK.getContributionId()): Hu
   (/github-repos-(commits|pushes|branches|tags|prs)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
 
 /** Another hub's URL for a state: the current contribution id with its hub suffix swapped. */
-export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState) =>
-  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(HUB_SUFFIX, HUB_CONTRIBUTION[hub])}${serialize(s)}`;
+export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState | string) =>
+  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(HUB_SUFFIX, HUB_CONTRIBUTION[hub])}${typeof s === "string" ? s : serialize(s)}`;
 
-export async function openHub(hub: HubId, s: BrowseState): Promise<void> {
+/** `s` may be a ready-made hash (the New pull request page's, which BrowseState cannot carry). */
+export async function openHub(hub: HubId, s: BrowseState | string): Promise<void> {
   (await SDK.getService<IHostNavigationService>(NAV_SERVICE)).navigate(hubHref(await getProjectCtx(), hub, s));
 }
 

@@ -33,6 +33,8 @@ import { projectItemsQuery, orgProjectsQuery, repoProjectsQuery, mergeProjectOpt
 import { teamCandidates, teamSearchQuery, userCandidates, userSearchQuery, type Candidate } from "./lib/reviewerSearch";
 import { labelSearchQuery, toLabelOption, type LabelOption } from "./lib/labels";
 import { milestoneSearchQuery, sortMilestones, toMilestoneOption, type MilestoneOption } from "./lib/milestones";
+import { mapNewPr, newPrQuery, type NewPrCompare } from "./lib/newPr";
+import { listedPaths, mapTemplateBlobs, resolveTemplates, templateBlobsQuery, templateListingQuery, type TemplateBlob } from "./lib/prTemplates";
 import type { GitHubTokenSet } from "../../shared/contract";
 
 const API = "https://api.github.com";
@@ -266,7 +268,7 @@ export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | 
 }
 
 /** Drops cached PR pages (Try again). */
-export const invalidatePrs = () => prLists.clear();
+export const invalidatePrs = () => (prLists.clear(), newPrCompares.clear(), newPrTemplates.clear());
 
 // ---------- pull request page (PR-5 to PR-9) ----------
 
@@ -788,3 +790,40 @@ export async function searchProjects(repo: string, query: string, attached: stri
   ]);
   return mergeProjectOptions(r, o, attached);
 }
+
+// ---------- creating a pull request (batch 5) ----------
+
+const newPrCompares = new Map<string, { at: number; p: Promise<NewPrCompare> }>();
+const newPrTemplates = new Map<string, { at: number; p: Promise<TemplateBlob[]> }>();
+const compareFileSets = new Map<string, { at: number; p: Promise<{ files: PrFile[]; mergeBase: string | null }> }>();
+
+/** The comparison of `head` into `base`, the open PR for the pair and the repository facts, in one request. Cached 30 s per pair; invalidatePrs() drops it. */
+export const getNewPrCompare = (repo: string, base: string, head: string) =>
+  ttl(newPrCompares, JSON.stringify([repo, base, head]), async () => {
+    const [owner, name] = repo.split("/");
+    return mapNewPr(await graphql(newPrQuery({ owner, name, base, head })));
+  });
+
+/** The PR templates at the base branch, in the order the page offers them (one entry means use it, several mean the user picks). [] when there is none. */
+export const getPrTemplates = (repo: string, base: string) =>
+  ttl(newPrTemplates, JSON.stringify([repo, base]), async () => {
+    const [owner, name] = repo.split("/");
+    const r = resolveTemplates(listedPaths(await graphql(templateListingQuery({ owner, name, base }))));
+    const paths = r.kind === "none" ? [] : r.kind === "single" ? [r.path] : r.paths;
+    return paths.length ? mapTemplateBlobs(await graphql(templateBlobsQuery({ owner, name, base }, paths)), paths) : [];
+  });
+
+/** The changed files of base...head and the merge base (the left side of every diff), 100 files a page up to GitHub's cap. Cached 30 s. */
+export const getCompareFiles = (repo: string, base: string, head: string) =>
+  ttl(compareFileSets, JSON.stringify([repo, base, head]), async () => {
+    const out: PrFile[] = [];
+    let mergeBase: string | null = null;
+    for (let page = 1; out.length < MAX_DIFF_FILES; page++) {
+      const j = await json<{ merge_base_commit?: { sha?: string }; files?: Parameters<typeof fromRestFile>[0][] }>(`${comparePath(repo, base, head)}?per_page=100&page=${page}`);
+      mergeBase = j.merge_base_commit?.sha ?? mergeBase;
+      const files = j.files ?? [];
+      out.push(...files.map(fromRestFile));
+      if (files.length < 100) break;
+    }
+    return { files: out, mergeBase };
+  });
