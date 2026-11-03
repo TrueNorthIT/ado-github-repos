@@ -283,6 +283,43 @@ const where = (loc?: { path: string; startLine?: number; endLine?: number }) =>
 
 const locText = (l: SecretLocation) => (l.path ? where({ path: l.path, startLine: l.startLine, endLine: l.endLine }) : l.type.replace(/_/g, " "));
 
+/** The places a code scanning alert occurs: Enter or a click on a row shows that place. */
+function InstancesTable({ instances, pick }: { instances: AlertInstance[]; pick: (i: AlertInstance) => void }) {
+  const provider = React.useMemo(() => new ArrayItemProvider(instances), [instances]);
+  const cols = React.useMemo<ITableColumn<AlertInstance>[]>(() => {
+    const text = (id: string, name: string, width: number, f: (i: AlertInstance) => string, mono = false): ITableColumn<AlertInstance> => ({
+      id, name, width,
+      renderCell: (_r, columnIndex, tableColumn, i) => <SimpleTableCell key={id} columnIndex={columnIndex} tableColumn={tableColumn}><span className={mono ? "monospaced-xs text-ellipsis" : "text-ellipsis"}>{f(i)}</span></SimpleTableCell>,
+    });
+    return [
+      text("branch", "Branch", -30, (i) => i.ref.replace(/^refs\/heads\//, "")),
+      text("commit", "Commit", 100, (i) => i.commitSha.slice(0, 8), true),
+      text("location", "Location", -70, (i) => where(i.location), true),
+    ];
+  }, []);
+  return <Table<AlertInstance> ariaLabel="Instances of this alert" role="table" columns={cols} itemProvider={provider} singleClickActivation onActivate={(_e, r) => pick(r.data)} />;
+}
+
+/** Where a secret was found; a commit location links to GitHub. */
+function LocationsTable({ locations }: { locations: SecretLocation[] }) {
+  const provider = React.useMemo(() => new ArrayItemProvider(locations), [locations]);
+  const cols = React.useMemo<ITableColumn<SecretLocation>[]>(() => [
+    {
+      id: "location", name: "Location", width: -70,
+      renderCell: (_r, columnIndex, tableColumn, l) => (
+        <SimpleTableCell key="location" columnIndex={columnIndex} tableColumn={tableColumn}>
+          {l.url ? <Link className="text-ellipsis" href={l.url} target="_blank" rel="noopener noreferrer">{locText(l)}</Link> : <span className="text-ellipsis">{locText(l)}</span>}
+        </SimpleTableCell>
+      ),
+    },
+    {
+      id: "type", name: "Found in", width: -30,
+      renderCell: (_r, columnIndex, tableColumn, l) => <SimpleTableCell key="type" columnIndex={columnIndex} tableColumn={tableColumn}><span className="secondary-text">{l.type.replace(/_/g, " ")}</span></SimpleTableCell>,
+    },
+  ], []);
+  return <Table<SecretLocation> ariaLabel="Where the secret was found" role="table" columns={cols} itemProvider={provider} />;
+}
+
 function DismissDialog({ kind, busy, error, clearError, submit, close }: { kind: AlertKind; busy: boolean; error: string | null; clearError: () => void; submit: (reason: string, comment: string) => void; close: () => void }) {
   const reasons = dismissReasons(kind);
   const [reason, setReason] = React.useState("");
@@ -400,13 +437,7 @@ function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kin
             )}
             {kind === "code" && v.instances.length > 1 && (
               <Card className="gh-pr-card" titleProps={{ text: `Instances (${v.instances.length})` }}>
-                <ul className="gh-sec-list" aria-label="Instances of this alert">
-                  {v.instances.map((i) => (
-                    <li key={`${i.ref}:${i.commitSha}:${where(i.location)}`}>
-                      <Button subtle text={`${i.ref.replace(/^refs\/heads\//, "")}  ${where(i.location)}`} ariaLabel={`Show ${where(i.location)} on ${i.ref}`} onClick={() => setPicked(i)} />
-                    </li>
-                  ))}
-                </ul>
+                <InstancesTable instances={v.instances} pick={setPicked} />
               </Card>
             )}
 
@@ -420,25 +451,20 @@ function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kin
 
             {secret && (
               <Card className="gh-pr-card" titleProps={{ text: "Locations" }}>
-                {v.locations.length ? (
-                  <ul className="gh-sec-list" aria-label="Where the secret was found">
-                    {v.locations.map((l, i) => (
-                      <li key={i}>
-                        {l.url ? <Link href={l.url} target="_blank" rel="noopener noreferrer">{locText(l)}</Link> : <span>{locText(l)}</span>}
-                        <span className="secondary-text"> {l.path ? "commit" : ""}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <div className="secondary-text gh-sec-plain">No locations were returned.</div>}
-                <div className="secondary-text body-s gh-sec-plain">The secret itself is never shown here. Open the alert on GitHub to see it if you need to.</div>
+                <div className="gh-sec-fill flex-column">
+                  {v.locations.length ? (
+                    <LocationsTable locations={v.locations} />
+                  ) : <div className="secondary-text gh-sec-plain">No locations were returned.</div>}
+                  <div className="secondary-text body-s gh-sec-plain">The secret itself is never shown here. Open the alert on GitHub to see it if you need to.</div>
+                </div>
               </Card>
             )}
 
             {d.references.length > 0 && (
               <Card className="gh-pr-card" titleProps={{ text: "References" }}>
-                <ul className="gh-sec-list" aria-label="References">
-                  {d.references.map((r) => <li key={r}><Link href={r} target="_blank" rel="noopener noreferrer">{r}</Link></li>)}
-                </ul>
+                <div className="gh-sec-list gh-sec-fill flex-column" role="group" aria-label="References">
+                  {d.references.map((r) => <Link key={r} href={r} target="_blank" rel="noopener noreferrer">{r}</Link>)}
+                </div>
               </Card>
             )}
           </>

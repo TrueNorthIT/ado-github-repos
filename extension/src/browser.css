@@ -542,6 +542,7 @@
 .gh-sec-fact-value { min-width: 0; overflow-wrap: anywhere; }
 .gh-sec-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .gh-sec-loc { gap: 8px; min-width: 0; }
+.gh-sec-fill { flex: 1 1 auto; min-width: 0; width: 100%; } /* a Card body is a flex row: without this its Table collapses to its content */
 .gh-sec-list { margin: 0; padding: 0 0 0 4px; list-style: none; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
 .gh-sec-snippet { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; border: 1px solid var(--component-grid-cell-bottom-border-color, rgba(var(--palette-black-alpha-10, 0, 0, 0), 0.1)); }
 .gh-sec-snippet td { padding: 0 8px; white-space: pre; line-height: 20px; }
