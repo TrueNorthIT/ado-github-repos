@@ -410,9 +410,9 @@ export function createLogViewer(el: HTMLElement, dark: boolean, label: string, o
       editor.setScrollTop(top);
     },
     /** Scrolls the line near the top; `mark` also highlights it. */
-    reveal(line: number, mark = false) {
+    reveal(line: number, mark = false, scroll = true) {
       const n = Math.min(Math.max(1, line), editor.getModel()?.getLineCount() ?? 1);
-      editor.revealLineNearTop(n);
+      if (scroll) editor.revealLineNearTop(n);
       editor.setPosition({ lineNumber: n, column: 1 });
       hl.set(mark ? [{ range: new monaco.Range(n, 1, n, 1), options: { isWholeLine: true, className: "gh-log-hl" } }] : []);
     },
