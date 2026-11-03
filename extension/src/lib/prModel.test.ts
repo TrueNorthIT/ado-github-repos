@@ -391,3 +391,14 @@ describe("PR-7: linked work items on the detail", () => {
     expect(toDetail(detail({ title: "Plain", body: null })).workItemIds, "Expected []").toEqual([]);
   });
 });
+
+describe("workItemIdsOutsideBody", () => {
+  // Live finding (0.26.1): TrueTunes #234 mentions AB#19422 in a commit too, so removing it from the description left it linked
+  // while the remove button had looked available. Ids from the title or commits are "pinned".
+  it("lists ids from the title and commit messages, not the description", () => {
+    const commit = (message: string) => ({ commit: { oid: "a".repeat(40), message, authoredDate: "2026-01-01T00:00:00Z", author: { name: "A", user: null } } });
+    const d = toDetail(detail({ title: "Fix AB#1", body: "Relates to AB#2 and AB#3", commits: { nodes: [commit("wip AB#3"), commit("tidy")] } } as Partial<PrDetailNode>));
+    expect(d.workItemIds).toEqual([1, 2, 3]);
+    expect(d.workItemIdsOutsideBody).toEqual([1, 3]);
+  });
+});

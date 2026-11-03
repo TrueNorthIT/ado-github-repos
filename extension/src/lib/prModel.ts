@@ -132,6 +132,8 @@ export interface PrDetail {
   commits: PrCommit[];
   /** findWorkItemIds over title, body and every commit message. */
   workItemIds: number[];
+  /** The same over title and commit messages only: these stay linked whatever the description says. */
+  workItemIdsOutsideBody: number[];
 }
 
 const GHOST = "https://github.com/ghost.png";
@@ -233,6 +235,7 @@ export function toDetail(node: PrDetailNode): PrDetail {
     reviewers: reviewersOf(node),
     commits,
     workItemIds: findWorkItemIds(node.title, node.body, ...(node.commits?.nodes ?? []).map((c) => c.commit.message)),
+    workItemIdsOutsideBody: findWorkItemIds(node.title, ...(node.commits?.nodes ?? []).map((c) => c.commit.message)),
   };
 }
 

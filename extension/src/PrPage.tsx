@@ -236,8 +236,8 @@ function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
     : <span className="gh-pr-wi-icon gh-pr-wi-dot" style={{ background: color }} aria-hidden="true" />;
 }
 
-function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; remove?: { removable: boolean; busy: boolean; onRemove: () => void } }) {
-  const x = remove && <RemoveButton label={`Remove work item ${w.id}`} disabled={!remove.removable || remove.busy} reason={remove.removable ? undefined : "Mentioned only in a commit message, so it can't be removed here. Edit the commit message instead."} onClick={remove.onRemove} />;
+function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; remove?: { removable: boolean; pinned: boolean; busy: boolean; onRemove: () => void } }) {
+  const x = remove && <RemoveButton label={`Remove work item ${w.id}`} disabled={!remove.removable || remove.busy} reason={remove.removable ? undefined : remove.pinned ? "Also mentioned in the title or a commit message, so it stays linked. Edit those to unlink it." : "Not mentioned in the description, so it can't be removed here."} onClick={remove.onRemove} />;
   if (!w.found) return <li className="gh-pr-row flex-row flex-center"><span className="secondary-text gh-pr-grow">AB#{w.id}: not found or no access</span>{x}</li>;
   return (
     <li className="gh-pr-row flex-row gh-pr-wi-row">
@@ -255,7 +255,7 @@ function WorkItemRow({ w, r, remove }: { w: WorkItemRef; r: WorkItemsResult; rem
 }
 
 /** `version` is the action store's: completing the work items refetches them. */
-function WorkItems({ ids, version, store, edit }: { ids: number[]; version: number; store: ActionStore; edit?: EditData }) {
+function WorkItems({ ids, pinned, version, store, edit }: { ids: number[]; pinned: number[]; version: number; store: ActionStore; edit?: EditData }) {
   const wi = useWorkItems(ids, version);
   const [adding, setAdding] = React.useState(false);
   const canEdit = !!edit?.perms.workItems;
@@ -264,7 +264,7 @@ function WorkItems({ ids, version, store, edit }: { ids: number[]; version: numb
   else if (wi.t === "loading") body = <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />;
   else if (wi.t === "denied") body = <span className="secondary-text">Work items need the extension's work item permission.</span>;
   else if (wi.t === "error") body = <span className="secondary-text">Work items could not be loaded.</span>;
-  else body = <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={canEdit ? { removable: workItemInBody(edit!.node, w.id), busy: store.busy, onRemove: () => void store.removeWorkItem(edit!.node.id, w.id) } : undefined} />)}</ul>;
+  else body = <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={canEdit ? { removable: workItemInBody(edit!.node, w.id) && !pinned.includes(w.id), pinned: pinned.includes(w.id), busy: store.busy, onRemove: () => void store.removeWorkItem(edit!.node.id, w.id) } : undefined} />)}</ul>;
   return (
     <Section title="Work items" commandBarItems={canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy) : undefined}>
       <EditError store={store} field="workItems" />
@@ -413,7 +413,7 @@ function Overview({ pr, repo, prTab, openFile, signIn, busy, actions, edit }: { 
         <Deployments repo={repo} number={pr.number} version={actions.version} />
         <Reviewers list={pr.reviewers} store={actions} edit={edit} repo={repo} />
         <Labels pr={pr} store={actions} edit={edit} repo={repo} />
-        <WorkItems ids={pr.workItemIds} version={actions.version} store={actions} edit={edit} />
+        <WorkItems ids={pr.workItemIds} pinned={pr.workItemIdsOutsideBody} version={actions.version} store={actions} edit={edit} />
         {edit && <Assignees store={actions} edit={edit} repo={repo} />}
         {edit && <Milestone store={actions} edit={edit} repo={repo} />}
         {edit && <Projects store={actions} edit={edit} repo={repo} />}
