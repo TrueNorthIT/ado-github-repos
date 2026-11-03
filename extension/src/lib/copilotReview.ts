@@ -73,3 +73,6 @@ export function copilotResult(payload: { success?: boolean | null; failureReason
   if (!r) return { ok: false, message: "GitHub did not accept the Copilot review request.", hide: false };
   return { ok: false, message: MESSAGES[r] ?? `GitHub refused the Copilot review request: ${r}`, hide: PERMANENT.includes(r) };
 }
+
+/** How a reviewer is labelled: GitHub shows the Copilot bot as "Copilot", not its GraphQL login. */
+export const reviewerName = (login: string): string => (login === "copilot-pull-request-reviewer" ? "Copilot" : login);

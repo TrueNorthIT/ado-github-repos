@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { copilotReviewMutation, copilotAvailability, copilotResult, type CopilotAvailabilityInput } from "./copilotReview";
+import { copilotReviewMutation, copilotAvailability, copilotResult, reviewerName, type CopilotAvailabilityInput } from "./copilotReview";
 import { expectMutation, expectNotInQuery, NASTY, norm } from "./ciTestHelpers";
 
 // Module under test: src/lib/copilotReview.ts (copilotReviewMutation, copilotAvailability, copilotResult).
@@ -143,4 +143,9 @@ describe("CI-7: copilotResult surfaces GitHub's answer", () => {
     expect(r.ok, "Expected not ok").toBe(false);
     expect(!r.ok && r.message.trim().length, "Expected a message").toBeGreaterThan(0);
   });
+});
+
+describe("reviewerName", () => {
+  it("labels the Copilot bot as Copilot, as GitHub does", () => expect(reviewerName("copilot-pull-request-reviewer")).toBe("Copilot"));
+  it("leaves people and teams alone", () => expect(reviewerName("octocat")).toBe("octocat"));
 });

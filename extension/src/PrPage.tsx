@@ -19,6 +19,7 @@ import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
 import type { ChecksSummary, Mergeable, PrPageData, PrReviewer, PrStatus, ReviewState } from "./lib/prModel";
 import { commitUrl } from "./lib/commits";
+import { reviewerName } from "./lib/copilotReview";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import type { WorkItemRef } from "./lib/workItems";
 import { PermissionError } from "./connections";
@@ -152,8 +153,8 @@ function Reviewers({ list, store }: { list: PrReviewer[]; store: ActionStore }) 
         <ul className="gh-pr-list">
           {list.map((r) => (
             <li key={r.login} className="flex-row flex-center">
-              <VssPersona imageUrl={r.avatarUrl} displayName={r.login} size="small" suppressPersonaCard showInitialsOnImageError />
-              <span className="gh-pr-grow text-ellipsis">{r.login}</span>
+              <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
+              <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
               <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
               {REVIEW[r.state].icon}
             </li>
