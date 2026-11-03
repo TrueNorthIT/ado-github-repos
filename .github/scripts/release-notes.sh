@@ -10,8 +10,16 @@ range="${prev:+$prev..}$tag"
 echo "## What's changed"
 echo
 # One section per commit: the subject as a heading, the body as-is, attribution trailers dropped.
-git log --reverse --format='%H' "$range" | while read -r sha; do
+# Merges are left out (their changes come through their own commits), and so is a repeated subject (a cherry-pick of a commit already listed).
+seen=$'
+'
+git log --reverse --no-merges --format='%H' "$range" | while read -r sha; do
   subject=$(git log -1 --format='%s' "$sha")
+  case "$seen" in *$'
+'"$subject"$'
+'*) continue ;; esac
+  seen+="$subject"$'
+'
   body=$(git log -1 --format='%b' "$sha" | grep -vE '^(Co-Authored-By|Claude-Session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
   echo "### ${subject}"
   echo
