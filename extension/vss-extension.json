@@ -79,7 +79,7 @@
       "type": "ms.vss-web.hub",
       "targets": [".github-repos-hub-group"],
       "properties": {
-        "name": "Tags",
+        "name": "Tags & Releases",
         "order": 5,
         "uri": "dist/hub.html",
         "iconName": "Tag"

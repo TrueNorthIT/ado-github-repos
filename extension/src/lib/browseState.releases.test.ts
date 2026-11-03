@@ -123,3 +123,17 @@ describe("REQ-6: relPage (the Releases list page)", () => {
     expect(roundTrip({ repo: "acme/web", relPage: 2 }).relPage, "Expected relPage not to survive without tagTab=releases").toBeUndefined();
   });
 });
+
+describe("relKind (Releases list chips)", () => {
+  it.each(["published", "prerelease", "draft"] as const)("round-trips %s with tagTab=releases", (relKind) => {
+    expect(roundTrip({ repo: "acme/web", tagTab: "releases", relKind })).toEqual({ repo: "acme/web", tagTab: "releases", relKind });
+  });
+  it("drops an unknown value and 'all' (absent means all)", () => {
+    expect(parse("#repo=acme%2Fweb&tagTab=releases&relKind=all").relKind).toBeUndefined();
+    expect(parse("#repo=acme%2Fweb&tagTab=releases&relKind=nope").relKind).toBeUndefined();
+  });
+  it("is dropped without tagTab=releases", () => {
+    expect(parse("#repo=acme%2Fweb&relKind=draft").relKind).toBeUndefined();
+    expect(serialize({ repo: "acme/web", relKind: "draft" })).not.toContain("relKind");
+  });
+});

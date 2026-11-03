@@ -281,3 +281,23 @@ export function defaultPreviousTag(list: Pick<Release, "tagName" | "isDraft">[],
   const i = rest.findIndex((r) => r.tagName === tagName);
   return rest[i + 1]?.tagName;
 }
+
+// ---------- the list's filter chips ----------
+
+/** The Releases list's chips. "published" is a release that is neither a draft nor a pre-release. */
+export type ReleaseKind = "all" | "published" | "prerelease" | "draft";
+export const RELEASE_KINDS: ReleaseKind[] = ["all", "published", "prerelease", "draft"];
+
+export const releaseKindOf = (r: Pick<Release, "isDraft" | "isPrerelease">): Exclude<ReleaseKind, "all"> =>
+  r.isDraft ? "draft" : r.isPrerelease ? "prerelease" : "published";
+
+/** The releases of one kind ("all" keeps every release). Order is kept. */
+export const filterByKind = <T extends Pick<Release, "isDraft" | "isPrerelease">>(list: T[], kind: ReleaseKind): T[] =>
+  kind === "all" ? list : list.filter((r) => releaseKindOf(r) === kind);
+
+/** How many releases each chip would show. */
+export function kindCounts(list: Pick<Release, "isDraft" | "isPrerelease">[]): Record<ReleaseKind, number> {
+  const c: Record<ReleaseKind, number> = { all: list.length, published: 0, prerelease: 0, draft: 0 };
+  for (const r of list) c[releaseKindOf(r)]++;
+  return c;
+}

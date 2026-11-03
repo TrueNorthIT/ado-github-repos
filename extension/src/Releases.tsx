@@ -12,7 +12,7 @@ import { TextField } from "azure-devops-ui/TextField";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import type { BrowseState, TagTabId } from "./lib/browseState";
-import { filterReleases, formatBytes, pageReleases, releaseBadges, RELEASE_REACTIONS, sourceArchives, type Release, type ReleaseBadge, type ReleasesPage } from "./lib/releases";
+import { filterByKind, filterReleases, formatBytes, kindCounts, pageReleases, RELEASE_KINDS, type ReleaseKind, releaseBadges, RELEASE_REACTIONS, sourceArchives, type Release, type ReleaseBadge, type ReleasesPage } from "./lib/releases";
 import { normaliseReactions, reactionDefs, visibleReactions, toggleOptimistically, type ReactionContent, type ReactionState } from "./lib/reactions";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import { ErrorView, Markdown } from "./Browser";
@@ -162,6 +162,9 @@ function ReleaseCard({ repo, release, props, detail, canWrite, onDelete }: { rep
   );
 }
 
+const KIND_LABEL: Record<ReleaseKind, string> = { all: "All", published: "Published", prerelease: "Pre-releases", draft: "Drafts" };
+const NONE_LABEL: Record<ReleaseKind, string> = { all: "No releases match", published: "No published releases match", prerelease: "No pre-releases match", draft: "No drafts match" };
+
 export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) {
   const { state, go, openSwitch, signedIn } = props;
   const writes = useRefWrites();
@@ -185,7 +188,10 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
 
   const v = data.t === "ready" ? data.v : undefined;
   const canWrite = !!v?.viewerCanWrite;
-  const list = React.useMemo(() => filterReleases(v?.releases ?? [], state.q ?? ""), [v, state.q]);
+  const searched = React.useMemo(() => filterReleases(v?.releases ?? [], state.q ?? ""), [v, state.q]);
+  const kind: ReleaseKind = state.relKind ?? "all";
+  const counts = React.useMemo(() => kindCounts(searched), [searched]);
+  const list = React.useMemo(() => filterByKind(searched, kind), [searched, kind]);
   const paged = pageReleases(list, state.relPage ?? 1);
   const refresh = () => (invalidateReleases(), setReload((n) => n + 1));
   const draft = () => go({ repo, tagTab: "releases", releaseForm: "new" });
@@ -234,11 +240,32 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
         </div>
       </Card>
     );
-  } else if (!list.length) {
-    body = <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="No releases match" />;
   } else {
-    body = (
+    // Drafts are only listed for writers, so their chip is too.
+    const chips = RELEASE_KINDS.filter((k) => k !== "draft" || canWrite);
+    const chipRow = (
+      <div className="gh-rel-chips flex-row flex-center" role="group" aria-label="Show releases">
+        {chips.map((k) => (
+          <Button
+            key={k}
+            className={`gh-rel-chip ${k === kind ? "gh-rel-chip-on" : ""}`}
+            subtle
+            ariaPressed={k === kind}
+            onClick={() => go({ ...state, relKind: k === "all" ? undefined : k, relPage: undefined })}
+          >
+            {KIND_LABEL[k]} <span className="gh-rel-chip-count">{counts[k]}</span>
+          </Button>
+        ))}
+      </div>
+    );
+    body = !list.length ? (
       <>
+        {chipRow}
+        <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText={NONE_LABEL[kind]} />
+      </>
+    ) : (
+      <>
+        {chipRow}
         {paged.items.map((r) => <ReleaseCard key={r.id} repo={repo} release={r} props={props} canWrite={canWrite} onDelete={setDel} />)}
         {paged.pageCount > 1 && (
           <nav className="gh-rel-pager flex-row flex-center" aria-label="Releases pages">
@@ -253,7 +280,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
 
   return (
     <>
-      <Header className="gh-hub-header" title="Tags" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={form || detailTag ? draftButton : [...draftButton, searchItem]}>
+      <Header className="gh-hub-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={form || detailTag ? draftButton : [...draftButton, searchItem]}>
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r, tagTab: "releases" }))}
       </Header>
       <TagTabs repo={repo} tab="releases" go={go} />

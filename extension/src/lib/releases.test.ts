@@ -24,6 +24,10 @@ import {
   defaultPreviousTag,
   type ReleaseForm,
   type ReleaseFormContext,
+  releaseKindOf,
+  filterByKind,
+  kindCounts,
+  RELEASE_KINDS,
 } from "./releases";
 import { validateRefName } from "./refName";
 import { norm } from "./ciTestHelpers";
@@ -733,5 +737,32 @@ describe("defaultPreviousTag: older than the tag, in the newest-first list", () 
       { tagName: "v1.0", isDraft: false },
     ];
     expect(defaultPreviousTag(list, "v2.0"), "Expected v1.0 for v2.0, not the newer v3.0").toBe("v1.0");
+  });
+});
+
+describe("release kind chips", () => {
+  const mk = (tagName: string, isDraft: boolean, isPrerelease: boolean) => ({ tagName, isDraft, isPrerelease });
+  const list = [mk("v3-draft", true, false), mk("v3-rc", false, true), mk("v2", false, false), mk("v2-draft-rc", true, true), mk("v1", false, false)];
+
+  it("classes a draft as draft even when it is also a pre-release", () => {
+    expect(releaseKindOf(mk("x", true, true))).toBe("draft");
+    expect(releaseKindOf(mk("x", false, true))).toBe("prerelease");
+    expect(releaseKindOf(mk("x", false, false))).toBe("published");
+  });
+
+  it("filters by kind and keeps the order; all keeps everything", () => {
+    expect(filterByKind(list, "all")).toBe(list);
+    expect(filterByKind(list, "published").map((r) => r.tagName)).toEqual(["v2", "v1"]);
+    expect(filterByKind(list, "prerelease").map((r) => r.tagName)).toEqual(["v3-rc"]);
+    expect(filterByKind(list, "draft").map((r) => r.tagName)).toEqual(["v3-draft", "v2-draft-rc"]);
+  });
+
+  it("counts each chip", () => {
+    expect(kindCounts(list)).toEqual({ all: 5, published: 2, prerelease: 1, draft: 2 });
+    expect(kindCounts([])).toEqual({ all: 0, published: 0, prerelease: 0, draft: 0 });
+  });
+
+  it("offers the chips in display order", () => {
+    expect(RELEASE_KINDS).toEqual(["all", "published", "prerelease", "draft"]);
   });
 });

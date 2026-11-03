@@ -43,6 +43,8 @@ export interface BrowseState {
   releaseForm?: "new" | "edit";
   /** Hash key `relPage`: the Releases list page, a positive integer; absent means 1. Only honoured with tagTab=releases. (REL) */
   relPage?: number;
+  /** Hash key `relKind`: the Releases list chip; absent means all. Only honoured with tagTab=releases. (REL) */
+  relKind?: "published" | "prerelease" | "draft";
 }
 
 export type TagTabId = "tags" | "releases";
@@ -104,6 +106,8 @@ export function parse(hash: string): BrowseState {
       if (form === "new" || (form === "edit" && release)) out.releaseForm = form;
       const rp = p.get("relPage") ?? "";
       if (/^[1-9]\d*$/.test(rp) && Number.isSafeInteger(Number(rp))) out.relPage = Number(rp);
+      const kind = p.get("relKind");
+      if (kind === "published" || kind === "prerelease" || kind === "draft") out.relKind = kind;
     }
     if (p.get("view") === "prs") {
       out.view = "prs";
@@ -148,6 +152,7 @@ export function serialize(state: BrowseState): string {
     if (state.release) h += `&release=${encodeURIComponent(state.release)}`;
     if (state.releaseForm === "new" || (state.releaseForm === "edit" && state.release)) h += `&releaseForm=${state.releaseForm}`;
     if (state.relPage && Number.isSafeInteger(state.relPage) && state.relPage > 1) h += `&relPage=${state.relPage}`;
+    if (state.relKind === "published" || state.relKind === "prerelease" || state.relKind === "draft") h += `&relKind=${state.relKind}`;
   }
   if (state.view === "prs") {
     h += "&view=prs";

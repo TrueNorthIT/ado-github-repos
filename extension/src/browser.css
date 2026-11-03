@@ -630,3 +630,9 @@
 .gh-tag-release-link { margin-left: 8px; }
 .gh-latest-release { padding: 0 20px 8px; }
 @media (max-width: 700px) { .gh-rel-row { flex-direction: column; gap: 8px; } .gh-rel-side { flex-basis: auto; width: auto; } }
+
+/* Releases list chips (All / Published / Pre-releases / Drafts) */
+.gh-rel-chips { gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.gh-rel-chip.bolt-button { border-radius: 16px; border: 1px solid rgba(var(--palette-neutral-20, 200, 200, 200), 1); padding: 4px 12px; min-height: 28px; }
+.gh-rel-chip.gh-rel-chip-on.bolt-button { background: rgba(var(--palette-primary, 0, 120, 212), 1); border-color: rgba(var(--palette-primary, 0, 120, 212), 1); color: rgba(var(--palette-neutral-0, 255, 255, 255), 1); }
+.gh-rel-chip-count { margin-left: 6px; opacity: 0.8; font-variant-numeric: tabular-nums; }

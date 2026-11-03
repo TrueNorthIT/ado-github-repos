@@ -131,7 +131,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
     <>
       <Header
         className="gh-hub-header"
-        title="Tags"
+        title="Tags & Releases"
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
         commandBarItems={[
