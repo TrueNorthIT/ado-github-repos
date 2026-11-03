@@ -55,6 +55,8 @@ export class FeedStore {
   /** Optimistic reaction state per subject id (a comment id, or the PR id). */
   reactions = new Map<string, ReactionState[]>();
   batch: BatchItem[] = [];
+  /** Comment ids whose edit box is open. */
+  editing = new Set<string>();
   /** Set after suggestions were committed, until dismissed. */
   committed: { count: number; url: string } | null = null;
   /** Ids (thread ids, or COMMENT_KEY) with a call queued or in flight: their buttons are disabled. */
@@ -298,6 +300,16 @@ export class FeedStore {
     const r = await toggleOptimistically(this.reactionState(subjectId), content, (add) => mutate(reactionMutation(subjectId, content, add)), (s) => { this.reactions = new Map(this.reactions).set(subjectId, s); this.emit(); });
     this.busy = new Set([...this.busy].filter((k) => k !== key));
     if (!r.ok) this.errors.set(key, postErrorText(r.error));
+    this.emit();
+  }
+
+  startEdit(id: string) {
+    this.errors.delete(id);
+    this.editing = new Set(this.editing).add(id);
+    this.emit();
+  }
+  stopEdit(id: string) {
+    this.editing = new Set([...this.editing].filter((k) => k !== id));
     this.emit();
   }
 
