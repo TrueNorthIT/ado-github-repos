@@ -35,8 +35,19 @@ const DROP_BACK = new Set(["connection", "keep-alive", "transfer-encoding", "con
 export interface ProxyRequest { method: string; url: string; headers: Record<string, string | string[] | undefined>; body?: Uint8Array<ArrayBuffer> }
 export interface ProxyDeps { token: string; fetch: typeof fetch; log: (msg: string) => void }
 
+/** Refusals from a Claude Code cloud session's egress proxy (not from GitHub), each with what to do about it. */
+export const EGRESS_HINTS: [RegExp, string][] = [
+  [/not enabled for this session/i, `this cloud session's egress proxy refuses ${SANDBOX}: attach it to the session (start the session with both repos, or add_repo).`],
+  [/GraphQL is not available from Claude Code sessions/i, "this cloud session's egress proxy refuses GitHub GraphQL, so pages built on it (PR overview, releases) show an access error here; check those locally."],
+];
+
 export function createGhProxy({ token, fetch: fetchImpl, log }: ProxyDeps) {
   const ctx: GuardCtx = { seenIds: new Set() };
+  const hinted = new Set<string>();
+  const hint = (status: number, text: string) => {
+    if (status !== 403) return;
+    for (const [re, msg] of EGRESS_HINTS) if (re.test(text) && !hinted.has(msg)) { hinted.add(msg); log(`[gh proxy] ${msg}`); }
+  };
   const refuse = (status: number, reason: string) => {
     log(`[live guard] refused (dev server): ${reason}`);
     return new Response(JSON.stringify({ message: `Live mode refused this request: ${reason}. Only ${SANDBOX} may be touched.` }), { status, headers: { "Content-Type": "application/json" } });
@@ -82,7 +93,7 @@ export function createGhProxy({ token, fetch: fetchImpl, log }: ProxyDeps) {
       res.headers.forEach((v, k) => { if (!DROP_BACK.has(k)) out.set(k, v); });
       if (/json/.test(res.headers.get("content-type") ?? "")) {
         const text = await res.text();
-        if (toApi) learnIds(text, ctx);
+        if (toApi) { learnIds(text, ctx); hint(res.status, text); }
         return new Response(res.status === 304 ? null : text, { status: res.status, statusText: res.statusText, headers: out });
       }
       return new Response(res.status === 304 || method === "HEAD" ? null : res.body, { status: res.status, statusText: res.statusText, headers: out });

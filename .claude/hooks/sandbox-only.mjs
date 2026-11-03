@@ -9,7 +9,8 @@ try { cmd = String(JSON.parse(raw).tool_input?.command ?? ""); } catch { process
 if (!/GH_SANDBOX_TOKEN|ghu_[A-Za-z0-9]/.test(cmd)) process.exit(0);
 
 const found = new Set();
-const add = (o, n) => found.add(`${o}/${n}`.replace(/\.git$/, "").toLowerCase());
+// A shell operator straight after the name (`…/gh-repos-sandbox; echo`, `…)`) is not part of it.
+const add = (o, n) => found.add(`${o}/${n}`.replace(/[;|&)<>]+$/, "").replace(/\.git$/, "").toLowerCase());
 // `gh api` takes the path with or without its leading slash (gh api repos/o/r), so a word start counts as well as "/".
 for (const m of cmd.matchAll(/(?:^|[\s/"'`=])repos\/([^/\s"'`?]+)\/([^/\s"'`?]+)/g)) add(m[1], m[2]);
 for (const m of cmd.matchAll(/(?<!api\.)github\.com[/:]([^/\s"'`]+)\/([^/\s"'`?#]+)/g)) add(m[1], m[2]);

@@ -3,12 +3,12 @@
 //
 //   npm run shots                         every page in PAGES, light and dark, into shots/
 //   npm run shots -- commits run-9001     only those pages
-//   CHROME_PATH=... npm run shots         a specific Chrome (cloud sessions set CHROME_PATH already)
+//   SHOTS_CHROME=... npm run shots        a specific Chrome; otherwise Playwright's headless shell if installed (cloud sessions), then CHROME_PATH
 //   GH_SANDBOX_TOKEN=... npm run shots -- --live [page …]   live mode: the real TrueNorthIT/gh-repos-sandbox through the repo guard, own page set
 //
 // Read the PNGs afterwards (an agent can open them with its image-reading tool). Without --live it is mock data only and never touches ADO or GitHub; --live only reads the sandbox repo.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -39,7 +39,7 @@ const MOCK_PAGES = {
 async function livePages() {
   const gh = async (path) => {
     const r = await fetch(`http://localhost:${PORT}/__gh/repos/${SANDBOX}${path}`, { headers: { Accept: "application/vnd.github+json" } });
-    if (!r.ok) throw new Error(`GitHub ${path}: HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`GitHub ${path}: HTTP ${r.status} ${(await r.text()).slice(0, 300)}`);
     return r.json();
   };
   const runs = (await gh("/actions/runs?branch=test%2Ffailing&per_page=20")).workflow_runs.filter((r) => r.name === "CI");
@@ -57,8 +57,22 @@ async function livePages() {
   };
 }
 
+/** Playwright's chrome-headless-shell under /opt/pw-browsers (cloud containers). Full Chrome's --screenshot hangs there even on a blank page; the shell doesn't. */
+function headlessShell() {
+  const root = "/opt/pw-browsers";
+  try {
+    for (const d of readdirSync(root).filter((n) => n.startsWith("chromium_headless_shell-")).sort().reverse()) {
+      const p = join(root, d, "chrome-headless-shell-linux64", "chrome-headless-shell");
+      if (existsSync(p)) return p;
+    }
+  } catch { /* not there */ }
+  return undefined;
+}
+
 function chromePath() {
   const candidates = [
+    process.env.SHOTS_CHROME,
+    headlessShell(),
     process.env.CHROME_PATH,
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
@@ -67,7 +81,7 @@ function chromePath() {
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ].filter(Boolean);
   const hit = candidates.find((p) => existsSync(p));
-  if (!hit) throw new Error(`Chrome not found; set CHROME_PATH (tried ${candidates.join(", ")})`);
+  if (!hit) throw new Error(`Chrome not found; set SHOTS_CHROME or CHROME_PATH (tried ${candidates.join(", ")})`);
   return hit;
 }
 
@@ -98,13 +112,17 @@ try {
       const q = PAGES[name];
       const url = `${BASE}${q.replace("?", `?theme=${theme}&`)}`;
       const file = resolve(outDir, `${LIVE ? "live-" : ""}${name}-${theme}.png`);
+      rmSync(file, { force: true }); // so a stale PNG from an earlier run can't pass for this one
       const r = spawnSync(chrome, [
         "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+        ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), // Chrome refuses to run as root with its sandbox (cloud containers run as root)
         // A throwaway profile outside the repo: Chrome can install managed extensions into it, whose *.test.js files vitest would pick up.
         `--user-data-dir=${join(tmpdir(), "gh-repos-shots-profile")}`, "--window-size=1440,900", `--virtual-time-budget=${LIVE ? 20000 : 8000}`,
         `--screenshot=${file}`, url,
       ], { stdio: "ignore", timeout: 60000 });
-      console.log(`${r.status === 0 && existsSync(file) ? "ok  " : "FAIL"} ${LIVE ? "live-" : ""}${name}-${theme}.png`);
+      const good = r.status === 0 && existsSync(file);
+      if (!good) process.exitCode = 1;
+      console.log(`${good ? "ok  " : "FAIL"} ${LIVE ? "live-" : ""}${name}-${theme}.png${good ? "" : r.error ? ` (${r.error.code ?? r.error.message})` : ` (exit ${r.status ?? r.signal})`}`);
     }
   }
 } finally {

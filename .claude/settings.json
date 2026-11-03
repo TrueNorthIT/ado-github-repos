@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] || exit 0; cd \"$CLAUDE_PROJECT_DIR/extension\" && npm ci --no-audit --no-fund --loglevel=error && cd \"$CLAUDE_PROJECT_DIR/auth\" && npm ci --no-audit --no-fund --loglevel=error",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"",
             "timeout": 600
           }
         ]

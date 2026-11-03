@@ -151,3 +151,27 @@ describe("ghProxy: redirects", () => {
     expect(h.calls).toHaveLength(6);
   });
 });
+
+describe("ghProxy: egress proxy hints", () => {
+  const egress403 = (message: string) => () => new Response(JSON.stringify({ message }), { status: 403, headers: { "Content-Type": "application/json" } });
+
+  it("explains a cloud session's GraphQL refusal once, and passes the 403 through", async () => {
+    const h = harness({ "https://api.github.com/graphql": egress403("GitHub GraphQL is not available from Claude Code sessions; use the REST API") });
+    const body = JSON.stringify({ query: `query { repository(owner: "TrueNorthIT", name: "gh-repos-sandbox") { id } }` });
+    expect((await h.req("POST", "/__gh/graphql", {}, body)).status).toBe(403);
+    await h.req("POST", "/__gh/graphql", {}, body);
+    expect(h.log.mock.calls.filter(([m]) => /\[gh proxy\].*GraphQL/.test(m))).toHaveLength(1);
+  });
+
+  it("says to attach the sandbox when the session's proxy refuses it", async () => {
+    const h = harness({ [`https://api.github.com/repos/${S}`]: egress403("GitHub access to this repository is not enabled for this session. Use add_repo to request access.") });
+    await h.req("GET", `/__gh/repos/${S}`);
+    expect(h.log).toHaveBeenCalledWith(expect.stringMatching(/\[gh proxy\].*attach it to the session/));
+  });
+
+  it("stays quiet for GitHub's own 403s", async () => {
+    const h = harness({ [`https://api.github.com/repos/${S}/pulls`]: egress403("Resource not accessible by integration") });
+    await h.req("GET", `/__gh/repos/${S}/pulls`);
+    expect(h.log).not.toHaveBeenCalled();
+  });
+});
