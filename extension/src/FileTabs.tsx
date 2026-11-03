@@ -9,7 +9,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { blameBlocks, lineCountOf, type BlameBlock } from "./lib/blame";
 import type { CommitRow } from "./lib/commitsQuery";
 import { monacoLanguage } from "./lib/fileKind";
-import { GhError, getBlame, getRaw, invalidateRefs, listCommits } from "./githubBrowse";
+import { GhError, getBlame, getBranchNames, getRaw, invalidateRefs, listCommits } from "./githubBrowse";
 import { ErrorView, hubClick, loadMonaco } from "./Browser";
 import { CommitTable } from "./Commits";
 import { BranchBar, Loading, PersonLine } from "./RepoHub";
@@ -184,7 +184,7 @@ const fetchSide = (repo: string, ref: string, path: string): Promise<Side> =>
 
 /** This file on the current branch against another ref (default: the repo's default branch) in the diff editor: the other ref is the original, this branch the modified side. */
 export function CompareTab({ repo, refName, path, against, setAgainst, defaultBranch, dark, signedIn, signIn, busy }: TabProps & { against: string; setAgainst: (ref: string) => void; defaultBranch?: string; dark: boolean }) {
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; original: string; modified: string; missingOn?: string }>({ t: "loading" });
+  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; original: string; modified: string; missingOn?: string; noRef?: boolean }>({ t: "loading" });
   const [reload, setReload] = React.useState(0);
   const [failed, setFailed] = React.useState(false);
   const [height, setHeight] = React.useState(0);
@@ -196,10 +196,15 @@ export function CompareTab({ repo, refName, path, against, setAgainst, defaultBr
     let dead = false;
     setData({ t: "loading" });
     Promise.all([fetchSide(repo, against, path), fetchSide(repo, refName, path)]).then(
-      ([o, m]) => {
+      async ([o, m]) => {
         if (dead) return;
         const missingOn = !o.ok ? against : !m.ok ? refName : undefined;
-        setData({ t: "ready", original: o.ok ? o.text : "", modified: m.ok ? m.text : "", missingOn });
+        // A 404 also means the ref itself is gone (seen live: a mistyped `against` read as "file does not exist on it").
+        // ponytail: getBranchNames reads the first 100 branches only, so a full page proves nothing; page it if that matters.
+        const names = missingOn ? await getBranchNames(repo).catch(() => [missingOn]) : [];
+        const noRef = !!missingOn && names.length < 100 && !names.includes(missingOn);
+        if (dead) return;
+        setData({ t: "ready", original: o.ok ? o.text : "", modified: m.ok ? m.text : "", missingOn, noRef });
       },
       (err) => !dead && setData({ t: "error", err })
     );
@@ -243,7 +248,7 @@ export function CompareTab({ repo, refName, path, against, setAgainst, defaultBr
         <ZeroData iconProps={{ iconName: "Accept" }} imageAltText="" primaryText="No differences" secondaryText={`${path} is the same on ${refName} and ${against}.`} />
       ) : (
         <>
-          {data.missingOn && <MessageCard severity={MessageCardSeverity.Info}>{path} does not exist on {data.missingOn}.</MessageCard>}
+          {data.missingOn && <MessageCard severity={data.noRef ? MessageCardSeverity.Warning : MessageCardSeverity.Info}>{data.noRef ? `There is no branch called ${data.missingOn}. Pick another one to compare with.` : `${path} does not exist on ${data.missingOn}.`}</MessageCard>}
           {failed ? (
             <MessageCard severity={MessageCardSeverity.Error}>Could not load the diff editor.</MessageCard>
           ) : (
