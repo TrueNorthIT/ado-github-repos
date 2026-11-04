@@ -94,6 +94,21 @@ Start here, then read **the notes**.
 - Run the \`tests\`
 `;
 
+const PRICES_BASE = `sku,name,price,stock
+A-100,Widget,4.50,120
+A-200,Gadget,12.00,75
+A-300,Gizmo,19.99,40
+A-400,"Bolt, M6",0.10,5000
+A-500,Washer,0.05,8000
+`;
+const PRICES_HEAD = `sku,name,price,stock
+A-100,Widget,4.75,120
+A-200,Gadget,12.00,75
+A-400,"Bolt, M6",0.10,4200
+A-450,"Nut, M6",0.08,3000
+A-500,Washer,0.05,8000
+`;
+
 interface FixtureFile { path: string; status: string; additions: number; deletions: number; previous?: string; patch?: string; base?: string; head?: string }
 const diffStat = (a?: string, b?: string) => {
   const x = a ? a.split("\n") : [], y = b ? b.split("\n") : [];
@@ -112,6 +127,7 @@ const RICH: FixtureFile[] = [
   f("src/format.ts", "modified", FORMAT_BASE, FORMAT_HEAD),
   f("docs/img/diagram.svg", "modified", DIAGRAM_BASE, DIAGRAM_HEAD),
   f("docs/guide.md", "modified", GUIDE_BASE, GUIDE_HEAD),
+  f("data/prices.csv", "modified", PRICES_BASE, PRICES_HEAD),
   { path: "assets/data.bin", status: "added", additions: 12, deletions: 0 }, // binary: GitHub sends no patch
 ];
 const SMALL: FixtureFile[] = [f("package.json", "modified", PKG_BASE, PKG_HEAD)];

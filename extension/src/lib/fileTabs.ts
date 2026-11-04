@@ -4,16 +4,16 @@
 
 export type FileTab = "contents" | "preview" | "history" | "compare" | "blame";
 
-/** Native: History for files and folders; Compare and Blame for files; Preview is ours, for markdown. */
-export function tabsFor(kind: "file" | "folder", isMarkdown: boolean): FileTab[] {
-  return kind === "folder" ? ["contents", "history"] : ["contents", ...(isMarkdown ? (["preview"] as const) : []), "history", "compare", "blame"];
+/** Native: History for files and folders; Compare and Blame for files; Preview is ours, for markdown, CSV and TSV (`hasPreview`). */
+export function tabsFor(kind: "file" | "folder", hasPreview: boolean): FileTab[] {
+  return kind === "folder" ? ["contents", "history"] : ["contents", ...(hasPreview ? (["preview"] as const) : []), "history", "compare", "blame"];
 }
 
-/** The tab to show: the requested one if this view offers it, else the default (Preview for markdown, otherwise Contents). */
-export function resolveTab(requested: string | undefined, kind: "file" | "folder", isMarkdown: boolean): FileTab {
-  const offered = tabsFor(kind, isMarkdown);
+/** The tab to show: the requested one if this view offers it, else the default (Preview where there is one, otherwise Contents). */
+export function resolveTab(requested: string | undefined, kind: "file" | "folder", hasPreview: boolean): FileTab {
+  const offered = tabsFor(kind, hasPreview);
   const hit = offered.find((t) => t === requested);
-  return hit ?? (isMarkdown && kind === "file" ? "preview" : "contents");
+  return hit ?? (hasPreview && kind === "file" ? "preview" : "contents");
 }
 
 /** The `against` ref of a hash (the Compare tab's other side), or undefined. Never throws. */

@@ -121,3 +121,20 @@ jobs:
 `;
 
 export const LICENSE = "MIT License\n\nCopyright (c) 2026 TrueNorthIT\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.\n";
+
+// A table for the Files Preview tab: quoted fields with commas, a doubled quote and a line break inside quotes.
+export const SALES_CSV = `Region,Product,Units,Unit price,Notes
+North,Widget,120,4.50,
+North,Gadget,75,12.00,"Bulk order, repeat customer"
+South,Widget,98,4.50,"Said ""fine"" on the phone"
+South,Gizmo,40,19.99,"Two deliveries:
+one in May, one in June"
+East,Widget,211,4.25,Discounted
+East,Gadget,64,12.00,
+West,Gizmo,12,19.99,Trial
+West,Widget,150,4.50,
+Central,Gadget,88,11.50,"Price match, see ticket 1042"
+`;
+
+/** Over the 5,000-row cap of the preview, for its "Showing the first …" note. */
+export const BIG_TSV = ["id\tname\tscore", ...Array.from({ length: 6200 }, (_, i) => `${i + 1}\tuser-${String(i + 1).padStart(4, "0")}\t${(i * 37) % 100}`)].join("\n") + "\n";

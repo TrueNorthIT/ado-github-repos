@@ -34,6 +34,8 @@ export const TEXT: Record<string, string> = {
   "tools/build.yml": C.CI_YML,
   "azure-pipelines.yml": C.CI_YML,
   "Demo.sln": "Microsoft Visual Studio Solution File, Format Version 12.00\n",
+  "data/sales.csv": C.SALES_CSV,
+  "data/scores.tsv": C.BIG_TSV,
 };
 export const HTML: Record<string, string> = { "README.md": C.README_HTML, "docs/guide.md": C.GUIDE_HTML };
 
@@ -48,7 +50,7 @@ export const REPOS: FixtureRepo[] = [
   {
     fullName: "truenorthit/github-repos", description: "Browse GitHub repositories from Azure DevOps.", language: "TypeScript", private: false, branches: [...branches(130), ...NEWPR_BRANCHES],
     files: {
-      ...textFiles("README.md", "LICENSE", "package.json", "azure-pipelines.yml", "Demo.sln", ".github/workflows/ci.yml", "docs/guide.md", "docs/diagram.svg", "src/index.ts", "src/Program.cs", "src/util/greet.ts", "src/config.json"),
+      ...textFiles("README.md", "LICENSE", "package.json", "azure-pipelines.yml", "Demo.sln", ".github/workflows/ci.yml", "docs/guide.md", "docs/diagram.svg", "src/index.ts", "src/Program.cs", "src/util/greet.ts", "src/config.json", "data/sales.csv", "data/scores.tsv"),
       "docs/img/logo.png": { size: 160 },
       "docs/release.zip": { size: 52_431 },
       "data/large-export.json": { size: 2_621_440 },

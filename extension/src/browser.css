@@ -708,3 +708,17 @@
 .gh-lib-lock { margin-left: 6px; font-size: 12px; }
 .gh-lib-group .bolt-card-expandable-header { flex-grow: 1; min-width: 0; } /* a collapsible Card wraps its header in a plain flex-row, so the command bar would sit beside the title rather than at the right */
 .gh-lib-editor { width: 100%; }
+
+/* CSV and TSV as tables (CsvTable.tsx): the Files Preview tab and the Rendered view of a changed file. Added and removed rows take the
+   MessageBar status backgrounds, an edited cell the warning one, so both themes follow ADO's own status colours. */
+.gh-csv { min-width: 0; }
+.gh-csv-note { margin: 16px 16px 4px; }
+.gh-csv-scroll { overflow-x: auto; }
+.gh-csv-empty { padding: 20px; }
+.gh-csv-table .gh-csv-n { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.gh-csv-table .bolt-table-row.gh-csv-added > .bolt-table-cell { background-color: var(--status-success-background, rgba(223, 246, 221, 1)); }
+.gh-csv-table .bolt-table-row.gh-csv-removed > .bolt-table-cell { background-color: var(--status-error-background, rgba(249, 235, 235, 1)); }
+.gh-csv-table .bolt-table-cell.gh-csv-cell-changed { background-color: var(--status-warning-background, rgba(251, 242, 236, 1)); }
+.gh-csv-table .gh-csv-header-row > .bolt-table-cell { font-weight: 600; }
+.gh-csv-old { color: var(--status-error-text, #a80000); text-decoration: line-through; margin-right: 8px; }
+.gh-csv-new { text-decoration: none; }
