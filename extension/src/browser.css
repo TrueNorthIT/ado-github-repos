@@ -370,7 +370,7 @@
 .gh-bpol-count { max-width: 280px; }
 .gh-bpol-checks { gap: 12px; }
 .gh-bpol-add { gap: 8px; align-items: center; }
-.gh-bpol-add-name { flex: 0 1 360px; min-width: 0; }
+.gh-bpol-add-name { width: 360px; max-width: 100%; flex: 0 1 auto; min-width: 0; }
 .gh-bpol-error { color: var(--status-error-text, rgba(205, 74, 69, 1)); }
 .gh-bpol-message { margin-bottom: 16px; }
 .gh-bpol-others { margin-top: 16px; }
