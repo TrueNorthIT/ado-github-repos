@@ -38,6 +38,7 @@ import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, g
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
+import { CodeSearchBox } from "./CodeSearchBox";
 import { BlameTab, CompareTab, HistoryTab } from "./FileTabs";
 import { applyAgainst, resolveTab, tabsFor, type FileTab } from "./lib/fileTabs";
 import { compareBaseFor } from "./lib/compareHash";
@@ -849,6 +850,8 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                 <BranchPicker refName={refName} items={items} loading={!branches} onOpen={openBranches} setQuery={setQuery} onSelect={(b) => void switchBranch(b)} />
                 {ctx && <FindBox crumbs={crumbs} paths={allPaths} partial={truncated} onPick={nav} />}
                 {!ctx && !err && <Spinner size={SpinnerSize.medium} ariaLabel="Loading repository" />}
+                {!ctx && <div className="flex-grow" />}
+                <CodeSearchBox state={state} />
               </div>
               {err ? (
                 <div className="page-content page-content-top">

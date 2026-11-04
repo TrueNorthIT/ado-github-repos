@@ -17,6 +17,7 @@ import { releaseFormRest } from "./releaseFormMock";
 import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
 import { writesGraphql, writtenFile } from "./writesMock";
+import { codeSearchRest } from "./codeSearchMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -210,6 +211,7 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   const accept = new Headers(init?.headers).get("Accept") ?? "";
   if (u.hostname === "api.github.com" && u.pathname === "/graphql") return graphql(init, sc);
   if (u.hostname === "api.github.com" && u.pathname === "/markdown" && init?.method === "POST") return securityMarkdown(String(init.body ?? ""));
+  if (u.hostname === "api.github.com" && u.pathname === "/search/code") return codeSearchRest(u, sc); // Files hub: Code search
   if (u.hostname === "api.github.com" && sc !== "rateLimit") {
     const run = await actionsRunRest(u, init, sc); // Actions run page: run detail, jobs, logs, artifacts, annotations, re-run, cancel, review
     if (run) return run;

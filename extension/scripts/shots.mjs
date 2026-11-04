@@ -33,6 +33,10 @@ const MOCK_PAGES = {
   "run-9001": `?hub=actions${REPO}&view=actions&actRun=9001`,
   "log-900151": `?hub=actions${REPO}&view=actions&actRun=9001&actJob=900151`,
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
+  search: `?hub=files${REPO}&search=greet`,
+  "search-all": `?hub=files${REPO}&search=export&searchAll=1&searchExt=ts`,
+  "search-ratelimit": `?scenario=searchRateLimit&hub=files${REPO}&search=greet`,
+  "search-invalid": `?scenario=searchInvalid&hub=files${REPO}&search=greet`,
 };
 
 /** Live pages: the sandbox's fixed PRs, plus a CI run on test/failing and one failed job, looked up through the dev server's /__gh proxy (which holds the token and guards). */
@@ -54,6 +58,7 @@ async function livePages() {
     prs: `?hub=prs${REPO}&view=prs`, "pr-3": `?hub=prs${REPO}&view=prs&pr=3`, "pr-3-files": `?hub=prs${REPO}&view=prs&pr=3&prPage=files`, "pr-4": `?hub=prs${REPO}&view=prs&pr=4`,
     actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
+    search: `?hub=files${REPO}&search=Hello`,
   };
 }
 
