@@ -3,6 +3,9 @@
 // Fixtures: on truenorthit/github-repos, `main` has a ruleset with several rules plus a classic protection rule, `release/1.0`
 // has only a classic rule, and the rest have none. Scenarios: `readOnly` and `notAdmin` make the viewer a non-admin (no
 // "Set as default branch", classic protection answers 403 so the page shows what readers see); `refsFail` makes writes 403.
+// Rulesets (batch J): GET/POST /rulesets and GET/PUT/DELETE /rulesets/{id}, kept in memory so edits last the session. Ruleset 4211
+// ("Protect main") is someone else's; on truenorthit/github-repos the extension's own ruleset for release/2.0 locks it.
+// Scenarios: `rulesetsDenied` (an admin whose GitHub App lacks Administration: writes 403), `rulesetsInvalid` (writes 422).
 import { PR_REPO } from "./fixtures/prs";
 import { refsOf } from "./fixtures/refs";
 import { repoOf } from "./fixtures/repos";
@@ -61,8 +64,77 @@ const where = (fullName: string) => {
   return policyBranch.get(k)!;
 };
 
+interface MockRuleset { id: number; name: string; target: string; source_type: string; source: string; enforcement: string; conditions: any; rules: { type: string; parameters?: any }[]; bypass_actors: unknown[] }
+const rulesets = new Map<string, MockRuleset[]>();
+let nextRulesetId = 5000;
+/** The repository's own rulesets: "Protect main" (4211, mirrors MAIN_RULES) and, on the PR repo, the extension's lock on release/2.0. */
+function rulesetsOf(fullName: string): MockRuleset[] {
+  const k = fullName.toLowerCase();
+  if (!rulesets.has(k)) {
+    const list: MockRuleset[] = [{
+      id: 4211, name: "Protect main", target: "branch", source_type: "Repository", source: fullName, enforcement: "active", bypass_actors: [],
+      conditions: { ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } },
+      rules: MAIN_RULES.filter((r) => r.ruleset_id === 4211).map((r) => ({ type: r.type, ...(r.parameters && { parameters: r.parameters }) })),
+    }];
+    if (k === PR_REPO) list.push({
+      id: 4999, name: "Azure DevOps policies: release/2.0", target: "branch", source_type: "Repository", source: fullName, enforcement: "active", bypass_actors: [],
+      conditions: { ref_name: { include: ["refs/heads/release/2.0"], exclude: [] } }, rules: [{ type: "update" }, { type: "deletion" }],
+    });
+    rulesets.set(k, list);
+  }
+  return rulesets.get(k)!;
+}
+/** The rules of the rulesets added in the session (and the seeded lock) that apply to `branch`, as GET /rules/branches lists them. */
+const sessionRules = (fullName: string, branch: string) =>
+  rulesetsOf(fullName).filter((rs) => rs.id !== 4211 && rs.enforcement === "active" && (rs.conditions?.ref_name?.include ?? []).includes(`refs/heads/${branch}`))
+    .flatMap((rs) => rs.rules.map((r) => ({ ...r, ruleset_source_type: "Repository", ruleset_source: fullName, ruleset_id: rs.id })));
+
 function rulesFor(fullName: string, branch: string): unknown[] {
-  return branch === where(fullName).main ? MAIN_RULES.map((r) => ({ ...r, ruleset_source: fullName })) : [];
+  return [...(branch === where(fullName).main ? MAIN_RULES.map((r) => ({ ...r, ruleset_source: fullName })) : []), ...sessionRules(fullName, branch)];
+}
+
+const summary = ({ conditions: _c, rules: _r, bypass_actors: _b, ...rest }: MockRuleset) => rest;
+
+/** /rulesets and /rulesets/{id}. Readers may list and read; writes need admin, and GitHub checks the rules it is sent. */
+function rulesetsRest(fullName: string, rest: string, init: RequestInit | undefined, sc: string): Response | undefined {
+  const method = init?.method ?? "GET";
+  const list = rulesetsOf(fullName);
+  const write = method !== "GET";
+  if (write && (sc === "rulesetsDenied" || !isAdmin(sc))) return fail(403, "Resource not accessible by integration");
+  if (write && sc === "rulesetsInvalid") return fail(422, "Validation Failed: Invalid rules: 'Required status checks'");
+  const body = () => JSON.parse(String(init?.body ?? "{}"));
+  const check = (b: any): string | null => {
+    for (const r of b.rules ?? []) {
+      if (r.type === "pull_request" && ["dismiss_stale_reviews_on_push", "require_code_owner_review", "require_last_push_approval", "required_approving_review_count", "required_review_thread_resolution"].some((k) => !(k in (r.parameters ?? {})))) return "Invalid property /rules/0: data matches no possible input";
+      if (r.type === "required_status_checks" && !r.parameters?.required_status_checks?.length) return "Invalid rules: 'Required status checks'";
+    }
+    return null;
+  };
+  if (rest === "/rulesets") {
+    if (method === "GET") return json(list.map(summary));
+    if (method !== "POST") return undefined;
+    const b = body();
+    if (list.some((x) => x.name === b.name)) return fail(422, "Validation Failed: Name must be unique");
+    const bad = check(b);
+    if (bad) return fail(422, `Validation Failed: ${bad}`);
+    const made: MockRuleset = { id: nextRulesetId++, name: b.name, target: b.target, source_type: "Repository", source: fullName, enforcement: b.enforcement ?? "disabled", conditions: b.conditions, rules: b.rules ?? [], bypass_actors: b.bypass_actors ?? [] };
+    list.push(made);
+    return json(made, 201);
+  }
+  const one = /^\/rulesets\/(\d+)$/.exec(rest);
+  if (!one) return undefined;
+  const at = list.findIndex((x) => x.id === Number(one[1]));
+  if (at < 0) return fail(404, "Not Found");
+  if (method === "GET") return json(list[at]);
+  if (method === "DELETE") { list.splice(at, 1); return new Response(null, { status: 204 }); }
+  if (method === "PUT") {
+    const b = body();
+    const bad = check(b);
+    if (bad) return fail(422, `Validation Failed: ${bad}`);
+    list[at] = { ...list[at], ...b, id: list[at].id };
+    return json(list[at]);
+  }
+  return undefined;
 }
 function classicFor(fullName: string, branch: string): unknown | null {
   const w = where(fullName);
@@ -83,6 +155,7 @@ export function policiesRest(fullName: string, rest: string, init: RequestInit |
     return json({ default_branch: want, permissions: { admin: true, push: true } });
   }
   if (rest === "/tags" && method === "GET") return json([...rr.tags].sort((a, b) => b.at - a.at).map((t) => ({ name: t.name, commit: { sha: t.commit } })));
+  if (rest.startsWith("/rulesets")) return rulesetsRest(fullName, rest, init, sc);
   const rules = /^\/rules\/branches\/(.+)$/.exec(rest);
   if (rules && method === "GET") return json(rulesFor(fullName, decodeURIComponent(rules[1])));
   const rename = /^\/branches\/(.+)\/rename$/.exec(rest);
