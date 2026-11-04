@@ -853,11 +853,11 @@ export const getBranchPolicies = (repo: string, branch: string): Promise<BranchP
     const [info, rules, prot] = await Promise.all([
       json<any>(`${repoPath(repo)}/branches/${enc}`),
       (async () => {
-        const out: any[] = [];
-        let url: string | undefined = `${repoPath(repo)}/rules/branches/${enc}?per_page=100`;
+        const out: BranchRule[] = [];
+        let url: string | undefined = `${branchRulesRequest(repo, branch).path}?per_page=100`;
         for (let i = 0; url && i < 5; i++) {
           const res = await request(url, "application/vnd.github+json");
-          out.push(...(await res.json()));
+          out.push(...toBranchRules(await res.json()));
           url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
         }
         return out;

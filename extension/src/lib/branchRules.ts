@@ -1,5 +1,5 @@
 // The repository rules (rulesets) that apply to one branch, read over REST: `GET /repos/{owner}/{repo}/rules/branches/{branch}`.
-// Anyone who can read the repository may call it; it lists every active rule from the repository's and its organisation's rulesets
+// The Branch policies page (branchPolicies.ts toPolicies) and the PR page both read it through here. Anyone who can read the repository may call it; it lists every active rule from the repository's and its organisation's rulesets
 // (classic branch protection is NOT in it: that comes from GraphQL Ref.branchProtectionRule in actionsQuery.ts).
 // Each entry is { type, parameters?, ruleset_source_type, ruleset_source, ruleset_id }. The two this extension reads:
 //  - `pull_request` with parameters.require_code_owner_review (the branch needs a code owner's approval);
@@ -10,6 +10,10 @@ import type { RestRequest } from "./restRequest";
 export interface BranchRule {
   type: string;
   parameters?: Record<string, unknown> | null;
+  /** The ruleset the rule comes from, and where that ruleset lives ("Repository", "Organization", "Enterprise"). */
+  ruleset_id?: number;
+  ruleset_source_type?: string;
+  ruleset_source?: string;
 }
 
 const encPath = (p: string) => p.split("/").map(encodeURIComponent).join("/");
