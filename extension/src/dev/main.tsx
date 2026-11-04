@@ -65,7 +65,7 @@ SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", 
 SCENARIOS.push("rulesetsDenied", "rulesetsInvalid");
 SCENARIOS.push("hoverFails"); // hover cards: the profile and pull request lookups fail (quiet error line) // batch J: an admin whose GitHub App may not write rulesets, and GitHub refusing the rules
 
-// `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
+// `?click=a|b|…`: once the page is up, click (or with `scroll:`, scroll to) each target in turn (a CSS selector, or `text:Label` for the innermost element showing
 // exactly that text). For screenshots of panels and menus that only open on a click (npm run shots). Before each click it waits (up to
 // 8 s) for the target to be present and enabled AND for the page to settle: no fetch in flight and no shimmer rows or spinners for
 // 300 ms. Otherwise a click can land before the data does (a branch's lock state arriving after its menu opened, say) and the shot flakes.
@@ -83,6 +83,8 @@ if (clicks) {
   const onScreen = (e: Element) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
   const busy = () => inFlight > 0 || Array.from(document.querySelectorAll(".shimmer, .bolt-spinner")).some(onScreen);
   const find = (t: string): HTMLElement | null => {
+    const at = /^(.*)@([^@]+)$/.exec(t);
+    if (at && !t.startsWith("text:")) return Array.from(document.querySelectorAll<HTMLElement>(at[1])).find((e) => e.textContent?.trim() === at[2]) ?? null;
     if (!t.startsWith("text:")) return document.querySelector<HTMLElement>(t);
     const want = t.slice(5);
     const all = Array.from(document.querySelectorAll<HTMLElement>("button, [role=option], [role=menuitem], [role=tab], a, span, div")).filter((e) => e.textContent?.trim() === want);
@@ -92,7 +94,12 @@ if (clicks) {
   (async () => {
     for (const step of clicks.split("|")) {
       const hover = step.startsWith("hover:");
-      const t = hover ? step.slice(6) : step;
+      // `scroll:<target>` scrolls the target to the middle of the page instead of clicking it (for content below the fold).
+      const scroll = step.startsWith("scroll:");
+      // `pointer:<selector>@<text>` (or `shiftpointer:`) presses the pointer on the element matching both, for Monaco's gutter: a plain
+      // press on one line number and a Shift press on another select a range of lines to comment on.
+      const ptr = /^(shift)?pointer:/.exec(step);
+      const t = hover ? step.slice(6) : scroll ? step.slice(7) : ptr ? step.slice(ptr[0].length) : step;
       let el: HTMLElement | null = null;
       let quiet = 0;
       for (let i = 0; i < 80; i++) {
@@ -110,7 +117,21 @@ if (clicks) {
         await new Promise((r) => setTimeout(r, 1500));
         continue;
       }
-      el.click();
+      if (ptr) {
+        const r = el.getBoundingClientRect();
+        const init = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, shiftKey: !!ptr[1], button: 0, buttons: 1, pointerId: 1, pointerType: "mouse", isPrimary: true };
+        el.dispatchEvent(new PointerEvent("pointerdown", init));
+        el.dispatchEvent(new MouseEvent("mousedown", init));
+        el.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
+        el.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
+      } else if (scroll) {
+        // Not scrollIntoView: inside a Monaco view zone that scrolls Monaco's own overflow-hidden layers, which Monaco then puts back.
+        let box = el.parentElement;
+        while (box && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight)) box = box.parentElement;
+        const sc = box ?? document.scrollingElement!;
+        sc.scrollTop += el.getBoundingClientRect().top - (box ? box.getBoundingClientRect().top : 0) - sc.clientHeight / 2;
+      }
+      else el.click();
       await new Promise((r) => setTimeout(r, 400));
     }
   })();

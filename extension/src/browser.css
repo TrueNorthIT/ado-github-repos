@@ -739,3 +739,13 @@
 .gh-csv-table .gh-csv-header-row > .bolt-table-cell { font-weight: 600; }
 .gh-csv-old { color: var(--status-error-text, #a80000); text-decoration: line-through; margin-right: 8px; }
 .gh-csv-new { text-decoration: none; }
+/* VW-12: the expand row in a collapsed run of unchanged lines, and its spacer on the other side of a side-by-side diff. The gutter beside it takes the same tint. */
+.gh-context-zone, .monaco-editor .gh-context-margin { height: 28px; box-sizing: border-box; background: rgba(var(--palette-neutral-4, 244, 244, 244), 1); border-top: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); border-bottom: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
+.monaco-editor .gh-context-margin { width: 100%; }
+.gh-context-row { height: 100%; padding: 0 4px; gap: 4px; cursor: default; overflow: hidden; white-space: nowrap; }
+.gh-context-row-one { cursor: pointer; }
+.gh-context-row .gh-context-action.bolt-button { height: 24px; padding: 0 8px; font-size: 12px; }
+.gh-context-count { margin-left: 8px; }
+/* CM-6: the lines an existing multi-line thread covers: a bar at the gutter's code edge (clear of the "+") and a light tint. */
+.monaco-editor .gh-thread-range { background: rgba(var(--palette-primary, 0, 120, 212), .07); }
+.monaco-editor .gh-thread-range-gutter { box-shadow: inset -3px 0 0 rgba(var(--palette-primary, 0, 120, 212), 1); }

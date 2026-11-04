@@ -11,6 +11,7 @@ import "monaco-editor/basic-languages/monaco.contribution.js";
 import "../node_modules/monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 import { afterModifiedLine } from "./lib/diffMap";
+import { applyExpand, expandActions, hiddenCount, hiddenRange, NOTHING_REVEALED, unchangedRegions, type ExpandAction, type Reveal, type UnchangedRegion } from "./lib/contextRegions";
 
 // Only Monaco's base editor worker is bundled (editor.worker.js, built beside monaco.js): it computes the PR diffs.
 // No language workers, so JSON/TS/CSS language services stay off. The URL is next to this file, so on the gallery CDN it is same-origin.
@@ -114,7 +115,8 @@ export function createDiff(el: HTMLElement, original: string, modified: string, 
     domReadOnly: true,
     renderSideBySide: sideBySide,
     useInlineViewWhenSpaceIsLimited: false,
-    hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 3, revealLineCount: 20 },
+    // VW-12: unchanged regions are collapsed by enableContextExpansion below, with GitHub's expand row, not Monaco's thin drag strips.
+    hideUnchangedRegions: { enabled: false },
     renderOverviewRuler: false,
     renderMarginRevertIcon: false,
     renderIndicators: true,
@@ -163,7 +165,7 @@ export function createSearchViewer(el: HTMLElement, text: string, language: stri
 // ---------- inline comment threads (AF-6): view zones that host React content ----------
 
 /** A view zone after `afterLine` of `ed` hosting `node`. Monaco fixes a zone's own height, so `node` sits inside a wrapper and its content height is observed; the zone follows it. */
-function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLElement): () => void {
+function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLElement, opts: { ordinal?: number; marginClass?: string } = {}): () => void {
   const wrap = document.createElement("div");
   wrap.appendChild(node);
   // Monaco sizes a zone to the content's scroll width, so a long line made the card wider than the diff and hid its
@@ -176,10 +178,13 @@ function addZone(ed: monaco.editor.ICodeEditor, afterLine: number, node: HTMLEle
   fit();
   const subs = [ed.onDidLayoutChange(fit), ed.onDidScrollChange((e) => { if (e.scrollLeftChanged) fit(); })];
   let id = "";
+  // showInHiddenAreas: Monaco hides a zone whose NEXT line is hidden, so a thread or comment box on the last line above a collapsed
+  // run of unchanged lines (VW-12) vanished, and so did the expand row itself, whose next line always is.
   // suppressMouseDown must stay false: true makes Monaco preventDefault every mousedown in the zone, so the reply box
   // never took focus and dropdowns never opened (seen live in 0.25.0). With false Monaco ignores the zone entirely.
   // Don't stopPropagation on `wrap` either: React 16 handles events at document, so the card's own handlers would die.
-  const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: false };
+  const zone: monaco.editor.IViewZone = { afterLineNumber: afterLine, heightInPx: 120, domNode: wrap, suppressMouseDown: false, ordinal: opts.ordinal, showInHiddenAreas: true };
+  if (opts.marginClass) { const mg = document.createElement("div"); mg.className = opts.marginClass; zone.marginDomNode = mg; }
   ed.changeViewZones((a) => { id = a.addZone(zone); });
   const ro = new ResizeObserver(() => {
     const h = Math.ceil(node.getBoundingClientRect().height);
@@ -223,6 +228,81 @@ export function placeZones(target: ZoneTarget, plans: ZonePlan[]): () => void {
   return () => { off?.dispose(); removers.forEach((r) => r()); };
 }
 
+// ---------- expanding hidden context (VW-12): collapsed unchanged regions with an expand row ----------
+
+/** What one expand row shows and does. `run` applies an action (after the click's own event has finished). */
+export interface ContextRow {
+  hidden: number;
+  actions: ExpandAction[];
+  run: (action: ExpandAction) => void;
+}
+const HIDDEN_SOURCE = "gh-context";
+const ROW_ORDINAL = 1_000_000; // after any thread or composer zone on the same line: the row belongs to the gap below that line
+
+/**
+ * Collapses the diff's unchanged regions (context lines kept beside each change) and puts a row in each gap that reveals it.
+ * The row is a view zone in the modified editor, rendered by `render` (and torn down by `unrender`); the original editor gets a
+ * spacer of the same height, so side-by-side stays aligned. Regions are recomputed when the diff is (whitespace option, say).
+ * `onChange` hears whether anything is still hidden, for the card's Expand all / Collapse menu item.
+ */
+export function enableContextExpansion(ed: monaco.editor.IStandaloneDiffEditor, render: (node: HTMLElement, row: ContextRow) => void, unrender: (node: HTMLElement) => void, onChange?: (anyHidden: boolean, anyRegions: boolean) => void) {
+  const mod = ed.getModifiedEditor();
+  const orig = ed.getOriginalEditor();
+  let regions: UnchangedRegion[] = [];
+  let reveals: Reveal[] = [];
+  let removers: (() => void)[] = [];
+  let dead = false;
+  const clear = () => { removers.forEach((r) => r()); removers = []; };
+  const apply = () => {
+    clear();
+    const mh: monaco.Range[] = [], oh: monaco.Range[] = [];
+    regions.forEach((r, i) => {
+      const h = hiddenRange(r, reveals[i]);
+      if (!h) return;
+      mh.push(new monaco.Range(h.modified[0], 1, h.modified[1], 1));
+      oh.push(new monaco.Range(h.original[0], 1, h.original[1], 1));
+      const node = document.createElement("div");
+      node.className = "gh-context-zone";
+      render(node, {
+        hidden: hiddenCount(r, reveals[i]),
+        actions: expandActions(r, reveals[i]),
+        // Deferred: the row unmounts itself when the zones are rebuilt, which must not happen inside its own click.
+        run: (a) => setTimeout(() => { if (!dead) { reveals[i] = applyExpand(r, reveals[i], a); apply(); } }),
+      });
+      const spacer = document.createElement("div");
+      spacer.className = "gh-context-zone gh-context-spacer";
+      const opts = { ordinal: ROW_ORDINAL, marginClass: "gh-context-margin" };
+      removers.push(addZone(mod, h.modified[0] - 1, node, opts), () => unrender(node), addZone(orig, h.original[0] - 1, spacer, opts));
+    });
+    // setHiddenAreas takes a source, so these merge with anything else that hides lines (folding); not in the public typings.
+    (mod as any).setHiddenAreas(mh, HIDDEN_SOURCE);
+    (orig as any).setHiddenAreas(oh, HIDDEN_SOURCE);
+    onChange?.(mh.length > 0, regions.length > 0);
+  };
+  const compute = () => {
+    const changes = ed.getLineChanges();
+    const m = ed.getModel();
+    if (!changes || !m) return;
+    const next = unchangedRegions(changes, m.original.getLineCount(), m.modified.getLineCount());
+    if (JSON.stringify(next) === JSON.stringify(regions)) return; // same diff again: keep what the reader opened
+    regions = next;
+    reveals = regions.map(() => NOTHING_REVEALED);
+    apply();
+  };
+  const sub = ed.onDidUpdateDiff(compute);
+  compute();
+  return {
+    expandAll() { reveals = regions.map((r) => ({ top: 0, bottom: r.count })); apply(); },
+    collapse() { reveals = regions.map(() => NOTHING_REVEALED); apply(); },
+    dispose() {
+      dead = true;
+      sub.dispose();
+      clear();
+      try { (mod as any).setHiddenAreas([], HIDDEN_SOURCE); (orig as any).setHiddenAreas([], HIDDEN_SOURCE); } catch { /* the editor is already gone */ }
+    },
+  };
+}
+
 // ---------- commenting on lines (CM-1): the gutter "+", drag and shift-click ranges, and a keyboard shortcut ----------
 
 export interface LineSpan {
@@ -249,7 +329,7 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
   btn.type = "button";
   btn.className = "gh-add-comment";
   btn.textContent = "+";
-  btn.title = "Add a comment (drag or Shift-click for several lines)";
+  btn.title = "Add a comment (drag, Shift-click or select text for several lines)";
   btn.setAttribute("aria-label", "Add a comment on this line");
   btn.tabIndex = -1; // hover affordance for the mouse: the keyboard path is Ctrl+Alt+M in the editor
   btn.style.display = "none";
@@ -260,6 +340,10 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
   let last = 0;
   let dragging = false;
   let overButton = false;
+  // CM-6: text selected across several commentable lines; the "+" then waits beside its last line and comments on all of them.
+  let sel: LineSpan | null = null;
+  let gutterDown = false; // a press in the gutter selects whole lines too, but that path opens its own comment box
+  const TITLE = btn.title;
 
   const show = (l: number) => {
     line = l;
@@ -267,8 +351,15 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
     btn.style.top = `${ed.getTopForLineNumber(l) - ed.getScrollTop() + Math.max(0, (lh - BUTTON) / 2)}px`;
     btn.style.left = `${ed.getLayoutInfo().decorationsLeft + 1}px`;
     btn.style.display = "";
+    const forSel = !!sel && l === sel.endLine;
+    btn.title = forSel ? `Comment on lines ${sel!.startLine}–${sel!.endLine}` : TITLE;
+    btn.setAttribute("aria-label", forSel ? btn.title : "Add a comment on this line");
   };
-  const hide = () => { if (!dragging && !overButton) btn.style.display = "none"; };
+  const hide = () => {
+    if (dragging || overButton) return;
+    if (sel) show(sel.endLine);
+    else btn.style.display = "none";
+  };
   const mark = (span: LineSpan | null) => marker.set(span ? [{ range: new monaco.Range(Math.min(span.startLine, span.endLine), 1, Math.max(span.startLine, span.endLine), 1), options: { isWholeLine: true, className: "gh-comment-range" } }] : []);
   const lineAt = (e: { clientX: number; clientY: number }) => ed.getTargetAtClientPoint(e.clientX, e.clientY)?.position?.lineNumber ?? 0;
   const gutter = (t: monaco.editor.IMouseTarget) => t.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS || t.type === monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS || t.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN;
@@ -282,8 +373,20 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
     }),
     ed.onMouseLeave(() => hide()),
     ed.onDidScrollChange(() => { if (!dragging) btn.style.display = "none"; }),
+    ed.onDidChangeCursorSelection((e) => {
+      if (e.source !== "mouse" && e.source !== "keyboard") return;
+      if (gutterDown) { sel = null; return; }
+      const s = e.selection;
+      const end = s.endLineNumber > s.startLineNumber && s.endColumn === 1 ? s.endLineNumber - 1 : s.endLineNumber;
+      sel = end > s.startLineNumber && o.allow(side, s.startLineNumber) && o.allow(side, end) ? { side, startLine: s.startLineNumber, endLine: end } : null;
+      if (sel) show(sel.endLine);
+      else hide();
+    }),
     // a click on the line number itself is a click on the button; with Shift it extends from the last line
+    ed.onMouseUp(() => { gutterDown = false; }),
     ed.onMouseDown((e) => {
+      gutterDown = gutter(e.target);
+      if (gutterDown) sel = null;
       const l = e.target.position?.lineNumber;
       if (!l || !gutter(e.target) || !o.allow(side, l)) return;
       if (e.event.shiftKey && last) {
@@ -316,6 +419,15 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
   btn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (sel && line === sel.endLine && !e.shiftKey) {
+      const span = sel;
+      sel = null;
+      last = span.endLine;
+      mark(span);
+      o.onSelect(span);
+      hide();
+      return;
+    }
     anchor = e.shiftKey && last ? last : line;
     dragging = true;
     const move = (m: MouseEvent) => {
@@ -346,6 +458,15 @@ function lineComments(ed: monaco.editor.IStandaloneCodeEditor, side: "LEFT" | "R
       btn.remove();
     },
   };
+}
+
+/** CM-6: marks the lines existing multi-line threads cover (a bar in the gutter and a light tint), on the side each belongs to. Returns a way to remove them. */
+export function markThreadRanges(target: ZoneTarget, ranges: LineSpan[]): () => void {
+  const deco = (r: LineSpan): monaco.editor.IModelDeltaDecoration => ({ range: new monaco.Range(r.startLine, 1, r.endLine, 1), options: { isWholeLine: true, className: "gh-thread-range", linesDecorationsClassName: "gh-thread-range-gutter" } });
+  // The inline diff shows only the modified editor, so a LEFT range shows in side-by-side (and in a deleted file's single editor).
+  const parts: [monaco.editor.ICodeEditor, "LEFT" | "RIGHT"][] = target.kind === "whole" ? [[target.editor, target.side ?? "RIGHT"]] : [[target.editor.getModifiedEditor(), "RIGHT"], [target.editor.getOriginalEditor(), "LEFT"]];
+  const sets = parts.map(([ed, side]) => ed.createDecorationsCollection(ranges.filter((r) => r.side === side).map(deco)));
+  return () => sets.forEach((c) => c.clear());
 }
 
 /** Wires the gutter "+" into every editor of a diff (the original side only shows in side-by-side). Returns a way to mark the commented range and to undo it all. */

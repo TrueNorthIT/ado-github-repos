@@ -6,6 +6,7 @@ import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Link } from "azure-devops-ui/Link";
+import { MoreButton } from "azure-devops-ui/Menu";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { ListSelection } from "azure-devops-ui/List";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
@@ -40,9 +41,10 @@ import { InlineThreads } from "./Feed";
 import { ComposerRoot, SuggestionBar } from "./ReviewUi";
 import { fileTarget, isCommentable, toThreadTarget, type LineTarget } from "./lib/newThread";
 import { AnnotationZone } from "./AnnotationZone";
+import { ContextRow } from "./ContextRow";
 import { mapAnnotations, type AnnotationAnchor } from "./lib/annotations";
 import { useFeed } from "./feedStore";
-import { threadsByFile, type InlineAnchor } from "./lib/inlineThreads";
+import { threadRanges, threadsByFile, type InlineAnchor, type ThreadRange } from "./lib/inlineThreads";
 import type { ThreadItem } from "./lib/feedModel";
 import type { LineSpan, ZoneTarget } from "./monacoChunk";
 import "./browser.css";
@@ -54,6 +56,8 @@ const NO_IDS: string[] = [];
 const NO_FILE_THREADS = new Map<string, string[]>();
 const NO_COUNTS = new Map<string, number>();
 const NO_THREADS = new Map<string, InlineAnchor[]>();
+const NO_RANGES: ThreadRange[] = [];
+const NO_RANGE_MAP = new Map<string, ThreadRange[]>();
 
 /** CI-1: the head commit's check annotations placed on the PR's files. `urls` maps a check name to its details page. */
 export interface AnnotationsInfo {
@@ -112,9 +116,17 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
   return seen;
 }
 
+/** VW-12: a diff's collapsed unchanged regions, for the card's Expand all / Collapse menu item. */
+export interface ContextCtl {
+  expandAll(): void;
+  collapse(): void;
+  anyHidden: boolean;
+  anyRegions: boolean;
+}
+
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false, onContext, ranges = NO_RANGES }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; /** CM-6: lines covered by multi-line threads. */ ranges?: ThreadRange[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean; onContext?: (c: ContextCtl | null) => void }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -216,6 +228,16 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     return () => { dead = true; undo?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey and annotationKey stand for anchors and annotations
   }, [target, anchorKey, annotationKey, repo, pr.number, pr.baseRef]);
+  // CM-6: the lines each multi-line thread covers, marked in the gutter (the thread sits under the last of them).
+  const threadRangeKey = JSON.stringify(ranges);
+  React.useEffect(() => {
+    if (!target || !ranges.length) return;
+    let dead = false;
+    let undo: (() => void) | undefined;
+    void loadMonaco().then((m) => { if (!dead) undo = m.markThreadRanges(target, ranges.map((r) => ({ side: r.side, startLine: r.startLine, endLine: r.endLine }))); });
+    return () => { dead = true; undo?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- threadRangeKey stands for ranges
+  }, [target, threadRangeKey]);
   // The gutter "+": plain click, drag or Shift-click pick lines the patch allows, and open a composer under them.
   const commentable = commenting && !!file.patch && pr.number !== undefined;
   React.useEffect(() => {
@@ -261,6 +283,25 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     return () => { dead = true; if (undo) undo(); else ReactDOM.unmountComponentAtNode(node); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- composerKey stands for composer
   }, [target, composerKey, repo, pr.number]);
+  // VW-12: collapse the unchanged regions, with an expand row in each.
+  const onContextRef = React.useRef(onContext);
+  onContextRef.current = onContext;
+  React.useEffect(() => {
+    if (target?.kind !== "diff") return;
+    let dead = false;
+    let ctl: { expandAll(): void; collapse(): void; dispose(): void } | undefined;
+    const api = { expandAll: () => ctl?.expandAll(), collapse: () => ctl?.collapse() };
+    void loadMonaco().then((m) => {
+      if (dead) return;
+      ctl = m.enableContextExpansion(
+        target.editor,
+        (node, row) => ReactDOM.render(<ContextRow row={row} />, node),
+        (node) => ReactDOM.unmountComponentAtNode(node),
+        (anyHidden, anyRegions) => onContextRef.current?.({ ...api, anyHidden, anyRegions })
+      );
+    });
+    return () => { dead = true; ctl?.dispose(); onContextRef.current?.(null); };
+  }, [target]);
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
   // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
   React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
@@ -300,7 +341,7 @@ function ViewToggle({ views, view, setView, name }: { views: DiffView[]; view: D
   );
 }
 
-export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS, viewed, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[]; viewed?: ViewedCtl; ignoreWhitespace?: boolean }) {
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS, viewed, ignoreWhitespace = false, ranges }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; ranges?: ThreadRange[]; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[]; viewed?: ViewedCtl; ignoreWhitespace?: boolean }) {
   const href = useRepoHref();
   const [fileComment, setFileComment] = React.useState(false);
   const kind = richKind(file.path);
@@ -308,6 +349,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
   const views = kind ? diffViews(kind) : table ? TABLE_DIFF_VIEWS : null;
   const [view, setView] = React.useState<DiffView>(views?.default ?? "source");
   const [side, setSide] = React.useState<RenderedSide>("after");
+  const [context, setContext] = React.useState<ContextCtl | null>(null);
   const ws = whitespaceNotice(file.patch, ignoreWhitespace);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const target = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
@@ -338,6 +380,20 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
           {commenting && pr.number !== undefined && <Button subtle iconProps={{ iconName: "CommentAdd" }} text="Comment on file" ariaLabel={`Comment on ${file.path}`} ariaExpanded={fileComment} onClick={() => setFileComment(true)} />}
           <Button subtle iconProps={{ iconName: "OpenInNewTab" }} text="github.dev" tooltipProps={{ text: "Open this file in github.dev" }} ariaLabel={`Open ${file.path} in github.dev`} href={githubDevFileUrl(repo, target.ref, file.path)} target="_blank" rel="noopener noreferrer" />
           <Button text="View" ariaLabel={`View ${file.path}`} href={href(target)} onClick={openInRepos(target)} />
+          {context?.anyRegions && !collapsed && (
+            <MoreButton
+              className="gh-pr-file-more"
+              ariaLabel={`More actions for ${file.path}`}
+              contextualMenuProps={{
+                menuProps: {
+                  id: `gh-file-menu-${file.path}`,
+                  items: [context.anyHidden
+                    ? { id: "expand", text: "Expand all lines", iconProps: { iconName: "ChevronUnfold10" }, onActivate: () => context.expandAll() }
+                    : { id: "collapse", text: "Collapse unchanged lines", iconProps: { iconName: "ChevronFold10" }, onActivate: () => context.collapse() }],
+                },
+              }}
+            />
+          )}
         </div>
       )}
     >
@@ -350,7 +406,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
       {kind === "image" || (kind === "svg" && view === "rendered") ? <ImageDiff file={file} repo={repo} pr={pr} />
         : table && view === "rendered" ? <CsvDiff file={file} repo={repo} pr={pr} />
         : kind === "markdown" && view === "rendered" ? <RenderedMarkdown file={file} repo={repo} pr={pr} side={toggleRenderedSide(file.changeType, side)} />
-        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} />}
+        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} onContext={setContext} ranges={ranges} />}
     </Card>
   );
 }
@@ -423,7 +479,7 @@ export interface ViewedFilesCtl {
   onChange: (path: string, viewed: boolean) => void;
 }
 
-export function FilesView({ files: all, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS, viewed, ignoreWhitespace = false, treeFilter = false }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode | ((p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode); treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]>; viewed?: ViewedFilesCtl; ignoreWhitespace?: boolean; /** VW-5: a filter box and menu over the tree. */ treeFilter?: boolean }) {
+export function FilesView({ files: all, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS, viewed, ignoreWhitespace = false, treeFilter = false, ranges = NO_RANGE_MAP }: { /** CM-6: multi-line thread ranges per path. */ ranges?: Map<string, ThreadRange[]>; files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode | ((p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode); treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]>; viewed?: ViewedFilesCtl; ignoreWhitespace?: boolean; /** VW-5: a filter box and menu over the tree. */ treeFilter?: boolean }) {
   const [filter, setFilter] = React.useState<FileFilter>(EMPTY_FILE_FILTER);
   const files = React.useMemo(() => (treeFilter ? filterFiles(all, filter) : all), [all, filter, treeFilter]);
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
@@ -491,6 +547,7 @@ export function FilesView({ files: all, repo, ctx, selected, select, dark, sideB
                     commenting={commenting}
                     fileThreadIds={fileThreads.get(f.path)}
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
+                    ranges={ranges.get(f.path)}
                     annotations={annotations?.byFile.get(f.path)}
                     annotationUrls={annotations?.urls}
                     ignoreWhitespace={ignoreWhitespace}
@@ -528,6 +585,7 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
   const feed = useFeed(repo, number);
   const threads = React.useMemo(() => (whole ? feed.items.filter((i): i is ThreadItem => i.kind === "thread") : []), [feed.items, whole]);
   const anchors = React.useMemo(() => threadsByFile(threads), [threads]);
+  const ranges = React.useMemo(() => threadRanges(threads), [threads]);
   const threadCounts = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
@@ -553,7 +611,7 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
   }, [contexts, files, whole]);
   return (
     <FilesView
-      files={files} repo={repo} ctx={ctx} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
+      files={files} repo={repo} ctx={ctx} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} anchors={anchors} ranges={ranges} threadCounts={threadCounts} annotations={annotations}
       commenting={whole && feed.status === "ready" && !!feed.viewer.login} fileThreads={fileThreads} viewed={viewed} treeFilter
       bar={({ shown, progress }) => <>{bar({ shown, progress })}{whole && <SuggestionBar store={feed} />}</>}
     />

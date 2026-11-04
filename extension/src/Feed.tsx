@@ -12,6 +12,7 @@ import { VssPersona } from "azure-devops-ui/VssPersona";
 import { RelDate } from "./RelDate";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { commitUrl, shortSha } from "./lib/commits";
+import { linesLabel } from "./lib/inlineThreads";
 import { counts, filterFeed, type CommentItem, type EventItem, type EventType, type FeedComment, type FeedFilter, type ThreadItem } from "./lib/feedModel";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import { serialize, type BrowseState } from "./lib/browseState";
@@ -131,6 +132,8 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
   const { text, setText, submit } = useDraft((v) => store.reply(t.id, v));
   const who = React.useMemo(() => people(store), [store.items]); // eslint-disable-line react-hooks/exhaustive-deps
   const [first, ...replies] = t.comments;
+  // CM-6: in the diff a multi-line thread says which lines it covers, as native ADO does ("Lines 12–18").
+  const range = !t.outdated && t.line != null && t.startLine != null && t.startLine !== t.line;
   if (!first) return null;
   return (
     <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-thread" contentProps={{ contentPadding: false }}>
@@ -148,13 +151,14 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
           />
         </CommentHead>
         <div className="gh-feed-indent">
-          {(where || t.outdated) && (
+          {(where || t.outdated || range) && (
             <div className="gh-feed-where flex-row flex-center">
               {where && (
                 <Link className="gh-feed-file" href={where.href} onClick={hubClick(where.open)}>
-                  {t.path}{t.line ? `, line ${t.line}` : ""}
+                  {t.path}{t.line ? `, ${linesLabel(t)}` : ""}
                 </Link>
               )}
+              {!where && range && <span className="gh-feed-lines secondary-text">{linesLabel(t, true)}</span>}
               {t.outdated && <Pill size={PillSize.compact} variant={PillVariant.outlined}>Outdated</Pill>}
               {t.subjectType === "FILE" && <Pill size={PillSize.compact} variant={PillVariant.outlined}>File comment</Pill>}
             </div>
