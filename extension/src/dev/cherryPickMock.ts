@@ -3,6 +3,7 @@
 // Scenarios: "cherryPickConflict" (POST /merges answers 409), "readOnly" (no push permission: the menu items are disabled), "refsFail" (writes 403).
 // Only requests this module recognises are answered: trees it handed out, commits it made and tmp/ branches; the rest falls through to
 // writesMock (Delete folder) and the other mocks.
+import { restPull } from "./hoverMock";
 import { repoOf } from "./fixtures/repos";
 import { PRS, PR_REPO } from "./fixtures/prs";
 import { refsOf, resolve, type FCommit, type RepoRefs } from "./fixtures/refs";
@@ -41,7 +42,7 @@ export function cherryPickRest(full: string, rest: string, init: RequestInit | u
   if (pull && method === "GET" && full.toLowerCase() === PR_REPO) {
     const p = PRS.find((x) => x.node.number === Number(pull[1]));
     if (!p || p.node.state !== "MERGED") return undefined;
-    return json({ number: p.node.number, title: p.node.title, state: "closed", merged: true, merge_commit_sha: mergeCommitOf(rr, p.node.number).sha, base: { ref: p.node.baseRefName ?? "main" }, head: { ref: p.node.headRefName }, commits: 1 });
+    return json({ ...restPull(p), number: p.node.number, title: p.node.title, state: "closed", merged: true, merge_commit_sha: mergeCommitOf(rr, p.node.number).sha, base: { ref: p.node.baseRefName ?? "main" }, head: { ref: p.node.headRefName }, commits: 1 });
   }
 
   const ref = /^\/git\/ref\/heads\/(.+)$/.exec(rest);

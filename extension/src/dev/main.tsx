@@ -62,12 +62,15 @@ SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
 SCENARIOS.push("noEnvironments"); // Actions > Environments with none
 SCENARIOS.push("noVariablesPermission", "noSecretsPermission", "notAdmin", "manyVariables"); // batch K: Actions > Library without the app's Variables or Secrets permission, or as a non-admin
 SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", "forkDenied", "noForks"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
-SCENARIOS.push("rulesetsDenied", "rulesetsInvalid"); // batch J: an admin whose GitHub App may not write rulesets, and GitHub refusing the rules
+SCENARIOS.push("rulesetsDenied", "rulesetsInvalid");
+SCENARIOS.push("hoverFails"); // hover cards: the profile and pull request lookups fail (quiet error line) // batch J: an admin whose GitHub App may not write rulesets, and GitHub refusing the rules
 
 // `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
 // exactly that text). For screenshots of panels and menus that only open on a click (npm run shots). Before each click it waits (up to
 // 8 s) for the target to be present and enabled AND for the page to settle: no fetch in flight and no shimmer rows or spinners for
 // 300 ms. Otherwise a click can land before the data does (a branch's lock state arriving after its menu opened, say) and the shot flakes.
+// A `hover:` prefix (`hover:.gh-pr-ref`, `hover:text:AB#1000`) rests the pointer on the target instead (a mouseover with no relatedTarget, which
+// React turns into onMouseEnter), then waits out the hover card's delay and its lookup.
 const clicks = new URLSearchParams(location.search).get("click");
 if (clicks) {
   let inFlight = 0;
@@ -87,7 +90,9 @@ if (clicks) {
     return hit && (hit.closest("button") as HTMLButtonElement | null)?.disabled !== true && !hit.closest("[aria-disabled=true]") ? hit : null; // wait until it is enabled
   };
   (async () => {
-    for (const t of clicks.split("|")) {
+    for (const step of clicks.split("|")) {
+      const hover = step.startsWith("hover:");
+      const t = hover ? step.slice(6) : step;
       let el: HTMLElement | null = null;
       let quiet = 0;
       for (let i = 0; i < 80; i++) {
@@ -98,6 +103,13 @@ if (clicks) {
       }
       if (!el) return console.warn(`[mock click] not found: ${t}`);
       if (quiet < 3) console.warn(`[mock click] page still busy, clicking anyway: ${t}`);
+      if (hover) {
+        el.scrollIntoView({ block: "center" });
+        el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); // no relatedTarget: React 16 reads that as the pointer arriving from outside
+        for (let a: HTMLElement | null = el; a; a = a.parentElement) a.dispatchEvent(new MouseEvent("mouseenter")); // as a browser does, for native listeners
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
       el.click();
       await new Promise((r) => setTimeout(r, 400));
     }

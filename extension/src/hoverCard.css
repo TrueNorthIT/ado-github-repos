@@ -1,0 +1,21 @@
+/* Hover cards (HoverCard.tsx). The frame and the person card use azure-devops-ui's IdentityCard classes; this only lays out the PR and
+   work item cards in the same frame and sizes the shimmer. */
+.gh-hover-anchor { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; gap: inherit; } /* gap: a wrapped avatar and name keep their row's spacing */
+.gh-hover-card { width: 360px; max-width: calc(100vw - 32px); }
+.gh-hover-body { padding: 16px 20px; gap: 6px; }
+.gh-hover-gap { gap: 6px; }
+.gh-hover-min0 { min-width: 0; }
+.gh-hover-title { word-break: break-word; }
+.gh-hover-title .bolt-link { color: inherit; }
+.gh-hover-branch { font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; max-width: 140px; }
+.gh-hover-label { flex: 0 0 80px; }
+.gh-hover-bio { padding: 12px 20px 0; word-break: break-word; }
+.gh-hover-quiet { padding: 12px 20px; }
+.gh-hover-wi-icon { width: 16px; height: 16px; flex: none; }
+.gh-hover-wi-dot { border-radius: 2px; background: rgba(var(--palette-neutral-30, 136, 136, 136), 1); }
+.gh-hover-shimmer-persona { width: 72px; height: 72px; border-radius: 50%; flex: none; margin-right: 12px; animation-name: shimmer-thin; }
+.gh-hover-shimmer-lines { gap: 8px; padding-top: 6px; }
+.gh-hover-shimmer-lines .shimmer-line { height: 12px; }
+.gh-hover-shimmer-lines .gh-hover-shimmer-title { height: 18px; width: 70%; }
+.gh-hover-shimmer-lines .gh-hover-shimmer-short { width: 45%; }
+body.gh-hover-on-anchor .bolt-tooltip-portal { display: none; }

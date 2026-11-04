@@ -3,6 +3,7 @@ import { PermissionError, get, getProjectCtx, patch, post } from "./connections"
 import { completeWorkItemPatch, completeWorkItemUrl, planCompletion, workItemStatesUrl, type WorkItemStatesResponse } from "./lib/completeWorkItems";
 import { parseWiqlIds, parseWorkItemId, wiqlTitleQuery, wiqlUrl } from "./lib/workItemSearch";
 import { parseWorkItems, workItemsUrl, workItemUrl, type WorkItemRef } from "./lib/workItems";
+import { toWorkItemCard, workItemCardUrl, type WorkItemCard } from "./lib/hoverCard";
 
 export interface WorkItemType { color?: string; iconUrl?: string }
 export interface WorkItemsResult { items: WorkItemRef[]; types: Record<string, WorkItemType>; url: (id: number) => string }
@@ -51,4 +52,21 @@ export async function searchWorkItems(text: string): Promise<WorkItemRef[]> {
   const ids = id ? [id] : text.trim() ? parseWiqlIds(await post(wiqlUrl(org, project, SEARCH_TOP), wiqlTitleQuery(text))) : [];
   if (!ids.length) return [];
   return parseWorkItems(ids, await get<{ value?: never[] }>(workItemsUrl(org, ids))).filter((w) => w.found);
+}
+
+// Hover cards: one item with the card's fields (assigned to, area, iteration), cached for the session; a failure is retried next time.
+const cards = new Map<number, Promise<{ item: WorkItemCard | null; type?: WorkItemType; url: string }>>();
+export function fetchWorkItemCard(id: number): Promise<{ item: WorkItemCard | null; type?: WorkItemType; url: string }> {
+  let p = cards.get(id);
+  if (!p) {
+    p = (async () => {
+      const { org, project } = await getProjectCtx();
+      const [body, t] = await Promise.all([get<{ value?: never[] }>(workItemCardUrl(org, id)), loadTypes(org, project)]);
+      const item = toWorkItemCard(id, body);
+      return { item, type: item?.type ? t[item.type] : undefined, url: workItemUrl(org, project, id) };
+    })();
+    p.catch(() => cards.delete(id));
+    cards.set(id, p);
+  }
+  return p;
 }
