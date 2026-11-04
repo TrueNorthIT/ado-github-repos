@@ -1190,7 +1190,7 @@ export const getLockedBranches = (repo: string): Promise<Set<string>> =>
 
 // ---------- Batch I: cherry-pick and revert (REST Git data + merges; lib/cherryPick.ts) ----------
 import {
-  MAX_REBASE_WALK, PickError, canPushRequest, gitCommitRequest, prLanding, prPickMessage, pullCommitsRequest, pullRestRequest, runPick, toGitCommit,
+  MAX_PR_COMMITS_LISTED, MAX_REBASE_WALK, PickError, canPushRequest, gitCommitRequest, prLanding, prPickMessage, pullCommitsRequest, pullRestRequest, runPick, toGitCommit,
   type GitCommit, type GitPerson, type PickRun,
 } from "./lib/cherryPick";
 
@@ -1212,8 +1212,9 @@ export async function getPrPickSource(repo: string, number: number): Promise<{ t
   const m = await getGitCommit(repo, pull.merge_commit_sha);
   const count = pull.commits ?? 1;
   let last: string | undefined;
-  if (m.parents.length === 1 && count > 1 && count <= 100) {
-    const list = await restSend<{ commit: { message: string } }[]>(pullCommitsRequest(repo, number));
+  if (m.parents.length === 1 && count > 1 && count <= MAX_PR_COMMITS_LISTED) {
+    // The last page: a rebase of more than 100 commits must still be recognised (and refused below), not mistaken for a squash.
+    const list = await restSend<{ commit: { message: string } }[]>(pullCommitsRequest(repo, number, count));
     last = list[list.length - 1]?.commit.message;
   }
   const landing = prLanding(m, count, last);

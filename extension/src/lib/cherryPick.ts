@@ -111,7 +111,11 @@ export function deleteTempRefRequest(repo: string, branch: string): RestRequest 
 }
 export const mergeRequest = (repo: string, base: string, head: string, message: string): RestRequest => ({ method: "POST", path: `/repos/${repo}/merges`, body: { base, head, commit_message: message } });
 export const pullRestRequest = (repo: string, number: number): RestRequest => ({ method: "GET", path: `/repos/${repo}/pulls/${number}` });
-export const pullCommitsRequest = (repo: string, number: number): RestRequest => ({ method: "GET", path: `/repos/${repo}/pulls/${number}/commits?per_page=100` });
+/** GitHub lists at most this many of a pull request's commits (pages of 100). */
+export const MAX_PR_COMMITS_LISTED = 250;
+/** The page of GET /pulls/{n}/commits that holds the LAST of `count` commits (pages of 100, oldest first), so its final entry is the PR's last commit. */
+export const pullCommitsRequest = (repo: string, number: number, count = 1): RestRequest =>
+  ({ method: "GET", path: `/repos/${repo}/pulls/${number}/commits?per_page=100&page=${Math.max(1, Math.ceil(Math.min(count, MAX_PR_COMMITS_LISTED) / 100))}` });
 export const canPushRequest = (repo: string): RestRequest => ({ method: "GET", path: `/repos/${repo}` });
 
 // ---------- running it ----------
