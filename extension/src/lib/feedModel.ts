@@ -29,7 +29,10 @@ export interface ReviewThreadNode {
   line: number | null;
   originalLine: number | null;
   startLine: number | null;
+  originalStartLine?: number | null;
   diffSide: "LEFT" | "RIGHT";
+  /** Side of startLine; null for a one-line thread. */
+  startDiffSide?: "LEFT" | "RIGHT" | null;
   /** FILE for a whole-file comment (no line or side). Absent means LINE. */
   subjectType?: "LINE" | "FILE";
   comments: { nodes: (ReviewThreadCommentNode | null)[] };
@@ -64,7 +67,12 @@ export interface ThreadItem {
   /** End line of the thread (GitHub's `line`); null when the thread no longer maps onto the current diff. */
   line: number | null;
   startLine: number | null;
+  /** Where the thread was written (GitHub's originalLine, originalStartLine): what an outdated thread's diff hunk ends at. */
+  originalLine?: number | null;
+  originalStartLine?: number | null;
   side: "LEFT" | "RIGHT";
+  /** Side of startLine when GitHub gives it. */
+  startSide?: "LEFT" | "RIGHT" | null;
   /** Only set for a whole-file thread, which has no line and is not outdated. */
   subjectType?: "FILE";
   /** First comment then replies, chronological. */
@@ -212,7 +220,7 @@ export function toFeed(timeline: (TimelineNode | null)[], threads: (ReviewThread
     if (!comments.length) continue;
     items.push({
       kind: "thread", id: t.id, status: t.isResolved ? "resolved" : "active", outdated: t.isOutdated || (t.line == null && t.subjectType !== "FILE"), ...(t.subjectType === "FILE" ? { subjectType: "FILE" as const } : {}),
-      path: t.path, line: t.line, startLine: t.startLine, side: t.diffSide, comments, date: comments[0].date, lastActivity: comments[comments.length - 1].date,
+      path: t.path, line: t.line, startLine: t.startLine, originalLine: t.originalLine, originalStartLine: t.originalStartLine ?? null, side: t.diffSide, startSide: t.startDiffSide ?? null, comments, date: comments[0].date, lastActivity: comments[comments.length - 1].date,
     });
   }
   items.sort((a, b) => ms(b.date) - ms(a.date));

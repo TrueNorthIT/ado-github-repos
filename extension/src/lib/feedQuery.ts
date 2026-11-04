@@ -11,7 +11,7 @@ export interface FeedParams {
 }
 
 /** One review thread as the feed reads it; addPullRequestReviewThread selects the same shape so a new thread renders unchanged. */
-export const THREAD_FIELDS = `id isResolved isOutdated path line originalLine startLine diffSide subjectType
+export const THREAD_FIELDS = `id isResolved isOutdated path line originalLine startLine originalStartLine diffSide startDiffSide subjectType
           comments(first: 100) {
             nodes { id databaseId author { login avatarUrl } bodyHTML body createdAt url replyTo { id } state diffHunk }
           }`;

@@ -13,6 +13,7 @@ import { RelDate } from "./RelDate";
 import { parseColor } from "azure-devops-ui/Utilities/Color";
 import { commitUrl, shortSha } from "./lib/commits";
 import { linesLabel } from "./lib/inlineThreads";
+import { hunkContext } from "./lib/hunkContext";
 import { counts, filterFeed, type CommentItem, type EventItem, type EventType, type FeedComment, type FeedFilter, type ThreadItem } from "./lib/feedModel";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import { serialize, type BrowseState } from "./lib/browseState";
@@ -111,6 +112,38 @@ function CommentContent({ store, c, t, repo, baseRef }: { store: FeedStore; c: F
   );
 }
 
+const MARK = { add: "+", del: "-", context: " " } as const;
+const SPOKEN = { add: "Added: ", del: "Deleted: ", context: "" } as const;
+
+/**
+ * The code a thread was written on, above its first comment, as native ADO and GitHub show it in the overview: the end of the comment's diff hunk.
+ * Hand-rolled table (like the Advanced Security snippet and the suggestion diff): no azure-devops-ui component renders a few diff lines, and a Monaco per thread is too heavy for a feed.
+ */
+function CodeContext({ t }: { t: ThreadItem }) {
+  const hunk = t.comments[0]?.diffHunk;
+  // The hunk is numbered as the code was when the comment was written, so the original lines locate it (they equal line and startLine until the code moves).
+  const rows = React.useMemo(
+    () => hunkContext(hunk, { line: t.originalLine ?? t.line, side: t.side, startLine: t.originalStartLine ?? t.startLine, startSide: t.startSide }),
+    [hunk, t.originalLine, t.line, t.side, t.originalStartLine, t.startLine, t.startSide]
+  );
+  if (!rows.length) return null;
+  return (
+    <div className="gh-feed-code">
+      <table className="gh-sec-snippet" aria-label={`Code at ${t.path}`}>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className={`gh-feed-code-${r.kind}`}>
+              <td className="gh-sec-ln" aria-hidden="true">{r.oldLine ?? ""}</td>
+              <td className="gh-sec-ln" aria-hidden="true">{r.newLine ?? ""}</td>
+              <td className="gh-sec-code"><code><span className="gh-feed-code-mark" aria-hidden="true">{MARK[r.kind]}</span><span className="gh-sr-only">{SPOKEN[r.kind]}</span>{r.text || " "}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const CopyLink = ({ url }: { url: string }) => (
   <Button subtle iconProps={{ iconName: "Link" }} ariaLabel="Copy link to comment" tooltipProps={{ text: "Copy link to comment" }} disabled={!url} onClick={() => void copyLink(url)} />
 );
@@ -163,6 +196,7 @@ export function ThreadCard({ store, thread: t, repo, baseRef, where }: ThreadCar
               {t.subjectType === "FILE" && <Pill size={PillSize.compact} variant={PillVariant.outlined}>File comment</Pill>}
             </div>
           )}
+          {where && <CodeContext t={t} />}
           <CommentContent store={store} c={first} t={t} repo={repo} baseRef={baseRef} />
         </div>
       </div>

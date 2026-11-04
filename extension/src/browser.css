@@ -249,6 +249,13 @@
 .gh-feed-reply .gh-feed-head { padding-top: 16px; }
 .gh-feed-where { gap: 8px; margin-bottom: 8px; }
 .gh-feed-file { word-break: break-all; }
+/* the thread's code, above its first comment: the Security snippet's table, tinted like the suggestion diff, in a scroller so long lines don't widen the card */
+.gh-feed-code { overflow-x: auto; margin-bottom: 12px; }
+.gh-feed-code .gh-sec-snippet { width: 100%; min-width: max-content; }
+.gh-feed-code .gh-sec-code { width: 100%; }
+.gh-feed-code-add td { background: rgba(26, 127, 55, .18); }
+.gh-feed-code-del td { background: rgba(207, 34, 46, .16); }
+.gh-feed-code-mark { display: inline-block; width: 16px; user-select: none; }
 .gh-feed-body .gh-markdown { margin: 0; padding: 0; line-height: 1.5; }
 .gh-feed-body .gh-markdown > :first-child { margin-top: 0; }
 .gh-feed-body .gh-markdown > :last-child { margin-bottom: 0; }

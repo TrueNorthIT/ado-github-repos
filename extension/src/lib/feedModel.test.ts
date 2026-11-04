@@ -428,3 +428,10 @@ describe("AF-1: filter and counts", () => {
     expect([filterFeed(all, "comments").length, filterFeed(all, "events").length], "Expected each filter to show as many items as its count").toEqual([counts(all).comments, counts(all).events]);
   });
 });
+
+describe("threads carry where they were written", () => {
+  it("keeps originalLine, originalStartLine and the start side", () => {
+    const [t] = only<ThreadItem>(feed([], [thread("t", [tComment("a", "ann", at("10:00"))], { line: null, isOutdated: true, originalLine: 30, originalStartLine: 28, startDiffSide: "LEFT" } as Partial<ReviewThreadNode>)]), "thread");
+    expect([t.originalLine, t.originalStartLine, t.startSide, t.outdated]).toEqual([30, 28, "LEFT", true]);
+  });
+});

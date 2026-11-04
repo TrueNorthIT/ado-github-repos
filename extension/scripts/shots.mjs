@@ -74,6 +74,8 @@ const MOCK_PAGES = {
   prs: `?hub=prs${REPO}&view=prs`,
   "pr-200": `?hub=prs${REPO}&view=prs&pr=200`,
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
+  // The code above each review thread in the Overview feed: a range, a LEFT-side line, an outdated one.
+  "pr-200-threads": `?hub=prs&click=${encodeURIComponent('scroll:[aria-label="Code at src/lib/names.ts"]')}${REPO}&view=prs&pr=200`,
   // VW-12: collapsed unchanged lines with their expand rows, inline and side by side, and after "Show 20 more below".
   "pr-diff-expand": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts`,
   "pr-diff-expand-sbs": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts&sbs=1`,

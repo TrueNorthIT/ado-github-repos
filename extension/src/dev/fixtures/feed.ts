@@ -85,7 +85,8 @@ await sleep(wait);</code></pre>
     },
     {
       id: "PRRT_3", isResolved: false, isOutdated: true, path: "src/util/greet.ts", line: null, originalLine: 40, startLine: null, diffSide: "RIGHT",
-      comments: { nodes: [tComment(200, "RC_7", "carol", 25, "<p>This helper has since moved, but is it still needed at all?</p>")] },
+      // Outdated: GitHub keeps the hunk as it was when the comment was written, numbered by originalLine (40), which no longer maps onto the diff.
+      comments: { nodes: [{ ...tComment(200, "RC_7", "carol", 25, "<p>This helper has since moved, but is it still needed at all?</p>"), diffHunk: ["@@ -36,2 +36,5 @@ export function greet(name: string) {", " }", " ", "+// Formats a name for display.", "+export const display = (n: string) => n.trim();","+export const helper = () => display(\"x\");"].join("\n") }] },
     },
     // CM-6: a thread on a range of lines (13-15 of the renamed names.ts), shown with the range marked and "Lines 13–15".
     {
