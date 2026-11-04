@@ -678,11 +678,9 @@
 /* The branch picker on the title row, after the repo switcher (Commits, Pushes). */
 .bolt-header-title-area > .gh-title-branch { flex: 0 1 auto; min-width: 0; margin-left: -4px; }
 
-/* Files: the Clone callout (native Repos: a 400px callout with the protocol tabs, the URL and its copy button, then the IDE row). */
-.gh-clone-callout { width: 400px; padding: 16px 20px 20px; gap: 12px; }
-.gh-clone-title { font-weight: 600; }
-.gh-clone-row { gap: 4px; }
-.gh-clone-ide { gap: 8px; align-items: flex-start; }
+/* Files: the Clone panel (measured on native Repos: protocol buttons 4px before the URL, "Learn more" 16px below the row). */
+.gh-clone-protocols { margin-right: 4px; flex: none; }
+.gh-clone-learn { margin-top: 16px; align-self: flex-start; }
 /* Files: lines opened from a link (line / lineEnd in the hash), tinted with a bar in the gutter. */
 .monaco-editor .gh-line-linked { background: rgba(var(--palette-primary, 0, 120, 212), 0.12); }
 .monaco-editor .gh-line-linked-gutter { border-left: 3px solid rgba(var(--palette-primary, 0, 120, 212), 1); }
