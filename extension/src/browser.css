@@ -712,3 +712,10 @@
 .gh-lib-lock { margin-left: 6px; font-size: 12px; }
 .gh-lib-group .bolt-card-expandable-header { flex-grow: 1; min-width: 0; } /* a collapsible Card wraps its header in a plain flex-row, so the command bar would sit beside the title rather than at the right */
 .gh-lib-editor { width: 100%; }
+/* VW-12: the expand row in a collapsed run of unchanged lines, and its spacer on the other side of a side-by-side diff. The gutter beside it takes the same tint. */
+.gh-context-zone, .monaco-editor .gh-context-margin { height: 28px; box-sizing: border-box; background: rgba(var(--palette-neutral-4, 244, 244, 244), 1); border-top: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); border-bottom: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); }
+.monaco-editor .gh-context-margin { width: 100%; }
+.gh-context-row { height: 100%; padding: 0 4px; gap: 4px; cursor: default; overflow: hidden; white-space: nowrap; }
+.gh-context-row-one { cursor: pointer; }
+.gh-context-row .gh-context-action.bolt-button { height: 24px; padding: 0 8px; font-size: 12px; }
+.gh-context-count { margin-left: 8px; }

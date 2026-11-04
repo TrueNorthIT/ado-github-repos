@@ -6,6 +6,7 @@ import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Link } from "azure-devops-ui/Link";
+import { MoreButton } from "azure-devops-ui/Menu";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { ListSelection } from "azure-devops-ui/List";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
@@ -38,6 +39,7 @@ import { InlineThreads } from "./Feed";
 import { ComposerRoot, SuggestionBar } from "./ReviewUi";
 import { fileTarget, isCommentable, toThreadTarget, type LineTarget } from "./lib/newThread";
 import { AnnotationZone } from "./AnnotationZone";
+import { ContextRow } from "./ContextRow";
 import { mapAnnotations, type AnnotationAnchor } from "./lib/annotations";
 import { useFeed } from "./feedStore";
 import { threadsByFile, type InlineAnchor } from "./lib/inlineThreads";
@@ -110,9 +112,17 @@ function useSeen(ref: React.RefObject<HTMLElement>) {
   return seen;
 }
 
+/** VW-12: a diff's collapsed unchanged regions, for the card's Expand all / Collapse menu item. */
+export interface ContextCtl {
+  expandAll(): void;
+  collapse(): void;
+  anyHidden: boolean;
+  anyRegions: boolean;
+}
+
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false, onContext }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean; onContext?: (c: ContextCtl | null) => void }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -259,6 +269,25 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     return () => { dead = true; if (undo) undo(); else ReactDOM.unmountComponentAtNode(node); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- composerKey stands for composer
   }, [target, composerKey, repo, pr.number]);
+  // VW-12: collapse the unchanged regions, with an expand row in each.
+  const onContextRef = React.useRef(onContext);
+  onContextRef.current = onContext;
+  React.useEffect(() => {
+    if (target?.kind !== "diff") return;
+    let dead = false;
+    let ctl: { expandAll(): void; collapse(): void; dispose(): void } | undefined;
+    const api = { expandAll: () => ctl?.expandAll(), collapse: () => ctl?.collapse() };
+    void loadMonaco().then((m) => {
+      if (dead) return;
+      ctl = m.enableContextExpansion(
+        target.editor,
+        (node, row) => ReactDOM.render(<ContextRow row={row} />, node),
+        (node) => ReactDOM.unmountComponentAtNode(node),
+        (anyHidden, anyRegions) => onContextRef.current?.({ ...api, anyHidden, anyRegions })
+      );
+    });
+    return () => { dead = true; ctl?.dispose(); onContextRef.current?.(null); };
+  }, [target]);
   React.useEffect(() => { void loadMonaco().then((m) => handle.current && m.setTheme(dark)); }, [dark]);
   // Flip the layout in place: no refetch, and the editor keeps its collapsed regions.
   React.useEffect(() => { if (target?.kind === "diff") target.editor.updateOptions({ renderSideBySide: sideBySide }); }, [target, sideBySide]);
@@ -305,6 +334,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
   const views = kind ? diffViews(kind) : null;
   const [view, setView] = React.useState<DiffView>(views?.default ?? "source");
   const [side, setSide] = React.useState<RenderedSide>("after");
+  const [context, setContext] = React.useState<ContextCtl | null>(null);
   const ws = whitespaceNotice(file.patch, ignoreWhitespace);
   const name = file.path.slice(file.path.lastIndexOf("/") + 1);
   const target = { repo, ref: (file.changeType === "DELETED" ? pr.baseSha : pr.headSha) ?? pr.headSha, path: file.path };
@@ -335,6 +365,20 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
           {commenting && pr.number !== undefined && <Button subtle iconProps={{ iconName: "CommentAdd" }} text="Comment on file" ariaLabel={`Comment on ${file.path}`} ariaExpanded={fileComment} onClick={() => setFileComment(true)} />}
           <Button subtle iconProps={{ iconName: "OpenInNewTab" }} text="github.dev" tooltipProps={{ text: "Open this file in github.dev" }} ariaLabel={`Open ${file.path} in github.dev`} href={githubDevFileUrl(repo, target.ref, file.path)} target="_blank" rel="noopener noreferrer" />
           <Button text="View" ariaLabel={`View ${file.path}`} href={href(target)} onClick={openInRepos(target)} />
+          {context?.anyRegions && !collapsed && (
+            <MoreButton
+              className="gh-pr-file-more"
+              ariaLabel={`More actions for ${file.path}`}
+              contextualMenuProps={{
+                menuProps: {
+                  id: `gh-file-menu-${file.path}`,
+                  items: [context.anyHidden
+                    ? { id: "expand", text: "Expand all lines", iconProps: { iconName: "ChevronUnfold10" }, onActivate: () => context.expandAll() }
+                    : { id: "collapse", text: "Collapse unchanged lines", iconProps: { iconName: "ChevronFold10" }, onActivate: () => context.collapse() }],
+                },
+              }}
+            />
+          )}
         </div>
       )}
     >
@@ -346,7 +390,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
       )}
       {kind === "image" || (kind === "svg" && view === "rendered") ? <ImageDiff file={file} repo={repo} pr={pr} />
         : kind === "markdown" && view === "rendered" ? <RenderedMarkdown file={file} repo={repo} pr={pr} side={toggleRenderedSide(file.changeType, side)} />
-        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} />}
+        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} onContext={setContext} />}
     </Card>
   );
 }

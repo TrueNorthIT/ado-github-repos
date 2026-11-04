@@ -61,6 +61,10 @@ const MOCK_PAGES = {
   prs: `?hub=prs${REPO}&view=prs`,
   "pr-200": `?hub=prs${REPO}&view=prs&pr=200`,
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
+  // VW-12: collapsed unchanged lines with their expand rows, inline and side by side, and after "Show 20 more below".
+  "pr-diff-expand": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts`,
+  "pr-diff-expand-sbs": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts&sbs=1`,
+  "pr-diff-expand-more": `?hub=prs&click=${encodeURIComponent("text:Show 20 more below|scroll:text:Show all 29 lines")}${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts`,
   // Image diff modes on a modified PNG (size change, transparency) and SVG; ?click= picks a mode, which then applies to every image on the page.
   "pr-image-2up": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
   "pr-image-onion": `?hub=prs&click=${encodeURIComponent('[aria-label="Onion skin comparison of logo.png"]')}${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
