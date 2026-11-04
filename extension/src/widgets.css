@@ -1,12 +1,12 @@
-/* Dashboard widgets. The chrome follows native widgets: a 16px/600 title with 10px padding (figures from the native dashboard,
-   given with the brief; dashboards need a signed-in ADO session, so not re-measured from here). Everything inside is azure-devops-ui,
+/* Dashboard widgets. The chrome follows native widgets, measured on a public dnceng-public dashboard (Build history and
+   Build Health widgets, 2026-11-04): the title is an h2 at 16px/400, 10px from the top and 14px from the sides. Everything inside is azure-devops-ui,
    except the Actions history bars, which no component draws. */
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 .gh-widget { height: 100%; box-sizing: border-box; min-width: 0; background: var(--callout-background-color, rgba(255, 255, 255, 1)); }
-.gh-widget-title { margin: 0; padding: 10px 10px 0; line-height: 22px; flex: 0 0 auto; }
-.gh-widget-subtitle { padding: 0 10px; line-height: 18px; flex: 0 0 auto; }
-.gh-widget-body { min-height: 0; padding: 8px 10px 10px; }
-.gh-widget-scroll { min-height: 0; overflow: auto; margin: 0 -10px -10px; }
+.gh-widget-title { margin: 0; padding: 10px 14px 0; line-height: 22px; flex: 0 0 auto; }
+.gh-widget-subtitle { padding: 0 14px; line-height: 18px; flex: 0 0 auto; }
+.gh-widget-body { min-height: 0; padding: 8px 14px 10px; }
+.gh-widget-scroll { min-height: 0; overflow: auto; margin: 0 -14px -10px; }
 .gh-widget-scroll .bolt-table { background: transparent; }
 .gh-widget-pr-line1 { min-width: 0; gap: 6px; }
 .gh-widget .bolt-link { padding: 0; } /* Link pads itself sideways; in running text and table lines it should sit flush, as in the PR list */
