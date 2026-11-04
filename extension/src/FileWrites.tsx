@@ -24,6 +24,7 @@ import {
 } from "./lib/fileCommit";
 import { monacoLanguage } from "./lib/fileKind";
 import { needsFolderFetch, type GitTree } from "./lib/tree";
+import { isWorkflowPermissionError, WORKFLOW_PERMISSION_TEXT } from "./lib/workflowWrite";
 
 // ---------- the write ----------
 
@@ -36,6 +37,7 @@ export async function runCommit(p: { repo: string; repoId: string; plan: CommitP
     await mutate(commitOnBranchMutation({ repo: p.repo, branch: p.plan.branch, expectedHeadOid: p.plan.expectedHeadOid, message: p.message, changes: p.changes }));
   } catch (e) {
     if (e instanceof GhError && isStaleHeadError(e.detail)) throw new RefWriteError(STALE_TEXT);
+    if (e instanceof GhError && isWorkflowPermissionError({ status: e.status, message: e.detail ?? e.apiMessage }, [...p.changes.additions, ...p.changes.deletions].map((c) => c.path))) throw new RefWriteError(WORKFLOW_PERMISSION_TEXT);
     if (p.plan.createFrom) throw new RefWriteError(`Created the branch ${p.plan.branch}, but the commit failed. ${actionErrorText(e)}`);
     throw e;
   } finally {
@@ -63,6 +65,7 @@ export async function runFolderDelete(p: { repo: string; tree: GitTree; folder: 
     await restSend(p.plan.createFrom ? createRefRequest(p.repo, p.plan.branch, commit.sha) : updateRefRequest(p.repo, p.plan.branch, commit.sha));
   } catch (e) {
     if (e instanceof GhError && e.status === 422 && isNotFastForward(e.apiMessage)) throw new RefWriteError(STALE_TEXT);
+    if (e instanceof GhError && isWorkflowPermissionError({ status: e.status, message: e.apiMessage ?? e.detail }, entries.map((x) => x.path))) throw new RefWriteError(WORKFLOW_PERMISSION_TEXT);
     if (e instanceof GhError && e.status === 422 && p.plan.createFrom) throw new RefWriteError(`Could not create the branch ${p.plan.branch}: ${e.apiMessage ?? "GitHub refused it"}.`);
     throw e;
   } finally {

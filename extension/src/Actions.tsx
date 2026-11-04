@@ -30,7 +30,9 @@ import { RelDate } from "./RelDate";
 import { DeleteRunDialog, RunStatusIcon, writeError, type DeleteTarget } from "./ActionsUi";
 import { RunPage } from "./ActionsRun";
 import { EnvironmentsTab, isEnvironmentPage } from "./ActionsEnvironments";
-import { gotoHash, patchHash, useHashExtras } from "./hostNav";
+import { gotoHash, openHub, patchHash, useHashExtras } from "./hostNav";
+import { applyEditFlag } from "./lib/editHash";
+import { serialize } from "./lib/browseState";
 import { GhError, listBranches } from "./githubBrowse";
 import { dispatchWorkflow, getDispatchInputs, getRepoAccess, getScheduleCrons, listEnvironments, listRuns, listWorkflows, setWorkflowEnabled, useCanWriteActions } from "./actionsApi";
 import { nextScheduledRuns, timeUntil, type ScheduledRun } from "./lib/cron";
@@ -50,6 +52,9 @@ import {
 import "./browser.css";
 
 type Goto = (s: Omit<ActionsHashState, "repo">, replace?: boolean) => void;
+
+/** The Files hub at a workflow file with its editor open (lib/editHash.ts). */
+const editWorkflowHash = (repo: string, branch: string, path: string) => applyEditFlag(serialize({ repo, ref: branch, path }), true);
 
 const TABS: { id: ActTab; name: string }[] = [
   { id: "recent", name: "Recent" },
@@ -653,6 +658,8 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       titleAriaLevel={1}
       backButtonProps={{ ariaLabel: "All workflows", onClick: () => goto({}) }}
       commandBarItems={[
+        // Native Pipelines: "Edit" beside "Run pipeline" opens the YAML editor. Ours is the Files hub's editor, on the default branch.
+        ...(wf && info?.canWrite ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, onActivate: () => void openHub("files", editWorkflowHash(repo, info.defaultBranch, wf.path)) }] : []),
         ...(info?.inputs && !wf?.disabled ? [{ id: "run", text: "Run workflow", isPrimary: true, important: true, iconProps: { iconName: "Play" }, onActivate: () => setPanel(true) }] : []),
         ...(wf ? [{ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: wf.htmlUrl, target: "_blank", important: true }] : []),
         // Native Pipelines keeps Disable/Enable and Scheduled runs in the pipeline's "..." menu.
