@@ -117,6 +117,10 @@ const MOCK_PAGES = {
   "actions-library-add": `?hub=actions&click=${encodeURIComponent("text:Add variable|input[aria-label=Name]|.bolt-panel button.primary")}${REPO}&view=actions&actTab=library`,
   "actions-env-staging": `?hub=actions${REPO}&view=actions&actTab=environments&actEnv=staging`,
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
+  // One alert of each kind: the Details grid, the back button. 136 is a dismissed Dependabot alert with a comment, secret 5 a resolved one.
+  "security-alert-dependabot": `?hub=security${REPO}&view=security&secTab=dependencies&alert=136&secState=dismissed`,
+  "security-alert-code": `?hub=security${REPO}&view=security&secTab=code&alert=12`,
+  "security-alert-secret": `?hub=security${REPO}&view=security&secTab=secrets&alert=5`,
   ...WIDGET_PAGES,
 };
 

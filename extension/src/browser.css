@@ -603,10 +603,15 @@
 .gh-sec-more { padding: 12px 0; gap: 12px; }
 .gh-sec-more-err { color: var(--status-error-text, rgba(var(--palette-error, 205, 74, 69), 1)); }
 .gh-sec-detail-header.bolt-header { padding-bottom: 8px; }
-.gh-sec-facts { gap: 8px; padding: 4px 0; }
-.gh-sec-fact { gap: 12px; align-items: baseline; }
-.gh-sec-fact-label { flex: 0 0 160px; }
-.gh-sec-fact-value { min-width: 0; overflow-wrap: anywhere; }
+/* Details: hand-rolled grid of label-over-value pairs (azure-devops-ui has no property list), as wide as the card. A value wraps only at spaces;
+   codes, versions and ids never break; a path stays on one line and ends in an ellipsis (its tooltip has the rest). */
+.gh-sec-facts { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 32px; padding: 4px 0; }
+.gh-sec-fact { gap: 4px; min-width: 0; align-items: flex-start; } /* a pill keeps its own width */
+.gh-sec-fact-wide { grid-column: 1 / -1; }
+.gh-sec-fact-value { min-width: 0; max-width: 100%; overflow-wrap: normal; word-break: normal; }
+.gh-sec-fact-wide .gh-sec-fact-value { white-space: pre-wrap; }
+.gh-sec-nowrap { white-space: nowrap; }
+.gh-sec-fact-code, .gh-sec-fact-path { display: block; } /* with text-ellipsis: one line, cut with an ellipsis */
 .gh-sec-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .gh-sec-loc { gap: 8px; min-width: 0; }
 .gh-sec-fill { flex: 1 1 auto; min-width: 0; width: 100%; } /* a Card body is a flex row: without this its Table collapses to its content */

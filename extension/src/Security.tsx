@@ -30,7 +30,7 @@ import { filterBranches } from "./lib/branchSwitch";
 import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import { availability } from "./lib/securityAvailability";
 import { alertDetailHash, applySecurity, kindForTab, serializeSecurity, tabForKind, type SecretValidity, type SecTab, type SecurityHashState } from "./lib/securityHash";
-import { filterRows, severityPill, type AlertInstance, type AlertRow, type SecretLocation, type AlertState, type Severity } from "./lib/securityModel";
+import { filterRows, identifierUrl, severityPill, type AlertInstance, type AlertRow, type SecretLocation, type AlertState, type Severity } from "./lib/securityModel";
 import { dismissReasons, MAX_DISMISS_COMMENT } from "./lib/securityRequests";
 import type { AlertCount } from "./lib/securityCounts";
 import type { AlertKind, RatedSeverity, SecurityFilters, StateFilter } from "./lib/securityTypes";
@@ -284,8 +284,20 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
 
 // ---------- one alert ----------
 
-const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div className="gh-sec-fact flex-row"><span className="gh-sec-fact-label secondary-text">{label}</span><span className="gh-sec-fact-value">{children}</span></div>
+/** One label over its value in the Details grid. `code` (ids, versions, ranges) and `path` stay on one line and end in an ellipsis if the column is too narrow, with `title` as the tooltip; anything else wraps only at spaces. */
+const Row = ({ label, children, kind, title, wide }: { label: string; children: React.ReactNode; kind?: "code" | "path"; title?: string; wide?: boolean }) => (
+  <div className={`gh-sec-fact flex-column${wide ? " gh-sec-fact-wide" : ""}`} role="group" aria-label={label}>
+    <span className="gh-sec-fact-label secondary-text body-s">{label}</span>
+    <span className={`gh-sec-fact-value${kind ? ` gh-sec-fact-${kind}` : ""}${kind ? " text-ellipsis" : ""}`} title={title}>{children}</span>
+  </div>
+);
+
+/** CVE, CWE and GHSA ids as links to their advisory pages; each id stays whole, and a list wraps between ids. */
+const Ids = ({ ids }: { ids: string[] }) => (
+  <>{ids.map((id, i) => {
+    const url = identifierUrl(id);
+    return <React.Fragment key={id}>{i > 0 && ", "}<span className="gh-sec-nowrap">{url ? <Link href={url} target="_blank" rel="noopener noreferrer">{id}</Link> : id}</span></React.Fragment>;
+  })}</>
 );
 
 function Snippet({ lines, path }: { lines: SnippetLine[]; path: string }) {
@@ -438,22 +450,23 @@ function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: strin
         {v && d && (
           <>
             <Card className="gh-pr-card" titleProps={{ text: "Details" }}>
-              <div className="flex-column gh-sec-facts">
+              <div className="gh-sec-facts">
                 {!secret && <Row label="Severity"><SeverityPill severity={d.severity} /></Row>}
                 <Row label="State">{STATE_TEXT[d.state]}{d.dismissal && <> ({reasonLabel(d.dismissal.reason)}{d.dismissal.by && <> by <PersonHover login={d.dismissal.by}><span>{d.dismissal.by}</span></PersonHover></>})</>}</Row>
-                {d.dismissal?.comment && <Row label="Comment">{d.dismissal.comment}</Row>}
                 <Row label="First detected"><RelDate date={d.firstDetected} /></Row>
                 {d.fixedAt && <Row label="Fixed"><RelDate date={d.fixedAt} /></Row>}
                 {d.package && <Row label="Package">{d.package.ecosystem} / {d.package.name}{d.package.scope ? ` (${d.package.scope})` : ""}</Row>}
-                {d.package && <Row label="Manifest"><span className="monospaced-xs">{d.package.manifestPath}</span></Row>}
-                {d.vulnerableRange && <Row label="Vulnerable versions"><span className="monospaced-xs">{d.vulnerableRange}</span></Row>}
-                {kind === "dependabot" && <Row label="First patched version">{d.patchedVersion ?? "No patched version yet"}</Row>}
+                {d.package && <Row label="Manifest" kind="path" title={d.package.manifestPath}><span className="monospaced-xs">{d.package.manifestPath}</span></Row>}
+                {d.vulnerableRange && <Row label="Vulnerable versions" kind="code" title={d.vulnerableRange}><span className="monospaced-xs">{d.vulnerableRange}</span></Row>}
+                {kind === "dependabot" && (d.patchedVersion ? <Row label="First patched version" kind="code" title={d.patchedVersion}><span className="monospaced-xs">{d.patchedVersion}</span></Row> : <Row label="First patched version">No patched version yet</Row>)}
+                {kind === "dependabot" && d.ruleId && <Row label="Advisory"><Ids ids={[d.ruleId]} /></Row>}
                 {d.tool && <Row label="Tool">{d.tool}</Row>}
-                {kind === "code" && d.ruleId && <Row label="Rule"><span className="monospaced-xs">{d.ruleId}</span></Row>}
-                {secret && d.ruleId && <Row label="Secret type"><span className="monospaced-xs">{d.ruleId}</span></Row>}
+                {kind === "code" && d.ruleId && <Row label="Rule" kind="code" title={d.ruleId}><span className="monospaced-xs">{d.ruleId}</span></Row>}
+                {secret && d.ruleId && <Row label="Secret type" kind="code" title={d.ruleId}><span className="monospaced-xs">{d.ruleId}</span></Row>}
                 {secret && d.validity && <Row label="Validity">{d.validity}</Row>}
-                {d.cwes.length > 0 && <Row label="CWE">{d.cwes.join(", ")}</Row>}
-                {d.cves.length > 0 && <Row label="CVE">{d.cves.join(", ")}</Row>}
+                {d.cwes.length > 0 && <Row label="CWE"><Ids ids={d.cwes} /></Row>}
+                {d.cves.length > 0 && <Row label="CVE"><Ids ids={d.cves} /></Row>}
+                {d.dismissal?.comment && <Row label="Comment" wide>{d.dismissal.comment}</Row>}
               </div>
             </Card>
 

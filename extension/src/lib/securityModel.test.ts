@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { alertRow, alertDetail, codeScanningSeverity, severityRank, severityPill, codeScanningInstances, secretLocations, filterRows, type AlertRow, type Severity } from "./securityModel";
+import { alertRow, alertDetail, codeScanningSeverity, severityRank, severityPill, codeScanningInstances, secretLocations, filterRows, identifierUrl, type AlertRow, type Severity } from "./securityModel";
 import { dependabotJson, codeScanningJson, secretJson, dismissedBy, SECRET_LITERAL } from "./securityTestHelpers";
 
 // Module under test: src/lib/securityModel.ts (stubs until the developer implements them). Requirement AS-2: "Normalisers from each source to one `AlertRow {kind, number, severity, title, location, firstDetected, state
@@ -361,5 +361,18 @@ describe("AS-2: filters the server cannot apply", () => {
   it("applies text and rule together", () => {
     expect(numbers(filterRows(rows, { rule: "js/incomplete-sanitization", text: "src" })), "Expected both filters to apply").toEqual([2]);
     expect(numbers(filterRows(rows, { rule: "js/incomplete-sanitization", text: "db.ts" })), "Expected no row to pass both").toEqual([]);
+  });
+});
+
+describe("identifierUrl", () => {
+  it("links CVE, CWE and GHSA identifiers to their advisory pages", () => {
+    expect(identifierUrl("CVE-2026-103923"), "Expected the NVD page for a CVE").toBe("https://nvd.nist.gov/vuln/detail/CVE-2026-103923");
+    expect(identifierUrl("cve-2024-0001"), "Expected a lower-case CVE to be normalised").toBe("https://nvd.nist.gov/vuln/detail/CVE-2024-0001");
+    expect(identifierUrl("CWE-079"), "Expected MITRE's page, without leading zeros").toBe("https://cwe.mitre.org/data/definitions/79.html");
+    expect(identifierUrl("GHSA-jf85-cpcp-j695"), "Expected GitHub's advisory page").toBe("https://github.com/advisories/GHSA-jf85-cpcp-j695");
+  });
+
+  it("is undefined for anything else", () => {
+    for (const id of ["js/sql-injection", "github_personal_access_token", "CVE-12", "GHSA-aaaa", "", "CWE-x"]) expect(identifierUrl(id), `Expected no link for "${id}"`).toBeUndefined();
   });
 });

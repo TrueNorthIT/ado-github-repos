@@ -269,3 +269,13 @@ export function filterRows(rows: AlertRow[], filters: { text?: string; rule?: st
     return words.every((w) => hay.includes(w));
   });
 }
+
+/** The public advisory page for a CVE, CWE or GHSA identifier, or undefined for anything else (a rule id, a secret type). */
+export function identifierUrl(id: string): string | undefined {
+  const t = id.trim();
+  if (/^CVE-\d{4}-\d{4,}$/i.test(t)) return `https://nvd.nist.gov/vuln/detail/${t.toUpperCase()}`;
+  const cwe = /^CWE-0*(\d+)$/i.exec(t);
+  if (cwe) return `https://cwe.mitre.org/data/definitions/${cwe[1]}.html`;
+  if (/^GHSA(-[0-9a-z]{4}){3}$/i.test(t)) return `https://github.com/advisories/${t}`;
+  return undefined;
+}
