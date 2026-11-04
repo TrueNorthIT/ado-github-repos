@@ -323,7 +323,7 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
   return (
     <>
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header"
         title={branch}
         titleIconProps={{ iconName: "BranchFork2" }}
         titleSize={TitleSize.Large}
