@@ -53,7 +53,7 @@ const MOCK_PAGES = {
   "branch-policies-saved": `?hub=branches&click=${encodeURIComponent('[aria-label="Require a minimum number of reviewers: off"]|[aria-label="Check for comment resolution: off"]|text:Save')}${REPO}&view=policies&polBranch=main`,
   "branch-policies-denied": `?hub=branches&scenario=rulesetsDenied&click=${encodeURIComponent('[aria-label="Block force pushes: off"]|text:Save')}${REPO}&view=policies&polBranch=develop`,
   "branch-policies-locked": `?hub=branches${REPO}&view=policies&polBranch=release%2F2.0`,
-  "branches-locked": `?hub=branches&click=${encodeURIComponent('text:Branches|text:Branches|text:Branches|text:Branches|[aria-label="Actions for release/2.0"]')}${REPO}&branchTab=all&q=release`,
+  "branches-locked": `?hub=branches&click=${encodeURIComponent('[aria-label="Actions for release/2.0"]')}${REPO}&branchTab=all&q=release`,
   "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v1.0.0&cmpHead=develop`,
   tags: `?hub=tags${REPO}`,
   releases: `?hub=tags${REPO}&tagTab=releases`,
@@ -176,7 +176,7 @@ try {
         "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
         ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), // Chrome refuses to run as root with its sandbox (cloud containers run as root)
         // A throwaway profile outside the repo: Chrome can install managed extensions into it, whose *.test.js files vitest would pick up.
-        `--user-data-dir=${join(tmpdir(), "gh-repos-shots-profile")}`, "--window-size=1440,900", `--virtual-time-budget=${LIVE ? 20000 : 8000}`,
+        `--user-data-dir=${join(tmpdir(), "gh-repos-shots-profile")}`, "--window-size=1440,900", `--virtual-time-budget=${LIVE ? 20000 : q.includes("click=") ? 20000 : 8000}`, // ?click= waits for the page to settle before each step
         `--screenshot=${file}`, url,
       ], { stdio: "ignore", timeout: 60000 });
       const good = r.status === 0 && existsSync(file);
