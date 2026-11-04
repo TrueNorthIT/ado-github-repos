@@ -116,8 +116,8 @@ function TestsLoading() {
 
 const Stat = ({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) => (
   <div className="gh-act-stat flex-column">
-    <span className="secondary-text">{label}</span>
     <span className="gh-act-stat-value flex-row flex-center">{icon}{value}</span>
+    <span className="secondary-text">{label}</span>
   </div>
 );
 

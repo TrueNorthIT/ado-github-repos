@@ -84,8 +84,9 @@
 
 /* Tests tab: summary figures (hand-rolled: azure-devops-ui has no statistic component), results tree, details card beside it */
 .gh-act-stats { gap: 8px 40px; padding: 8px 0 4px; }
-.gh-act-stat { gap: 4px; min-width: 96px; font-size: 14px; }
-.gh-act-stat-value { gap: 6px; font-size: 21px; line-height: 28px; font-weight: 600; }
+/* Native Tests tab (measured): figure 36px/600/42px above a 14px label, both in the secondary text colour. */
+.gh-act-stat { min-width: 96px; font-size: 14px; }
+.gh-act-stat-value { gap: 8px; font-size: 36px; line-height: 42px; font-weight: 600; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
 .gh-act-stat-value .bolt-status, .gh-act-stat-value .fabric-icon { flex: none; font-size: 16px; font-weight: 400; }
 .gh-act-tests-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .gh-act-tests-split-open { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }

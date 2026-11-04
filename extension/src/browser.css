@@ -356,7 +356,7 @@
 .gh-branch-lock { margin-left: 6px; color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
 .gh-branch-lock.bolt-button { margin-left: 2px; padding: 2px 4px; min-height: 0; }
 /* Branch policies page: native's policy rows (toggle, name, sentence, settings). */
-.gh-bpol-card { margin-bottom: 16px; }
+/* Cards and message cards are 16px apart, as native (the .gh-pr-body sibling rule); a margin here made it 32px. */
 .gh-bpol-list { gap: 20px; }
 .gh-bpol-row { gap: 12px; align-items: flex-start; }
 .gh-bpol-toggle { flex-shrink: 0; margin-top: 2px; }
@@ -372,7 +372,6 @@
 .gh-bpol-add { gap: 8px; align-items: center; }
 .gh-bpol-add-name { width: 360px; max-width: 100%; flex: 0 1 auto; min-width: 0; }
 .gh-bpol-error { color: var(--status-error-text, rgba(205, 74, 69, 1)); }
-.gh-bpol-message { margin-bottom: 16px; }
 .gh-bpol-others { margin-top: 16px; }
 .gh-bpol-others-header { padding-left: 0; padding-right: 0; }
 .gh-branch-locked { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
@@ -663,7 +662,8 @@
 .gh-act-sched-icon { margin-right: 8px; }
 .gh-act-line2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Actions: ADO Pipelines' spacing (measured on dev.azure.com/dnceng-public, 2026-11-03).
+/* Actions, and the Repos pages added since (Forks, Branch policies, Code search): ADO Pipelines' spacing (measured on dev.azure.com/dnceng-public, 2026-11-03;
+   native Repos list headers (Branches, Tags, Pull requests) measure the same: 24px top padding, none below).
    Page header 52px (24px top padding, no bottom) with the tabs straight under it; 16px less on the left with a back button;
    a run or job header sits on the page edge like the hub header, 16px above the first card; a card title is 46px (no bottom padding). */
 .gh-act-header.bolt-header { height: auto; min-height: 52px; padding: 24px 20px 0; }
@@ -678,11 +678,9 @@
 /* The branch picker on the title row, after the repo switcher (Commits, Pushes). */
 .bolt-header-title-area > .gh-title-branch { flex: 0 1 auto; min-width: 0; margin-left: -4px; }
 
-/* Files: the Clone callout (native Repos: a 400px callout with the protocol tabs, the URL and its copy button, then the IDE row). */
-.gh-clone-callout { width: 400px; padding: 16px 20px 20px; gap: 12px; }
-.gh-clone-title { font-weight: 600; }
-.gh-clone-row { gap: 4px; }
-.gh-clone-ide { gap: 8px; align-items: flex-start; }
+/* Files: the Clone panel (measured on native Repos: protocol buttons 4px before the URL, "Learn more" 16px below the row). */
+.gh-clone-protocols { margin-right: 4px; flex: none; }
+.gh-clone-learn { margin-top: 16px; align-self: flex-start; }
 /* Files: lines opened from a link (line / lineEnd in the hash), tinted with a bar in the gutter. */
 .monaco-editor .gh-line-linked { background: rgba(var(--palette-primary, 0, 120, 212), 0.12); }
 .monaco-editor .gh-line-linked-gutter { border-left: 3px solid rgba(var(--palette-primary, 0, 120, 212), 1); }

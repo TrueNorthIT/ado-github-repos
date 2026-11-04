@@ -88,11 +88,11 @@ function go(e: React.MouseEvent | React.KeyboardEvent, hub: HubId, hash: string)
   void openHub(hub, hash);
 }
 
-/** Native widget chrome: a 16px semibold title with 10px padding, then the body. */
+/** Native widget chrome: a 16px regular-weight title, 10px from the top and 14px from the sides, then the body. */
 function WidgetFrame({ title, subtitle, children }: { title: string; subtitle?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="gh-widget flex-column">
-      <h2 className="gh-widget-title font-size-ml font-weight-semibold text-ellipsis" title={title}>{title}</h2>
+      <h2 className="gh-widget-title font-size-ml font-weight-normal text-ellipsis" title={title}>{title}</h2>
       {subtitle && <div className="gh-widget-subtitle secondary-text body-s text-ellipsis">{subtitle}</div>}
       <div className="gh-widget-body flex-column flex-grow">{children}</div>
     </div>

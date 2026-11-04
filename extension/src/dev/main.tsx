@@ -65,9 +65,20 @@ SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", 
 SCENARIOS.push("rulesetsDenied", "rulesetsInvalid"); // batch J: an admin whose GitHub App may not write rulesets, and GitHub refusing the rules
 
 // `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
-// exactly that text), waiting up to 8 s for each. For screenshots of panels and menus that only open on a click (npm run shots).
+// exactly that text). For screenshots of panels and menus that only open on a click (npm run shots). Before each click it waits (up to
+// 8 s) for the target to be present and enabled AND for the page to settle: no fetch in flight and no shimmer rows or spinners for
+// 300 ms. Otherwise a click can land before the data does (a branch's lock state arriving after its menu opened, say) and the shot flakes.
 const clicks = new URLSearchParams(location.search).get("click");
 if (clicks) {
+  let inFlight = 0;
+  const mocked = window.fetch;
+  window.fetch = (...a: Parameters<typeof fetch>) => {
+    inFlight++;
+    return mocked(...a).finally(() => inFlight--);
+  };
+  // Only spinners on screen count: a lazy diff below the fold keeps its spinner until it is scrolled to.
+  const onScreen = (e: Element) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
+  const busy = () => inFlight > 0 || Array.from(document.querySelectorAll(".shimmer, .bolt-spinner")).some(onScreen);
   const find = (t: string): HTMLElement | null => {
     if (!t.startsWith("text:")) return document.querySelector<HTMLElement>(t);
     const want = t.slice(5);
@@ -78,8 +89,15 @@ if (clicks) {
   (async () => {
     for (const t of clicks.split("|")) {
       let el: HTMLElement | null = null;
-      for (let i = 0; i < 80 && !(el = find(t)); i++) await new Promise((r) => setTimeout(r, 100));
+      let quiet = 0;
+      for (let i = 0; i < 80; i++) {
+        el = find(t);
+        quiet = busy() ? 0 : quiet + 1;
+        if (el && quiet >= 3) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
       if (!el) return console.warn(`[mock click] not found: ${t}`);
+      if (quiet < 3) console.warn(`[mock click] page still busy, clicking anyway: ${t}`);
       el.click();
       await new Promise((r) => setTimeout(r, 400));
     }

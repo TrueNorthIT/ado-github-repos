@@ -300,7 +300,7 @@ export function CodeSearchPage({ st, nav, signedIn, signIn, busy }: { st: Search
     <Surface background={SurfaceBackground.neutral}>
       <Page className="gh-page gh-search-page flex-grow">
         <Header
-          className="gh-hub-header"
+          className="gh-hub-header gh-act-header"
           title="Code search"
           titleSize={TitleSize.Large}
           titleAriaLevel={1}
