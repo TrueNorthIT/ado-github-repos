@@ -261,6 +261,7 @@
 .gh-feed-body .gh-markdown > :last-child { margin-bottom: 0; }
 .gh-feed-body { padding-bottom: 16px; }
 .gh-feed-finding { gap: 8px; margin-bottom: 8px; }
+.gh-feed-copilot-fix { margin: -8px 0 12px; }
 .gh-feed-footer { margin: 0 16px; padding: 4px 4px 16px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
 .gh-feed-footer { padding-top: 20px; }
 .gh-feed-footer .gh-feed-compose-row { padding: 0; }

@@ -124,6 +124,12 @@ function CommentContent({ store, c, t, repo, baseRef }: { store: FeedStore; c: F
       <CopilotFindingHead c={c} />
       <Body html={c.html} repo={repo} baseRef={baseRef} />
       <Suggestions store={store} c={c} t={t} />
+      {c.copilot && c.url && (
+        // Copilot's "Suggested changeset" is on GitHub's page only: no API field carries it, so it is linked rather than shown.
+        <div className="gh-feed-copilot-fix secondary-text">
+          Copilot suggested a fix. <Link href={c.url} target="_blank" rel="noopener noreferrer">Open on GitHub</Link>
+        </div>
+      )}
       {!isPending(c) && <ReactionBar store={store} id={c.id} />}
       <Failure store={store} id={c.id} />
     </HiddenGate>
