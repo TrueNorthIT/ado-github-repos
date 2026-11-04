@@ -305,16 +305,24 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
   }
 }
 
-// ---------- REST: the semi-linear merge's compare, poll and merge, and the branch rules (batch H) ----------
+// ---------- REST: the semi-linear merge's compare, poll and merge, the branch rules and CODEOWNERS (batch H) ----------
+
+const CODEOWNERS = `# Code owners of the mock repository
+*        @ann @bob-dev
+*.md     @carol
+/docs/   @carol
+`;
 
 /**
  * REST answers for the fixture PRs, `rest` being the path after /repos/{owner}/{repo}. undefined when not ours.
  * Scenarios: "rebaseConflict" (GitHub reports conflicts after the rebase), "rebaseStuck" (the new head never shows up: the wait times out),
  * "mergeBlocked" (405: a required check must pass on the rebased commits).
  */
-export function prActionsRest(repo: string, rest: string, init: RequestInit | undefined, sc: string): { status: number; body: unknown } | undefined {
+export function prActionsRest(repo: string, rest: string, init: RequestInit | undefined, sc: string): { status: number; body?: unknown; text?: string } | undefined {
   if (repo.toLowerCase() !== PR_REPO) return undefined;
   const method = init?.method ?? "GET";
+  // The target branch's CODEOWNERS: with main's code-owner rule below, #200's reviewers split into Required (ann, bob-dev, carol) and Optional.
+  if (/^\/contents\/\.github\/CODEOWNERS(\?|$)/.test(rest)) return sc === "noCodeOwners" ? { status: 404, body: { message: "Not Found" } } : { status: 200, text: CODEOWNERS };
   const rules = /^\/rules\/branches\/(.+)$/.exec(rest);
   if (rules && method === "GET") {
     const branch = rules[1].split("/").map(decodeURIComponent).join("/");

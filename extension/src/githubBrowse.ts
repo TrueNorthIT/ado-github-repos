@@ -943,6 +943,7 @@ export const deleteRelease = async (repo: string, releaseId: number) => {
 
 // ---------- Batch H: semi-linear merge, branch rules (rulesets) and forks ----------
 import { branchRulesRequest, toBranchRules, type BranchRule } from "./lib/branchRules";
+import { CODEOWNERS_PATHS, codeOwnerSet, parseCodeOwners, type CodeOwnerSet } from "./lib/codeOwners";
 
 /** A GET that skips the HTTP cache (GitHub's REST answers carry max-age=60): for polling a pull request while it is rebased. */
 export async function restJsonFresh<T = any>(r: RestRequest): Promise<T> {
@@ -959,4 +960,27 @@ export const getBranchRules = (repo: string, branch: string): Promise<BranchRule
       if (e instanceof GhError && e.kind === "auth") throw e;
       return null;
     }
+  });
+
+const codeOwnerSets = new Map<string, { at: number; p: Promise<CodeOwnerSet | null> }>();
+/**
+ * The code owners of a pull request's changed files, from the CODEOWNERS file on its target branch (lib/codeOwners.ts); null when the
+ * branch has none. Throws when it can't be worked out (a read failed, or the pull request has more files than GitHub lists).
+ */
+export const getCodeOwnerSet = (repo: string, base: string, number: number): Promise<CodeOwnerSet | null> =>
+  ttl(codeOwnerSets, `${repo}|${base}|${number}`, async () => {
+    let text: string | null = null;
+    for (const path of CODEOWNERS_PATHS) {
+      try {
+        text = new TextDecoder().decode(await getRaw(repo, base, path));
+        break;
+      } catch (e) {
+        if (e instanceof GhError && e.kind === "access" && e.status === 404) continue;
+        throw e;
+      }
+    }
+    if (text === null) return null;
+    const files = await getPrFiles(repo, number);
+    if (files.length >= MAX_PR_FILES) throw new Error("Too many changed files to match against CODEOWNERS");
+    return codeOwnerSet(parseCodeOwners(text), files.map((f) => f.path));
   });

@@ -161,7 +161,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
   const prAct = prActionsRest(repo.fullName, rest + u.search, init, sc); // batch H: semi-linear merge (compare, poll, merge) and branch rules (before the generic compare)
-  if (prAct) return json(prAct.body, prAct.status);
+  if (prAct) return prAct.text !== undefined ? new Response(prAct.text, { headers: { "Content-Type": "application/octet-stream" } }) : json(prAct.body, prAct.status);
   const cmp =/^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
