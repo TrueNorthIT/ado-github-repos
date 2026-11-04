@@ -15,7 +15,8 @@ import { fetchMetadata } from "./github";
 import * as SDK from "azure-devops-extension-sdk";
 import { RepoBrowser, hubClick } from "./Browser";
 import { PullRequestsHub } from "./PullRequests";
-import { connectNav, currentHub } from "./hostNav";
+import { connectNav, currentHub, useHashExtras } from "./hostNav";
+import { CodeSearchPage } from "./CodeSearch";
 import { CommitsHub } from "./Commits";
 import { PushesHub } from "./Pushes";
 import { BranchesHub } from "./Branches";
@@ -154,6 +155,7 @@ export function App() {
   const wantsDefault = hub === "files" && nav !== null && !nav.repo && nav.view !== "repos";
   const fallback = useDefaultRepo(wantsDefault);
   React.useEffect(() => { if (wantsDefault && fallback.repo) go({ repo: fallback.repo }, "ifEmpty"); }, [wantsDefault, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { search } = useHashExtras(); // Code search in the Files hub: BrowseState ignores the search keys, so it is routed on its own parse of the hash
   if (nav === null) return <Page className="flex-grow" />;
   const hubProps = { state: nav, go, openSwitch: switchTick, signedIn, signIn: doSignIn, busy, commandBarItems: signInOut };
   if (hub === "prs") return <PullRequestsHub {...hubProps} />;
@@ -164,6 +166,12 @@ export function App() {
   if (hub === "actions") return <ActionsHub {...hubProps} />;
   if (hub === "security") return <SecurityHub {...hubProps} />;
   if (wantsDefault && !fallback.none) return <Page className="flex-grow"><Loading label="Opening the first repository" /></Page>;
+  if (nav.repo && search && search.repo === nav.repo)
+    return (
+      <Page className="flex-grow">
+        <CodeSearchPage st={search} nav={{ ...nav, repo: nav.repo }} signedIn={signedIn} signIn={doSignIn} busy={busy} />
+      </Page>
+    );
   if (nav.repo)
     return (
       <Page className="flex-grow">

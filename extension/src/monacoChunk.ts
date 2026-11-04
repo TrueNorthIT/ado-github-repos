@@ -146,6 +146,20 @@ export function createWholeFile(el: HTMLElement, text: string, language: string,
   return { editor, dispose: () => { editor.dispose(); model.dispose(); } };
 }
 
+/** Code search's preview: the read-only viewer with each hit highlighted (and marked on the scrollbar), scrolled to the first one. */
+export function createSearchViewer(el: HTMLElement, text: string, language: string, dark: boolean, label: string, hits: { line: number; startColumn: number; endColumn: number }[]) {
+  const editor = createViewer(el, text, language, dark, label);
+  editor.createDecorationsCollection(hits.map((h) => ({
+    range: new monaco.Range(h.line, h.startColumn, h.line, h.endColumn),
+    options: { inlineClassName: "gh-search-hit", overviewRuler: { color: "#f2c811", position: monaco.editor.OverviewRulerLane.Center } },
+  })));
+  if (hits[0]) {
+    editor.revealLineInCenter(hits[0].line);
+    editor.setSelection(new monaco.Range(hits[0].line, hits[0].startColumn, hits[0].line, hits[0].endColumn));
+  }
+  return editor;
+}
+
 // ---------- inline comment threads (AF-6): view zones that host React content ----------
 
 /** A view zone after `afterLine` of `ed` hosting `node`. Monaco fixes a zone's own height, so `node` sits inside a wrapper and its content height is observed; the zone follows it. */

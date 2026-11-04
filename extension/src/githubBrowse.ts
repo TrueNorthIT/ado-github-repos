@@ -42,6 +42,7 @@ import { milestoneSearchQuery, sortMilestones, toMilestoneOption, type Milestone
 import { mapNewPr, newPrQuery, type NewPrCompare } from "./lib/newPr";
 import { listedPaths, mapTemplateBlobs, resolveTemplates, templateBlobsQuery, templateListingQuery, type TemplateBlob } from "./lib/prTemplates";
 import type { GitHubTokenSet } from "../../shared/contract";
+import type { RawSearch } from "./lib/codeSearch";
 
 const API = "https://api.github.com";
 const MAX_BRANCHES = 1000;
@@ -1051,3 +1052,8 @@ export async function listItemsUnder(repo: string, tree: GitTree, folder: string
 
 /** The tree of a commit, for a write's base_tree. */
 export const getCommitTree = async (repo: string, sha: string): Promise<string> => (await json<{ tree: { sha: string } }>(`${repoPath(repo)}/git/commits/${sha}`)).tree.sha;
+
+/** Code search (Files hub): one page of GET /search/code with the text-match media type, so each item carries `text_matches`. `q` comes from lib/codeSearch planSearch. */
+export async function searchCode(q: string, page = 1, perPage = 50): Promise<RawSearch> {
+  return (await request(`/search/code?q=${encodeURIComponent(q)}&per_page=${perPage}&page=${page}`, "application/vnd.github.text-match+json")).json();
+}
