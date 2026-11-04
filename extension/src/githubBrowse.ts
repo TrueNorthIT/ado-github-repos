@@ -823,7 +823,7 @@ export const setDefaultBranch = (repo: string, branch: string) => restSend(setDe
 
 /** Whether the viewer is an admin of the repository (GET /repos/{repo} permissions.admin). False when it can't be read. */
 export const getIsRepoAdmin = (repo: string): Promise<boolean> =>
-  refTtl(`admin|${repo}`, () => json<{ permissions?: { admin?: boolean } }>(repoPath(repo)).then((j) => !!j.permissions?.admin, () => false));
+  refTtl(`admin|${repo}`, () => json<{ permissions?: { admin?: boolean } }>(repoPath(repo)).then((j) => !!j.permissions?.admin)).catch(() => false); // a failed read isn't cached
 
 /** Tag names (REST, newest first as GitHub lists them, up to 1000) for the compare pickers. */
 export const listTagNames = (repo: string): Promise<string[]> =>
@@ -1199,7 +1199,7 @@ export const getGitCommit = async (repo: string, sha: string): Promise<GitCommit
 
 /** Whether the viewer may push to the repository (GET /repos/{repo} permissions.push). False when it can't be read. */
 export const getCanPush = (repo: string): Promise<boolean> =>
-  refTtl(`push|${repo}`, () => restSend<{ permissions?: { push?: boolean } }>(canPushRequest(repo)).then((j) => !!j?.permissions?.push, () => false));
+  refTtl(`push|${repo}`, () => restSend<{ permissions?: { push?: boolean } }>(canPushRequest(repo)).then((j) => !!j?.permissions?.push)).catch(() => false); // a failed read isn't cached
 
 /** Runs a cherry-pick or revert (lib/cherryPick.ts runPick) over REST. */
 export const runCherryPick = (p: PickRun) => runPick((r) => restSend(r), p);
