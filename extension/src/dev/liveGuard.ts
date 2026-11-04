@@ -44,6 +44,7 @@ function restDecision(r: GuardReq, ctx: GuardCtx): Decision {
   }
   if (!get) return no(`${r.method} ${p}: only reads are allowed outside the sandbox repository`);
   if (p === "/user" || p === "/rate_limit") return ok;
+  if (/^\/users\/[A-Za-z0-9-]+(?:%5Bbot%5D|\[bot\])?$/i.test(p)) return ok; // a public profile (hover cards); not /users/{login}/repos and the like
   const org = /^\/orgs\/([^/]+)\/(members|teams)(\/|$)/.exec(p);
   if (org) return lc(decodeURIComponent(org[1])) === lc(ORG) ? ok : no(`organisation ${org[1]}`);
   if (/^\/search\/(issues|commits|code)$/.test(p)) return searchOk(r.url.searchParams.get("q") ?? "");

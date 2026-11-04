@@ -15,6 +15,7 @@ import { RelDate } from "./RelDate";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { PersonHover } from "./HoverCard";
 import { FilterBar } from "azure-devops-ui/FilterBar";
 import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { DropdownFilterBarItem } from "azure-devops-ui/Dropdown";
@@ -70,7 +71,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
       columnLayout: TableColumnLayout.none, // the title column's twoLinePrefix draws the avatar's shimmer
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="avatar" columnIndex={columnIndex} tableColumn={tableColumn}>
-          <VssPersona imageUrl={row.avatarUrl} displayName={row.authorName ?? row.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError />
+          <PersonHover repo={repo} login={row.authorLogin} name={row.authorName} avatarUrl={row.avatarUrl}><VssPersona imageUrl={row.avatarUrl} displayName={row.authorName ?? row.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
         </SimpleTableCell>
       ),
     },

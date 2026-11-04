@@ -1,9 +1,10 @@
 // AB#123 work item mentions in commit messages: pills on the Commits list rows, links in the commit detail's message (C-1, C-3). The lookups are
 // PrPage's useWorkItems (one ADO call for every id on screen); the link works before, or without, that lookup, from the project context alone.
+// Hovering a pill or link opens the work item's hover card (HoverCard.tsx), which replaced the one-line tooltip.
 import * as React from "react";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
-import { Tooltip } from "azure-devops-ui/TooltipEx";
+import { WorkItemHover } from "./HoverCard";
 import { getProjectCtx } from "./connections";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { WorkItemRow, useWorkItems } from "./PrPage";
@@ -62,9 +63,9 @@ export function WorkItemPills({ ids, links }: { ids: number[]; links: WorkItemLi
         const pill = <Pill size={PillSize.compact} variant={PillVariant.outlined} iconProps={{ iconName: "WorkItem" }}>{`AB#${id}`}</Pill>;
         const url = links.url(id);
         return (
-          <Tooltip key={id} text={label}>
+          <WorkItemHover key={id} id={id}>
             {url ? <Link className="gh-wi-pill-link" href={url} target="_blank" rel="noopener noreferrer" ariaLabel={label} subtle removeUnderline>{pill}</Link> : <span>{pill}</span>}
-          </Tooltip>
+          </WorkItemHover>
         );
       })}
     </span>
@@ -78,7 +79,7 @@ export function MessageWithWorkItems({ text, links }: { text: string; links: Wor
       {splitWorkItemMentions(text).map((p, i) => {
         if (typeof p === "string") return <React.Fragment key={i}>{p}</React.Fragment>;
         const url = links.url(p.id);
-        return url ? <Tooltip key={i} text={describe(p.id, links.item(p.id))}><Link href={url} target="_blank" rel="noopener noreferrer">{p.text}</Link></Tooltip> : <React.Fragment key={i}>{p.text}</React.Fragment>;
+        return url ? <WorkItemHover key={i} id={p.id}><Link href={url} target="_blank" rel="noopener noreferrer" ariaLabel={describe(p.id, links.item(p.id))}>{p.text}</Link></WorkItemHover> : <React.Fragment key={i}>{p.text}</React.Fragment>;
       })}
     </>
   );

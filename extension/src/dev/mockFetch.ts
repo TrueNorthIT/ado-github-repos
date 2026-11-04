@@ -23,6 +23,7 @@ import { widgetRest } from "./widgetMock";
 import { forksRest } from "./forksMock";
 import { libraryRest } from "./libraryMock";
 import { cherryPickRest } from "./cherryPickMock";
+import { hoverRest } from "./hoverMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -236,6 +237,8 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
     if (w) return w;
     const fk = forksRest(u, init, sc); // batch H: forks, their compares and branches, creating one, the viewer's organisations
     if (fk) return fk;
+    const hv = hoverRest(u, init, sc); // hover cards: profiles, org membership, a pull request and its reviews
+    if (hv) return hv;
   }
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });
@@ -251,7 +254,7 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitems$/.test(u.pathname)) {
     if (sc === "workItemsDenied") return status(403);
     const ids = (u.searchParams.get("ids") ?? "").split(",").map(Number);
-    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item" } } : null)) });
+    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item", ...wiCardFields(id) } } : null)) });
   }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
@@ -262,6 +265,13 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   }
   return undefined;
 }
+
+// Hover cards ask for these too; the list and pills ignore them.
+const wiCardFields = (id: number) => ({
+  ...(id % 3 !== 2 && { "System.AssignedTo": { displayName: id % 3 ? "Carol Commit" : "Ann Author", uniqueName: "someone@example.com" } }),
+  "System.AreaPath": id % 2 ? "Repos\\Sync" : "Repos",
+  "System.IterationPath": "Repos\\Sprint 42",
+});
 
 export function installMockFetch() {
   const real = window.fetch.bind(window);

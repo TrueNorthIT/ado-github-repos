@@ -12,6 +12,7 @@ import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { Table, ITableColumn, TwoLineTableCell } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { HoverRepoContext, PersonHover } from "./HoverCard";
 import { RelDate } from "./RelDate";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
@@ -70,7 +71,7 @@ function Meta({ pr, repo, status }: { pr: PrPageData; repo: string; status?: PrS
     <div className="gh-pr-meta flex-row flex-center">
       <Pill size={PillSize.regular} variant={s.color ? PillVariant.colored : PillVariant.standard} color={s.color}>{s.text}</Pill>
       <span className="secondary-text">#{pr.number}</span>
-      <VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorName ?? pr.authorLogin} size="small" suppressPersonaCard showInitialsOnImageError />
+      <PersonHover login={pr.authorLogin} name={pr.authorName} avatarUrl={pr.avatarUrl}><VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorName ?? pr.authorLogin} size="small" suppressPersonaCard showInitialsOnImageError /></PersonHover>
       <span className="gh-pr-meta-text">
         <span className="secondary-text">{pr.authorName ?? pr.authorLogin} proposes to merge </span>
         {branch(pr.headRef)}
@@ -199,8 +200,10 @@ function Reviewers({ list, store, edit, repo, number, baseRef }: { list: PrRevie
     const requested = edit?.reviewers.find((q) => sameReviewer(q, r.login));
     return (
       <li key={r.login} className="gh-pr-row flex-row flex-center">
-        <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
-        <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
+        <PersonHover className="gh-pr-grow" login={r.login} avatarUrl={r.avatarUrl}>
+          <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
+          <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
+        </PersonHover>
         {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
         <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
         {REVIEW[r.state].icon}
@@ -339,8 +342,10 @@ function Assignees({ store, edit, repo }: { store: ActionStore; edit: EditData; 
         <ul className="gh-pr-list">
           {list.map((a) => (
             <li key={a.id} className="gh-pr-row flex-row flex-center">
-              <VssPersona imageUrl={a.avatarUrl} displayName={a.name || a.login} size="small" suppressPersonaCard showInitialsOnImageError />
-              <span className="gh-pr-grow text-ellipsis">{a.name || a.login}</span>
+              <PersonHover className="gh-pr-grow" login={a.login} name={a.name || undefined} avatarUrl={a.avatarUrl}>
+                <VssPersona imageUrl={a.avatarUrl} displayName={a.name || a.login} size="small" suppressPersonaCard showInitialsOnImageError />
+                <span className="gh-pr-grow text-ellipsis">{a.name || a.login}</span>
+              </PersonHover>
               {canEdit && <RemoveButton label={`Remove assignee ${a.name || a.login}`} disabled={store.busy} onClick={() => void store.removeAssignee(edit.node.id, a.id)} />}
             </li>
           ))}
@@ -576,7 +581,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
   const nav = (p: Partial<BrowseState>, replace?: boolean) => go({ repo, view: "prs", prTab: state.prTab ?? listTab, pr: n, prPage: page, ...p }, replace);
 
   return (
-    <>
+    <HoverRepoContext.Provider value={repo}>
       <Header
         className="gh-pr-header"
         title={pr ? <EditableTitle title={pr.title} canEdit={!!edit?.perms.title} store={actions} edit={edit} /> : `Pull request #${n}`}
@@ -608,6 +613,6 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
       {pr && page === "updates" && <PrUpdatesTab repo={repo} number={n} pr={pr} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
-    </>
+    </HoverRepoContext.Provider>
   );
 }
