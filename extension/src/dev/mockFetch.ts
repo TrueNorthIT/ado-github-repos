@@ -19,6 +19,7 @@ import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
 import { writesGraphql, writesRest, writtenFile } from "./writesMock";
 import { codeSearchRest } from "./codeSearchMock";
+import { widgetRest } from "./widgetMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -220,6 +221,10 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "api.github.com" && sc !== "rateLimit") {
     const run = await actionsRunRest(u, init, sc); // Actions run page: run detail, jobs, logs, artifacts, annotations, re-run, cancel, review
     if (run) return run;
+  }
+  if (u.hostname === "api.github.com" && sc !== "rateLimit") {
+    const w = widgetRest(u, init, sc); // dashboard widgets: GET /user and the open pull request list
+    if (w) return w;
   }
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });

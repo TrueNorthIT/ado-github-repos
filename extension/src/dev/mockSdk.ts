@@ -73,7 +73,7 @@ const nav = {
   setHash: (h: string) => { location.hash = h; },
   replaceHash: (h: string) => { history.replaceState(null, "", "#" + h.replace(/^#+/, "")); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host adds the "#" itself; the host does notify
   // The real host loads the other hub's page; mock mode swaps the ?hub= switch and keeps the hash.
-  navigate: (u: string) => { const n = new URL(location.href); n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
+  navigate: (u: string) => { const n = new URL(location.href); if (!n.pathname.endsWith("/hub.html")) { n.pathname = n.pathname.replace(/[^/]*$/, "hub.html"); n.search = ""; } n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
@@ -132,7 +132,12 @@ export const registeredService = (id: string) => {
   const o = typeof r === "function" ? r() : r;
   return o && typeof (o as { getBreadcrumbItems?: unknown }).getBreadcrumbItems === "function" ? (o as { getBreadcrumbItems: () => unknown }).getBreadcrumbItems() : o;
 };
-export const getContributionId = () => `TrueNorthIT.github-repos.${mockHub()}`;
+/** widget.html?widget=prs|runs[&config=1] pretends to be a dashboard widget (or its configuration); see widgetMain.ts. */
+export const mockWidget = () => { const q = new URLSearchParams(location.search); const w = q.get("widget"); return w === "prs" || w === "runs" ? `github-${w}-widget${q.get("config") ? "-config" : ""}` : undefined; };
+export const getContributionId = () => `TrueNorthIT.github-repos.${mockWidget() ?? mockHub()}`;
+export const notifyLoadFailed = async (e: unknown) => { console.error("[mock sdk] load failed", e); };
+/** The object a widget frame registered, as the dashboard host would fetch it (factories are called). */
+export const registeredObject = (id: string) => { const r = registered.get(id); return typeof r === "function" ? r() : r; };
 export const notifyLoadSucceeded = async () => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];

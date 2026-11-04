@@ -33,10 +33,11 @@ rmSync(OUT, { recursive: true, force: true }); // chunk names are hashed, so don
 mkdirSync(OUT, { recursive: true });
 copyFileSync("hub.html", `${OUT}/hub.html`);
 copyFileSync("breadcrumb.html", `${OUT}/breadcrumb.html`);
+copyFileSync("widget.html", `${OUT}/widget.html`); // the dashboard widgets and their configuration (src/widget.tsx)
 if (DEV) copyFileSync("hub.html", `${OUT}/index.html`); // so plain http://localhost:3000 works
 const options = {
   // editor.worker is Monaco's base worker (diff computation), loaded as a module worker from monacoChunk.ts; it sits beside monaco.js. monaco is also an entry point so its JS and CSS get stable names (monaco.js, monaco.css): esbuild does not link a lazy chunk's CSS into the page, so Browser.tsx adds the monaco.css <link> itself.
-  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts", "editor.worker": "monaco-editor/editor/editor.worker.js", breadcrumb: "src/breadcrumb.ts" },
+  entryPoints: { index: DEV ? "src/dev/main.tsx" : "src/index.tsx", monaco: "src/monacoChunk.ts", "editor.worker": "monaco-editor/editor/editor.worker.js", breadcrumb: "src/breadcrumb.ts", widget: DEV ? "src/dev/widgetMain.tsx" : "src/widget.tsx" },
   entryNames: "[name]",
   chunkNames: "chunks/[name]-[hash]",
   bundle: true,
@@ -54,9 +55,9 @@ const options = {
   logLevel: "info",
 };
 if (!DEV && Object.keys(options.define).some((k) => /LIVE/.test(k))) throw new Error("The production build must not define live-mode values.");
-// Each lazy language chunk gets a copy of the editor CSS that nothing references; keep only the two linked stylesheets.
+// Each lazy language chunk gets a copy of the editor CSS that nothing references; keep only the linked stylesheets.
 const pruneCss = (metafile) => {
-  for (const f of Object.keys(metafile.outputs)) if (f.endsWith(".css") && !/^dist.*\/(index|monaco)\.css$/.test(f)) { rmSync(f); delete metafile.outputs[f]; }
+  for (const f of Object.keys(metafile.outputs)) if (f.endsWith(".css") && !/^dist.*\/(index|monaco|widget)\.css$/.test(f)) { rmSync(f); delete metafile.outputs[f]; }
 };
 
 if (DEV) {

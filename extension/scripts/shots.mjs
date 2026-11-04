@@ -18,6 +18,16 @@ const PORT = Number(process.env.SHOTS_PORT) || (LIVE ? 3098 : 3099);
 const BASE = `http://localhost:${PORT}/hub.html`;
 const SANDBOX = "TrueNorthIT/gh-repos-sandbox";
 const REPO = LIVE ? `#repo=${encodeURIComponent(SANDBOX)}` : "#repo=truenorthit%2Fgithub-repos";
+/** Dashboard widgets: a value starting with "/" is a path of its own (widget.html plays the dashboard host; see src/dev/widgetMain.tsx). */
+const WIDGET_PAGES = {
+  "widget-prs": "/widget.html?widget=prs&size=3x2&repo=truenorthit/github-repos",
+  "widget-prs-2x2": "/widget.html?widget=prs&size=2x2&filter=assigned&repo=truenorthit/github-repos",
+  "widget-runs": "/widget.html?widget=runs&size=2x2&repo=truenorthit/github-repos",
+  "widget-runs-4x2": "/widget.html?widget=runs&size=4x2&workflow=101&repo=truenorthit/github-repos",
+  "widget-runs-2x1": "/widget.html?widget=runs&size=2x1&repo=truenorthit/github-repos",
+  "widget-config": "/widget.html?widget=runs&config=1&repo=truenorthit/github-repos",
+  "widget-signed-out": "/widget.html?widget=prs&size=2x2&scenario=signedOut",
+};
 /** name -> query and hash after hub.html. */
 const MOCK_PAGES = {
   files: `?hub=files${REPO}`,
@@ -47,6 +57,7 @@ const MOCK_PAGES = {
   "search-all": `?hub=files${REPO}&search=export&searchAll=1&searchExt=ts`,
   "search-ratelimit": `?scenario=searchRateLimit&hub=files${REPO}&search=greet`,
   "search-invalid": `?scenario=searchInvalid&hub=files${REPO}&search=greet`,
+  ...WIDGET_PAGES,
 };
 
 /** Live pages: the sandbox's fixed PRs, plus a CI run on test/failing and one failed job, looked up through the dev server's /__gh proxy (which holds the token and guards). */
@@ -70,6 +81,7 @@ async function livePages() {
     actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
     search: `?hub=files${REPO}&search=Hello`,
+    "widget-prs": `/widget.html?widget=prs&size=3x2&repo=${encodeURIComponent(SANDBOX)}`, "widget-runs": `/widget.html?widget=runs&size=4x2&repo=${encodeURIComponent(SANDBOX)}`,
   };
 }
 
@@ -126,7 +138,7 @@ try {
   for (const name of names) {
     for (const theme of ["light", "dark"]) {
       const q = PAGES[name];
-      const url = `${BASE}${q.replace("?", `?theme=${theme}&`)}`;
+      const url = `${q.startsWith("/") ? `http://localhost:${PORT}` : BASE}${q.replace("?", `?theme=${theme}&`)}`;
       const file = resolve(outDir, `${LIVE ? "live-" : ""}${name}-${theme}.png`);
       rmSync(file, { force: true }); // so a stale PNG from an earlier run can't pass for this one
       const r = spawnSync(chrome, [

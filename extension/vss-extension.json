@@ -119,6 +119,56 @@
       }
     },
     {
+      "id": "github-prs-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog", ".github-prs-widget-config"],
+      "properties": {
+        "name": "GitHub pull requests",
+        "description": "Active pull requests in a connected GitHub repository: all, created by you or assigned to you.",
+        "catalogIconUrl": "images/icon.png",
+        "previewImageUrl": "images/icon.png",
+        "uri": "dist/widget.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [{ "rowSpan": 2, "columnSpan": 2 }, { "rowSpan": 2, "columnSpan": 3 }, { "rowSpan": 2, "columnSpan": 4 }],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "github-prs-widget-config",
+      "type": "ms.vss-dashboards-web.widget-configuration",
+      "targets": ["ms.vss-dashboards-web.widget-configuration"],
+      "properties": {
+        "name": "GitHub pull requests configuration",
+        "description": "Choose the GitHub repository and which pull requests to show.",
+        "uri": "dist/widget.html"
+      }
+    },
+    {
+      "id": "github-runs-widget",
+      "type": "ms.vss-dashboards-web.widget",
+      "targets": ["ms.vss-dashboards-web.widget-catalog", ".github-runs-widget-config"],
+      "properties": {
+        "name": "GitHub Actions history",
+        "description": "Recent GitHub Actions runs of a workflow (or all of them) in a connected GitHub repository, and the last run's result.",
+        "catalogIconUrl": "images/icon.png",
+        "previewImageUrl": "images/icon.png",
+        "uri": "dist/widget.html",
+        "isNameConfigurable": true,
+        "supportedSizes": [{ "rowSpan": 1, "columnSpan": 2 }, { "rowSpan": 2, "columnSpan": 2 }, { "rowSpan": 2, "columnSpan": 3 }, { "rowSpan": 2, "columnSpan": 4 }],
+        "supportedScopes": ["project_team"]
+      }
+    },
+    {
+      "id": "github-runs-widget-config",
+      "type": "ms.vss-dashboards-web.widget-configuration",
+      "targets": ["ms.vss-dashboards-web.widget-configuration"],
+      "properties": {
+        "name": "GitHub Actions history configuration",
+        "description": "Choose the GitHub repository and workflow.",
+        "uri": "dist/widget.html"
+      }
+    },
+    {
       "id": "github-repos-breadcrumb",
       "type": "ms.vss-web.breadcrumb-provider",
       "targets": [".github-repos-hub", ".github-repos-commits-hub", ".github-repos-pushes-hub", ".github-repos-branches-hub", ".github-repos-tags-hub", ".github-repos-prs-hub", ".github-repos-security-hub"],
