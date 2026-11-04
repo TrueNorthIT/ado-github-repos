@@ -28,7 +28,7 @@ const FEED_QUERY = `query FeedQuery($owner: String!, $name: String!, $number: In
           __typename
           ... on IssueComment { id databaseId author { __typename login avatarUrl } bodyHTML body createdAt url }
           ... on PullRequestReview { id author { __typename login avatarUrl } state body bodyHTML submittedAt createdAt url }
-          ... on PullRequestCommit { id commit { oid messageHeadline message committedDate authoredDate author { name avatarUrl user { login } } } }
+          ... on PullRequestCommit { id commit { oid messageHeadline message committedDate authoredDate author { name email avatarUrl user { login } } } }
           ... on ReviewRequestedEvent { id createdAt ${ACTOR} requestedReviewer { __typename ... on User { login } ... on Bot { login avatarUrl } ... on Team { name } } }
           ... on LabeledEvent { id createdAt ${ACTOR} label { name color } }
           ... on UnlabeledEvent { id createdAt ${ACTOR} label { name color } }

@@ -44,7 +44,7 @@ describe("mapResponse", () => {
   const body = (obj: unknown, errors?: unknown) => ({ data: { repository: { object: obj } }, errors });
   it("maps aliases to path keyed commits", () => {
     const r = mapResponse(body({ e0: node(), e1: node({ oid: "ffffffffffffffffffffffffffffffffffffffff", messageHeadline: "Docs" }) }), aliases);
-    expect(r.src).toEqual({ sha: "0123456789abcdef0123456789abcdef01234567", shortSha: "01234567", headline: "Fix thing", date: new Date("2025-10-29T09:30:00Z"), author: "Ann Display" });
+    expect(r.src).toEqual({ sha: "0123456789abcdef0123456789abcdef01234567", shortSha: "01234567", headline: "Fix thing", date: new Date("2025-10-29T09:30:00Z"), author: "Ann Display", login: "ann" });
     expect(r["README.md"].shortSha).toBe("ffffffff");
   });
   it("skips missing or empty history", () => {
@@ -59,6 +59,10 @@ describe("mapResponse", () => {
     expect(mapResponse({ data: { repository: null } }, aliases)).toEqual({});
     expect(mapResponse({ data: null, errors: [{}] }, aliases)).toEqual({});
     expect(mapResponse(body(null), aliases)).toEqual({});
+  });
+  it("keeps the git email, the login (null when unlinked) and an avatar for the hover card", () => {
+    const r = mapResponse(body({ e0: node({ author: { name: "Bogdan", email: "b@example.com", avatarUrl: "https://example.test/g.png", user: null } }) }), aliases).src;
+    expect([r.author, r.login, r.email, r.avatarUrl]).toEqual(["Bogdan", null, "b@example.com", "https://example.test/g.png"]);
   });
   it("author falls back display name, commit author name, login", () => {
     const a = (author: unknown) => mapResponse(body({ e0: node({ author }) }), aliases).src.author;

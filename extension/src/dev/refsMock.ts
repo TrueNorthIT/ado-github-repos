@@ -120,7 +120,7 @@ function blameRanges(rr: RepoRefs, tip: string, path: string) {
 
 const restCommit = (c: FCommit) => ({
   sha: c.sha,
-  commit: { message: c.message, author: { name: c.author.name, date: new Date(c.at).toISOString() }, committer: { date: new Date(c.at + 60e3).toISOString() } },
+  commit: { message: c.message, author: { name: c.author.name, ...(c.author.email ? { email: c.author.email } : {}), date: new Date(c.at).toISOString() }, committer: { date: new Date(c.at + 60e3).toISOString() } },
   author: c.author.login ? { login: c.author.login, avatar_url: avatar(c.author.login) } : null,
   parents: c.parents.map((sha) => ({ sha })),
 });

@@ -1,6 +1,7 @@
 // The Forks page (Branches hub, "..." > Forks; hash view=forks): the forks of the repository the viewer can see, with owner, last push and
 // behind / ahead of the parent's default branch, each linking to GitHub; and "Fork" with a confirm dialog. The logic is in lib/forks.ts.
 import * as React from "react";
+import { PersonHover } from "./HoverCard";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Dialog } from "azure-devops-ui/Dialog";
@@ -134,7 +135,7 @@ export function ForksView({ repo, props }: { repo: string; props: HubProps }) {
       renderCell: (_r, i, col, f) => (
         <SimpleTableCell key="repo" columnIndex={i} tableColumn={col}>
           <span className="flex-row flex-center gh-fork-name">
-            <VssPersona imageUrl={f.ownerAvatar} displayName={f.owner} size="small" suppressPersonaCard showInitialsOnImageError />
+            <PersonHover login={f.owner} avatarUrl={f.ownerAvatar}><VssPersona imageUrl={f.ownerAvatar} displayName={f.owner} size="small" suppressPersonaCard showInitialsOnImageError /></PersonHover>
             <Link className="bolt-table-link text-ellipsis" href={f.htmlUrl} target="_blank" rel="noopener noreferrer" subtle removeUnderline ariaLabel={`${f.fullName} on GitHub`}>{f.fullName}</Link>
             {f.isPrivate && <Pill size={PillSize.compact} variant={PillVariant.outlined}>Private</Pill>}
           </span>

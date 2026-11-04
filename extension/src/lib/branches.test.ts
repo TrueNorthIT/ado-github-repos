@@ -60,7 +60,7 @@ describe("B-1: branchListQuery lists branches with their head commit", () => {
   });
 
   it("selects the head commit's oid, authoredDate, author user and check state", () => {
-    expect(q(), "Expected the Commit fragment fields").toMatch(/target\s*\{\s*\.\.\.\s*on Commit\s*\{[^]*\boid\b[^]*\bauthoredDate\b[^]*author\s*\{\s*name\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}[^]*statusCheckRollup\s*\{\s*state\s*\}/);
+    expect(q(), "Expected the Commit fragment fields").toMatch(/target\s*\{\s*\.\.\.\s*on Commit\s*\{[^]*\boid\b[^]*\bauthoredDate\b[^]*author\s*\{\s*name\s+email\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}[^]*statusCheckRollup\s*\{\s*state\s*\}/);
   });
 
   it("selects the first OPEN pull request on the ref", () => {

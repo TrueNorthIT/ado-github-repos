@@ -61,7 +61,7 @@ describe("C-1: commitsQuery reads one page of history for a ref", () => {
   });
 
   it("selects the author name and linked user login and avatarUrl", () => {
-    expect(norm(commitsQuery(base).query), "Expected author { name user { login avatarUrl } }").toMatch(/author\s*\{\s*name\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
+    expect(norm(commitsQuery(base).query), "Expected author { name email user { login avatarUrl } }").toMatch(/author\s*\{\s*name\s+email\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
   });
 
   it("selects up to five parents by oid", () => {

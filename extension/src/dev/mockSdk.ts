@@ -77,7 +77,19 @@ const nav = {
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 
+// Azure DevOps' directory (the identity picker's service): one person, found by email or (for IdentityCard's refetch) by entity id.
+const ADO_PEOPLE = [{
+  entityId: "ado-gwen", entityType: "User", originDirectory: "aad", originId: "aad-gwen", localId: "local-gwen", displayName: "Gwen Git", mail: "gwen.git@contoso.example",
+  signInAddress: "gwen.git@contoso.example", jobTitle: "Senior Developer", department: "Platform Engineering", physicalDeliveryOfficeName: "Leeds", surname: "Git", mailNickname: "gwen.git",
+}];
+const identityService = {
+  searchIdentitiesAsync: async (query: string, _types?: string[], _scopes?: string[], hint?: string) =>
+    ADO_PEOPLE.filter((p) => (hint === "uid" ? p.entityId === query : [p.mail, p.signInAddress, p.displayName].some((v) => v.toLowerCase().includes(query.trim().toLowerCase())))),
+  getConnections: async () => ({ managers: [], directReports: [] }),
+};
+
 const services: Record<string, any> = {
+  "ms.vss-features.identity-service": identityService,
   "ms.vss-features.host-navigation-service": nav,
   "ms.vss-tfs-web.tfs-page-data-service": { getProject: async () => ({ id: "proj-1", name: "Demo Project" }) },
   "ms.vss-features.extension-data-service": { getExtensionDataManager: async () => dataManager },

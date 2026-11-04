@@ -34,8 +34,8 @@ describe("C-3: commitDetailQuery fetches one commit", () => {
 
   it("selects author and committer with name and linked user", () => {
     const q = norm(commitDetailQuery({ owner: "o", name: "n", sha: OID }).query);
-    expect(q, "Expected author { name user { login avatarUrl } }").toMatch(/author\s*\{\s*name\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
-    expect(q, "Expected committer { name user { login avatarUrl } }").toMatch(/committer\s*\{\s*name\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
+    expect(q, "Expected author { name email user { login avatarUrl } }").toMatch(/author\s*\{\s*name\s+email\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
+    expect(q, "Expected committer { name user { login avatarUrl } }").toMatch(/committer\s*\{\s*name\s+email\s+user\s*\{\s*login\s+avatarUrl\s*\}\s*\}/);
   });
 
   it("selects the parents, the status and the first associated pull request", () => {

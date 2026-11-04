@@ -1,6 +1,7 @@
 // The New pull request page (batch 5): branches, title, description, the right-hand panels, Create, and the Files / Commits preview.
 // The logic is in lib/newPr.ts, prTemplates.ts, branchWorkItems.ts, createPrPlan.ts and newPrHash.ts; this file draws it and wires it to the GitHub data layer.
 import * as React from "react";
+import { PersonHover } from "./HoverCard";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
@@ -235,8 +236,14 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
 
   const reviewerRow = (c: Candidate) => (
     <li key={`${c.kind}:${c.id}`} className="gh-pr-row flex-row flex-center">
-      <VssPersona imageUrl={c.avatarUrl} displayName={person(c)} size="small" suppressPersonaCard showInitialsOnImageError />
-      <span className="gh-pr-grow text-ellipsis">{person(c)}</span>
+      {c.kind === "team" ? (
+        <><VssPersona imageUrl={c.avatarUrl} displayName={person(c)} size="small" suppressPersonaCard showInitialsOnImageError /><span className="gh-pr-grow text-ellipsis">{person(c)}</span></>
+      ) : (
+        <PersonHover className="gh-pr-grow" login={c.login} name={c.name ?? undefined} avatarUrl={c.avatarUrl}>
+          <VssPersona imageUrl={c.avatarUrl} displayName={person(c)} size="small" suppressPersonaCard showInitialsOnImageError />
+          <span className="gh-pr-grow text-ellipsis">{person(c)}</span>
+        </PersonHover>
+      )}
       {c.kind === "team" && <span className="secondary-text body-s">Team</span>}
       <RemoveButton label={`Remove ${c.kind === "team" ? "team" : "reviewer"} ${person(c)}`} onClick={() => setReviewers((l) => l.filter((x) => x.id !== c.id))} />
     </li>
@@ -371,8 +378,10 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
                 <ul className="gh-pr-list">
                   {assignees.map((a) => (
                     <li key={a.id} className="gh-pr-row flex-row flex-center">
-                      <VssPersona imageUrl={a.avatarUrl} displayName={person(a)} size="small" suppressPersonaCard showInitialsOnImageError />
-                      <span className="gh-pr-grow text-ellipsis">{person(a)}</span>
+                      <PersonHover className="gh-pr-grow" login={a.login} name={a.name ?? undefined} avatarUrl={a.avatarUrl}>
+                        <VssPersona imageUrl={a.avatarUrl} displayName={person(a)} size="small" suppressPersonaCard showInitialsOnImageError />
+                        <span className="gh-pr-grow text-ellipsis">{person(a)}</span>
+                      </PersonHover>
                       <RemoveButton label={`Remove assignee ${person(a)}`} onClick={() => setAssignees((l) => l.filter((x) => x.id !== a.id))} />
                     </li>
                   ))}

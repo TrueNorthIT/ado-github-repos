@@ -13,10 +13,13 @@ export interface Person {
   /** null when the commit's email is not linked to a GitHub account. */
   login: string | null;
   avatarUrl: string;
+  /** The git email, where the query or response has it: a git-only identity's card looks it up in Azure DevOps. */
+  email?: string;
 }
 
 export interface GqlActor {
   name?: string | null;
+  email?: string | null;
   user?: { login: string; avatarUrl: string } | null;
 }
 
@@ -70,7 +73,7 @@ export interface CommitsParams {
 }
 
 const COMMIT_FIELDS = `oid messageHeadline message committedDate authoredDate
-  author { name user { login avatarUrl } }
+  author { name email user { login avatarUrl } }
   parents(first: 5) { nodes { oid } }
   associatedPullRequests(first: 1) { nodes { number title state } }
   statusCheckRollup { state }
@@ -127,7 +130,7 @@ export function mapCheckState(state: string | null | undefined): CheckStatus | n
 export function mapPerson(actor: GqlActor | null | undefined): Person {
   if (!actor) return { name: "ghost", login: "ghost", avatarUrl: GHOST_AVATAR };
   const u = actor.user;
-  return { name: actor.name ?? u?.login ?? "ghost", login: u?.login ?? null, avatarUrl: u?.avatarUrl ?? GHOST_AVATAR };
+  return { name: actor.name ?? u?.login ?? "ghost", login: u?.login ?? null, avatarUrl: u?.avatarUrl ?? GHOST_AVATAR, ...(actor.email ? { email: actor.email } : {}) };
 }
 
 export function mapCommitNode(node: GqlCommitNode): CommitRow {

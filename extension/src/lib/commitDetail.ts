@@ -44,7 +44,7 @@ export interface CommitDetail {
 /** One commit by SHA (or prefix) with headline, body, author, committer, dates, parents(first: 10), status and associatedPullRequests(first: 1). Variables { owner, name, sha }. */
 export function commitDetailQuery(p: { owner: string; name: string; sha: string }): GraphQlRequest {
   return {
-    query: `query($owner: String!, $name: String!, $sha: String!) { repository(owner: $owner, name: $name) { object(expression: $sha) { ... on Commit { oid messageHeadline messageBody message authoredDate committedDate author { name user { login avatarUrl } } committer { name user { login avatarUrl } } parents(first: 10) { nodes { oid } } associatedPullRequests(first: 1) { nodes { number title state } } statusCheckRollup { state } tree { oid } ${signatureSelection()} } } } }`,
+    query: `query($owner: String!, $name: String!, $sha: String!) { repository(owner: $owner, name: $name) { object(expression: $sha) { ... on Commit { oid messageHeadline messageBody message authoredDate committedDate author { name email user { login avatarUrl } } committer { name email user { login avatarUrl } } parents(first: 10) { nodes { oid } } associatedPullRequests(first: 1) { nodes { number title state } } statusCheckRollup { state } tree { oid } ${signatureSelection()} } } } }`,
     variables: { owner: p.owner, name: p.name, sha: p.sha },
   };
 }

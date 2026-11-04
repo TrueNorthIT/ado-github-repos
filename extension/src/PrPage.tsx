@@ -481,7 +481,7 @@ function Overview({ pr, repo, prTab, openFile, signIn, busy, actions, edit }: { 
 
 // ---------- Commits (PR-9) ----------
 
-interface CommitRow { sha: string; shortSha: string; title: string; author: string; avatar: string; date: Date; signature?: CommitSignature | null }
+interface CommitRow { sha: string; shortSha: string; title: string; author: string; login?: string | null; email?: string; avatar: string; date: Date; signature?: CommitSignature | null }
 
 function commitColumns(repo: string): ITableColumn<CommitRow>[] {
   return [
@@ -497,8 +497,10 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
           line2={
             <span className="gh-pr-commit-meta flex-row flex-center secondary-text">
               <Link className="monospaced-xs secondary-text" href={commitUrl(repo, c.sha)} target="_blank" rel="noopener noreferrer" subtle ariaLabel={`Commit ${c.shortSha} on GitHub`}>{c.shortSha}</Link>
-              <VssPersona imageUrl={c.avatar} displayName={c.author} size="extra-small" suppressPersonaCard showInitialsOnImageError />
-              <span>{c.author}</span>
+              <PersonHover className="gh-pr-commit-person" login={c.login} name={c.author} email={c.email} avatarUrl={c.avatar}>
+                <VssPersona imageUrl={c.avatar} displayName={c.author} size="extra-small" suppressPersonaCard showInitialsOnImageError />
+                <span>{c.author}</span>
+              </PersonHover>
               <RelDate date={c.date} />
               <SignaturePill signature={c.signature} />
             </span>

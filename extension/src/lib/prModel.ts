@@ -53,7 +53,7 @@ export interface PrDetailNode extends PrListNode {
         /** Full message; the title is its first line. */
         message: string;
         authoredDate: string;
-        author?: { name?: string | null; avatarUrl?: string | null; user?: { login?: string | null } | null } | null;
+        author?: { name?: string | null; email?: string | null; avatarUrl?: string | null; user?: { login?: string | null } | null } | null;
       };
     }[];
   } | null;
@@ -113,6 +113,9 @@ export interface PrCommit {
   title: string;
   /** Git author name, else the linked login, else "". */
   author: string;
+  /** The linked login (null when the commit's email is not on a GitHub account) and the git email, for the hover card. */
+  login?: string | null;
+  email?: string;
   date: Date;
 }
 
@@ -222,6 +225,8 @@ export function toDetail(node: PrDetailNode): PrDetail {
     shortSha: shortSha(c.oid),
     title: c.message.split(/\r?\n/)[0],
     author: c.author?.name || c.author?.user?.login || "",
+    login: c.author?.user?.login ?? null,
+    ...(c.author?.email ? { email: c.author.email } : {}),
     date: new Date(c.authoredDate),
   }));
   const { total, resolved } = threadsOf(node);

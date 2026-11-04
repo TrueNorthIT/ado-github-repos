@@ -133,7 +133,7 @@ export function BranchBar({ repo, current, defaultBranch, onPick, inTitle }: { r
 
 /** A 16px avatar (azure-devops-ui VssPersona) with the person's name, as in native's commit rows. */
 export const PersonLine = ({ person, size = "extra-extra-small", className = "" }: { person: Person; size?: "extra-extra-small" | "small"; className?: string }) => (
-  <PersonHover login={person.login} name={person.name} avatarUrl={person.avatarUrl}>
+  <PersonHover login={person.login} name={person.name} email={person.email} avatarUrl={person.avatarUrl}>
     <span className={`gh-person flex-row flex-center ${className}`}>
       <VssPersona imageUrl={person.avatarUrl} displayName={person.name} size={size} suppressPersonaCard showInitialsOnImageError />
       <span className="gh-person-name text-ellipsis">{person.name}</span>

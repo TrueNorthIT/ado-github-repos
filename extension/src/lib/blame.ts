@@ -1,7 +1,7 @@
 // Blame for the Files page's Blame tab: the GraphQL query, its mapper and the line layout.
 //
 // Schema facts (checked live with `gh api graphql` against TrueNorthIT/TrueTunes):
-//  - Commit.blame(path: String!) { ranges { startingLine endingLine age commit { oid abbreviatedOid messageHeadline committedDate author { name user { login avatarUrl } } } } } validates.
+//  - Commit.blame(path: String!) { ranges { startingLine endingLine age commit { oid abbreviatedOid messageHeadline committedDate author { name email user { login avatarUrl } } } } } validates.
 //  - `age` is GitHub's own 1 to 10 bucket (1 newest, 10 oldest), the one its blame page uses for the gutter colour.
 //  - Ranges are 1-based and inclusive, in line order, and may be adjacent for the same commit (separate hunks).
 import type { GraphQlRequest } from "./prQuery";
@@ -25,7 +25,7 @@ export interface BlameRange {
 /** `blame(path: $path)` on the ref's commit. Variables { owner, name, ref, path }; `ref` may be a branch name or qualified ref. */
 export function blameQuery(p: { owner: string; name: string; ref: string; path: string }): GraphQlRequest {
   return {
-    query: `query($owner: String!, $name: String!, $ref: String!, $path: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { target { ... on Commit { blame(path: $path) { ranges { startingLine endingLine age commit { oid abbreviatedOid messageHeadline committedDate author { name user { login avatarUrl } } } } } } } } } }`,
+    query: `query($owner: String!, $name: String!, $ref: String!, $path: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { target { ... on Commit { blame(path: $path) { ranges { startingLine endingLine age commit { oid abbreviatedOid messageHeadline committedDate author { name email user { login avatarUrl } } } } } } } } } }`,
     variables: { owner: p.owner, name: p.name, ref: p.ref, path: normalizeHistoryPath(p.path) },
   };
 }

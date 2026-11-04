@@ -123,6 +123,8 @@ export interface EventItem {
   date: Date;
   /** pushed: number of commits in the group. */
   count?: number;
+  /** pushed: who pushed, for the hover card (login null for a git-only identity). */
+  person?: { login: string | null; name: string; email?: string };
   /** pushed: the grouped commits, chronological. */
   commits?: FeedEventCommit[];
   /** review_*: rendered review body; absent when the review has no body. */
@@ -202,7 +204,9 @@ export function toFeed(timeline: (TimelineNode | null)[], threads: (ReviewThread
     if (!group.length) return;
     const commits = group.map((g) => ({ sha: g.commit.oid as string, title: String(g.commit.messageHeadline ?? g.commit.message ?? "").split(String.fromCharCode(10))[0], date: new Date(g.commit.committedDate) }));
     const a = commitActor(group[0].commit);
-    items.push({ kind: "event", id: group[0].id, type: "pushed", actor: a.login, avatarUrl: a.avatarUrl, date: commits[commits.length - 1].date, count: commits.length, commits });
+    const ga = group[0].commit?.author;
+    const person = { login: ga?.user?.login ?? null, name: ga?.name ?? a.login, ...(ga?.email ? { email: ga.email as string } : {}) };
+    items.push({ kind: "event", id: group[0].id, type: "pushed", actor: a.login, avatarUrl: a.avatarUrl, date: commits[commits.length - 1].date, count: commits.length, commits, person });
     group = [];
   };
   for (const n of nodes) {

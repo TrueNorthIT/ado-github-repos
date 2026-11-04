@@ -56,7 +56,7 @@ import { copyLinkText, selectionLines, withLines, type LineRange } from "./lib/l
 import { CsvPreview } from "./CsvTable";
 import { tableDelimiter } from "./lib/csv";
 import "./browser.css";
-import { PrLinkHovers } from "./HoverCard";
+import { PersonHover, PrLinkHovers } from "./HoverCard";
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
 const baseOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
@@ -402,7 +402,7 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
                 <div className="gh-commit">
                   <Link className="gh-commit-sha" subtle href={commitUrl(repo, c.sha)} target="_blank" rel="noopener noreferrer">{c.shortSha}</Link>
                   <Tooltip text={c.headline} overflowOnly><span className="gh-commit-msg">{c.headline}</span></Tooltip>
-                  {c.author && <span className="gh-commit-author secondary-text">{c.author}</span>}
+                  {c.author && <PersonHover login={c.login} name={c.author} email={c.email} avatarUrl={c.avatarUrl}><span className="gh-commit-author secondary-text">{c.author}</span></PersonHover>}
                 </div>
               )}
             </SimpleTableCell>

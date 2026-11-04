@@ -1,6 +1,7 @@
 // The "Advanced Security" hub (R2): GitHub's Dependabot, code scanning and secret scanning alerts in the shape of Azure DevOps' Advanced Security pages.
 // The pure parts are in lib/security*.ts; the calls are in securityData.ts. The hash (view=security, secTab, alert, secState...) is routed from useHashExtras().security.
 import * as React from "react";
+import { PersonHover } from "./HoverCard";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Dialog } from "azure-devops-ui/Dialog";
@@ -432,7 +433,7 @@ function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kin
             <Card className="gh-pr-card" titleProps={{ text: "Details" }}>
               <div className="flex-column gh-sec-facts">
                 {!secret && <Row label="Severity"><SeverityPill severity={d.severity} /></Row>}
-                <Row label="State">{STATE_TEXT[d.state]}{d.dismissal ? ` (${reasonLabel(d.dismissal.reason)}${d.dismissal.by ? ` by ${d.dismissal.by}` : ""})` : ""}</Row>
+                <Row label="State">{STATE_TEXT[d.state]}{d.dismissal && <> ({reasonLabel(d.dismissal.reason)}{d.dismissal.by && <> by <PersonHover login={d.dismissal.by}><span>{d.dismissal.by}</span></PersonHover></>})</>}</Row>
                 {d.dismissal?.comment && <Row label="Comment">{d.dismissal.comment}</Row>}
                 <Row label="First detected"><RelDate date={d.firstDetected} /></Row>
                 {d.fixedAt && <Row label="Fixed"><RelDate date={d.fixedAt} /></Row>}

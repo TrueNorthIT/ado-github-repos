@@ -7,6 +7,8 @@
 // (360px card, 72px persona, title-s name, the contact-line rows), so the layout is the native card's rather than measured by eye.
 import * as React from "react";
 import { Callout } from "azure-devops-ui/Callout";
+import { IdentityCard } from "azure-devops-ui/IdentityCard";
+import type { IIdentity } from "azure-devops-ui/Components/Persona/Persona.Props";
 import { Icon } from "azure-devops-ui/Icon";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -19,6 +21,8 @@ import { fetchWorkItemCard } from "./workItemsApi";
 import { PR_STATUS_PILL, hoverStep, isLogin, prLinkNumber, isShown, reviewSummary, type HoverEvent, type HoverPhase, type PullCard, type UserCard, type WorkItemCard } from "./lib/hoverCard";
 import type { WorkItemType } from "./workItemsApi";
 import { botIdentity, type BotIdentity } from "./lib/botIdentity";
+import { chooseCard } from "./lib/identityCard";
+import { adoConnections, adoEntity, findAdoIdentity } from "./adoIdentity";
 import "./hoverCard.css";
 
 /** The repo the page is showing, so a bare PR number (#123) can be looked up. RepoHubPage provides it. */
@@ -66,6 +70,8 @@ const keyboardFocus = (el: Element) => {
 export interface HoverCardProps {
   /** The card's content, rendered only while it is open (so its lookups start on open). */
   card: () => React.ReactNode;
+  /** The card draws its own callout (HoverFrame, from context) instead of being put in the standard one. */
+  unframed?: boolean;
   /** The card's accessible name ("Profile card for ann"). */
   label: string;
   className?: string;
@@ -73,6 +79,10 @@ export interface HoverCardProps {
 }
 
 const hideTooltips = (on: boolean) => document.body.classList.toggle("gh-hover-on-anchor", on);
+
+/** What an unframed card needs to draw its own callout. */
+interface HoverFrame { anchor: HTMLElement; label: string; send: (e: HoverEvent) => void; cardEl: React.RefObject<HTMLDivElement> }
+const HoverFrameContext = React.createContext<HoverFrame | null>(null);
 
 /** The card itself: an azure-devops-ui Callout below `anchor`, in the IdentityCard's frame. Clicks inside don't reach the anchor's
  *  React ancestors (a table row's activation, say); links still open. */
@@ -100,7 +110,7 @@ function HoverCallout({ anchor, label, send, cardEl, children }: { anchor: HTMLE
 
 /** Wraps its children in an inline anchor that opens the card after a rest of OPEN_DELAY (pointer) or on keyboard focus. Leaving
  *  the anchor gives CLOSE_DELAY to reach the card, which stays open while the pointer is on it; Escape closes it. */
-export function HoverCard({ card, label, className, children }: HoverCardProps) {
+export function HoverCard({ card, label, className, unframed, children }: HoverCardProps) {
   const anchor = React.useRef<HTMLSpanElement>(null);
   const cardEl = React.useRef<HTMLDivElement>(null);
   const { shown, send } = useHover();
@@ -125,7 +135,9 @@ export function HoverCard({ card, label, className, children }: HoverCardProps) 
       onBlur={(e) => { if (!cardEl.current?.contains(e.relatedTarget as Node | null)) send("blur"); }}
     >
       {children}
-      {shown && anchor.current && <HoverCallout anchor={anchor.current} label={label} send={send} cardEl={cardEl}>{card()}</HoverCallout>}
+      {shown && anchor.current && (unframed
+        ? <HoverFrameContext.Provider value={{ anchor: anchor.current, label, send, cardEl }}>{card()}</HoverFrameContext.Provider>
+        : <HoverCallout anchor={anchor.current} label={label} send={send} cardEl={cardEl}>{card()}</HoverCallout>)}
     </span>
   );
 }
@@ -285,14 +297,59 @@ function BotCard({ bot, login, avatarUrl }: { bot: BotIdentity; login: string; a
   );
 }
 
-/** A GitHub user's avatar and name with a profile card. No login (an unlinked commit email, the ghost) means no card. A bot gets BotCard and no lookup;
+// ---------- git-only identities (a commit email on no GitHub account) ----------
+
+/** ADO's own identity card (azure-devops-ui IdentityCard, which draws its own light-dismiss callout). Pointer moves inside it keep it open;
+ *  moving off it and the anchor closes it after the usual grace period, as the other cards. */
+function AdoIdentityCard({ identity, frame }: { identity: IIdentity; frame: HoverFrame }) {
+  const track = (e: React.MouseEvent) => {
+    const r = frame.anchor.getBoundingClientRect();
+    const onAnchor = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    const inCard = e.target instanceof Element && !!e.target.closest(".bolt-callout-content");
+    frame.send(inCard || onAnchor ? "cardEnter" : "cardLeave");
+  };
+  return (
+    <span onMouseMove={track} onMouseOver={track}>
+      <IdentityCard identity={identity} target={frame.anchor} getEntityFromUniqueAttribute={adoEntity} onRequestConnectionInformation={adoConnections} onDismissCallback={() => frame.send("dismiss")} />
+    </span>
+  );
+}
+
+/** A commit author with no GitHub account: ADO's card when the email is someone in the organisation, else the name and email. */
+function GitIdentityCard({ name, email, avatarUrl }: { name: string; email?: string; avatarUrl?: string }) {
+  const frame = React.useContext(HoverFrameContext)!;
+  const ado = useLoad(() => (email ? findAdoIdentity(email) : Promise.resolve(null)), [email]);
+  if (ado.t === "ready" && ado.v) return <AdoIdentityCard identity={ado.v} frame={frame} />;
+  return (
+    <HoverCallout {...frame}>
+      {ado.t === "loading" ? <Shimmer persona /> : (
+        <div className="bolt-identity-default-card-without-header bolt-identity-card-content">
+          <div className="flex-row">
+            <VssPersona className="bolt-identity-card-persona-main" imageUrl={avatarUrl} displayName={name} size="extra-large" suppressPersonaCard showInitialsOnImageError />
+            <div className="flex-column flex-grow bolt-identity-card-name gh-hover-min0">
+              <div className="word-wrap title-s">{name}</div>
+              {email && <Link className="text-ellipsis" href={`mailto:${email}`} removeUnderline>{email}</Link>}
+            </div>
+          </div>
+          <hr className="bolt-identity-card-hr" />
+          <div className="bolt-identity-default-card-contact-line-wrapper secondary-text">This commit&apos;s email isn&apos;t linked to a GitHub account.</div>
+        </div>
+      )}
+    </HoverCallout>
+  );
+}
+
+/** A person's avatar and/or name with their hover card, chosen by chooseCard (lib/identityCard.ts): a bot gets BotCard (no lookup), a login the GitHub
+ *  profile card, a git-only identity (no login; `name` and `email` from the commit) GitIdentityCard. Nothing to go on (the ghost) means no card.
  *  `type` ("Bot" from GraphQL's __typename or REST's user.type) catches an app whose GraphQL login has no "[bot]" suffix. */
-export function PersonHover({ login, name, avatarUrl, type, repo: repoProp, className, children }: { login: string | null | undefined; name?: string; avatarUrl?: string; type?: string | null; repo?: string; className?: string; children: React.ReactNode }) {
+export function PersonHover({ login, name, email, avatarUrl, type, repo: repoProp, className, children }: { login: string | null | undefined; name?: string; email?: string; avatarUrl?: string; type?: string | null; repo?: string; className?: string; children: React.ReactNode }) {
   const pageRepo = React.useContext(HoverRepoContext);
   const repo = repoProp ?? pageRepo;
+  const choice = chooseCard({ login, type, name, email });
+  if (!choice) return <>{children}</>;
+  if (choice.kind === "bot") return <HoverCard className={className} label={`Card for ${choice.bot.name}`} card={() => <BotCard bot={choice.bot} login={login!} avatarUrl={avatarUrl} />}>{children}</HoverCard>;
+  if (choice.kind === "git") return <HoverCard className={className} unframed label={`Card for ${choice.name}`} card={() => <GitIdentityCard name={choice.name} email={choice.email} avatarUrl={avatarUrl} />}>{children}</HoverCard>;
   if (!isLogin(login)) return <>{children}</>;
-  const bot = botIdentity({ login, type });
-  if (bot) return <HoverCard className={className} label={`Card for ${bot.name}`} card={() => <BotCard bot={bot} login={login} avatarUrl={avatarUrl} />}>{children}</HoverCard>;
   return <HoverCard className={className} label={`Profile card for ${login}`} card={() => <PersonCard login={login} name={name} avatarUrl={avatarUrl} org={repo?.split("/")[0]} />}>{children}</HoverCard>;
 }
 

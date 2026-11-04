@@ -459,3 +459,13 @@ describe("threads carry where they were written, and Copilot's findings", () => 
     expect(only<ThreadItem>(items, "thread")[0].comments[0].copilot).toEqual({});
   });
 });
+
+describe("pushed events keep who pushed, for the hover card", () => {
+  it("keeps a linked login, or the git name and email when the commit's email is on no GitHub account", () => {
+    const git: TimelineNode = { ...commit("bbb22222", null, at("10:00")), commit: { ...commit("bbb22222", null, at("10:00")).commit, author: { name: "Bogdan", email: "b@example.com", avatarUrl: null, user: null } } };
+    const [p] = events(feed([git])).filter((e) => e.type === "pushed");
+    expect(p.person).toEqual({ login: null, name: "Bogdan", email: "b@example.com" });
+    const [q] = events(feed([commit("aaa11111", "ann", at("10:00"))])).filter((e) => e.type === "pushed");
+    expect(q.person).toEqual({ login: "ann", name: "ann" });
+  });
+});

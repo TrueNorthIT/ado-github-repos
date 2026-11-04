@@ -82,7 +82,7 @@ export function detailQuery({ owner, name, number }: { owner: string; name: stri
       statusCheckRollup { state }
       reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login avatarUrl } ... on Bot { login avatarUrl } ... on Team { login: name avatarUrl } } } }
       reviews(first: 100) { nodes { author { login avatarUrl } state submittedAt } }
-      commits(first: 100) { nodes { commit { oid message authoredDate author { name avatarUrl user { login } } } } }
+      commits(first: 100) { nodes { commit { oid message authoredDate author { name email avatarUrl user { login } } } } }
     }
   }
 }`,

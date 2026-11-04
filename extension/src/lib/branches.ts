@@ -47,7 +47,7 @@ export interface BranchesPage {
  */
 export function branchListQuery(p: { owner: string; name: string; after?: string }): GraphQlRequest {
   return {
-    query: `query($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { id defaultBranchRef { name } refs(refPrefix: "refs/heads/", first: 100, after: $after, orderBy: {field: ALPHABETICAL, direction: ASC}) { pageInfo { hasNextPage endCursor } nodes { id name branchProtectionRule { id } associatedPullRequests(states: OPEN, first: 1) { nodes { number title } } target { ... on Commit { oid authoredDate author { name user { login avatarUrl } } statusCheckRollup { state } } } } } } }`,
+    query: `query($owner: String!, $name: String!, $after: String) { repository(owner: $owner, name: $name) { id defaultBranchRef { name } refs(refPrefix: "refs/heads/", first: 100, after: $after, orderBy: {field: ALPHABETICAL, direction: ASC}) { pageInfo { hasNextPage endCursor } nodes { id name branchProtectionRule { id } associatedPullRequests(states: OPEN, first: 1) { nodes { number title } } target { ... on Commit { oid authoredDate author { name email user { login avatarUrl } } statusCheckRollup { state } } } } } } }`,
     variables: { owner: p.owner, name: p.name, after: p.after ?? null },
   };
 }

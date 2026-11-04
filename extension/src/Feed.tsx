@@ -309,7 +309,7 @@ function EventRow({ e, repo, baseRef }: { e: EventItem; repo: string; baseRef: s
     <div className="gh-feed-event">
       <div className="gh-feed-event-line">
         <span className="gh-feed-event-text">
-          <ActorName className="gh-feed-actor" login={e.actor} type={e.actorType} /> <Phrase e={e} baseRef={baseRef} />
+          <PersonHover login={e.person ? e.person.login : e.actor} name={e.person?.name} email={e.person?.email} avatarUrl={e.avatarUrl} type={e.actorType}><ActorName className="gh-feed-actor" login={e.actor} type={e.actorType} /></PersonHover> <Phrase e={e} baseRef={baseRef} />
           {pushed && (
             <Button className="gh-feed-expand" subtle iconProps={{ iconName: open ? "ChevronDown" : "ChevronRight" }} ariaLabel={open ? "Hide commits" : "Show commits"} ariaExpanded={open} ariaControls={listId} onClick={() => setOpen(!open)} />
           )}

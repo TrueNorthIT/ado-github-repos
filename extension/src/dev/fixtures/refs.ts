@@ -12,7 +12,7 @@ const avatar = (login: string) => {
   const c = COLORS[[...login].reduce((h, ch) => h + ch.charCodeAt(0), 0) % COLORS.length];
   return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${c}"/><text x="32" y="42" font-family="Segoe UI,Arial" font-size="28" fill="#fff" text-anchor="middle">${login[0].toUpperCase()}</text></svg>`)}`;
 };
-export interface Who { name: string; login: string | null }
+export interface Who { name: string; login: string | null; email?: string }
 const PEOPLE: Who[] = [
   { name: "Ann Author", login: "ann" },
   { name: "bob", login: "bob-dev" },
@@ -20,9 +20,10 @@ const PEOPLE: Who[] = [
   { name: "Mock User", login: ME },
   { name: "Dave Developer", login: "dave" },
   { name: "Renovate Bot", login: "renovate" },
-  { name: "Sam Unlinked", login: null }, // a git identity with no GitHub account
+  { name: "Sam Unlinked", login: null, email: "sam@unlinked.example" }, // a git identity with no GitHub account, and no one in Azure DevOps either
+  { name: "Gwen Git", login: null, email: "gwen.git@contoso.example" }, // no GitHub account, but in the mock Azure DevOps directory (mockSdk.ts)
 ];
-const actor = (w: Who) => ({ name: w.name, user: w.login ? { login: w.login, avatarUrl: avatar(w.login) } : null });
+const actor = (w: Who) => ({ name: w.name, ...(w.email ? { email: w.email } : {}), user: w.login ? { login: w.login, avatarUrl: avatar(w.login) } : null });
 
 function rng(seed: number) {
   return () => {
@@ -167,6 +168,9 @@ function build(fullName: string): RepoRefs {
   set("feature/login", 3); set("feature/jdp/tooling-majors", 3); set("feature/jdp/retry-sync", 3);
   ["all-minor-patch", "jasmine-7.x", "major-eslint-monorepo", "pin-dependencies", "tailwindcss-monorepo"].forEach((n) => set(`renovate/${n}`, 5));
   set("stale/spike-graphql", 6);
+  // Git-only authors near the top of the history, for the Files and Commits hover cards: one in ADO's directory, one in no directory at all.
+  commits[commits.length - 3].author = PEOPLE[7];
+  commits[commits.length - 4].author = PEOPLE[6];
   const T = (name: string, frac: number, annotated?: string): FTag => {
     const c = commits[Math.round((commits.length - 1) * frac)];
     return { name, commit: c.sha, at: c.at, ...(annotated ? { message: annotated, tagger: PEOPLE[3] } : {}) };

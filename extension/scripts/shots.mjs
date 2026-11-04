@@ -77,6 +77,9 @@ const MOCK_PAGES = {
   // The code above each review thread in the Overview feed: Copilot's findings (title, severity, the "suggested a fix" link) and the ordinary threads (a range, a LEFT-side line, an outdated one).
   "pr-200-copilot": `?hub=prs&click=${encodeURIComponent('scroll:[aria-label="Code at src/retry.ts"]')}${REPO}&view=prs&pr=200`,
   // Copilot as a comment author: "Copilot" with the AI pill, and its card (no /users lookup).
+  // A commit author whose email is on no GitHub account: ADO's own identity card when the email is in its directory (Gwen), else name and email (Sam).
+  "hover-git-ado": `?hub=commits&click=${encodeURIComponent("hover:.gh-hover-anchor > .gh-person@Gwen Git")}${REPO}`,
+  "hover-git": `?hub=commits&click=${encodeURIComponent("hover:.gh-hover-anchor > .gh-person@Sam Unlinked")}${REPO}`,
   "hover-copilot": `?hub=prs&click=${encodeURIComponent("hover:.gh-feed-who .gh-hover-anchor:has(.gh-bot-pill)")}${REPO}&view=prs&pr=200`,
   "pr-200-threads": `?hub=prs&click=${encodeURIComponent('scroll:[aria-label="Code at src/lib/names.ts"]')}${REPO}&view=prs&pr=200`,
   // VW-12: collapsed unchanged lines with their expand rows, inline and side by side, and after "Show 20 more below".

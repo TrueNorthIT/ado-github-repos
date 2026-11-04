@@ -39,7 +39,7 @@ const BRANCH_PAGE = 100;
 const AUTHORS = [
   { name: "Ann Author", user: { name: "Ann Display", login: "ann" } },
   { name: "bob", user: { name: null, login: "bob-dev" } },
-  { name: "Carol Commit", user: null },
+  { name: "Carol Commit", email: "carol.commit@example.com", user: null }, // git-only: her email is on no GitHub account, so Files shows the git card
 ];
 const MESSAGES = ["Update dependencies", "Fix login redirect", "Merged PR 412: Add retry handling to the sync job and tidy up the logging so failures include the correlation id", "Initial commit", "Docs: clarify setup", "Refactor listing"];
 const AGES_MIN = [12, 48, 135, 60 * 26, 60 * 24 * 9, 60 * 24 * 75, 60 * 24 * 400, 60 * 24 * 1000];

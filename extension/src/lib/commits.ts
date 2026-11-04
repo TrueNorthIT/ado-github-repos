@@ -9,6 +9,10 @@ export interface CommitInfo {
   headline: string;
   date: Date;
   author: string;
+  /** For the author's hover card: the linked login (null for a git-only identity), the git email and an avatar. */
+  login?: string | null;
+  email?: string;
+  avatarUrl?: string;
 }
 
 export interface CommitQuery {
@@ -32,7 +36,7 @@ export function buildQueries(repo: string, ref: string, entries: TreeEntry[], ch
     const aliases: Record<string, string> = {};
     part.forEach((p, n) => ((variables[`p${n}`] = p), (aliases[`e${n}`] = p)));
     const decl = part.map((_, n) => `,$p${n}: String!`).join("");
-    const fields = part.map((_, n) => `e${n}: history(first: 1, path: $p${n}) { nodes { oid messageHeadline committedDate author { name user { name login } } } }`).join(" ");
+    const fields = part.map((_, n) => `e${n}: history(first: 1, path: $p${n}) { nodes { oid messageHeadline committedDate author { name email avatarUrl user { name login avatarUrl } } } }`).join(" ");
     out.push({
       query: `query($owner: String!, $name: String!, $ref: String!${decl}) { repository(owner: $owner, name: $name) { object(expression: $ref) { ... on Commit { ${fields} } } } }`,
       variables,
@@ -46,7 +50,7 @@ interface Node {
   oid: string;
   messageHeadline: string;
   committedDate: string;
-  author?: { name?: string | null; user?: { name?: string | null; login?: string | null } | null } | null;
+  author?: { name?: string | null; email?: string | null; avatarUrl?: string | null; user?: { name?: string | null; login?: string | null; avatarUrl?: string | null } | null } | null;
 }
 
 /** Maps a GraphQL body to path-keyed commits. Entries without history are left out; partial data survives `errors`. */
@@ -62,6 +66,9 @@ export function mapResponse(body: any, aliases: Record<string, string>): Record<
       headline: n.messageHeadline,
       date: new Date(n.committedDate),
       author: n.author?.user?.name || n.author?.name || n.author?.user?.login || "",
+      login: n.author?.user?.login ?? null,
+      ...(n.author?.email ? { email: n.author.email } : {}),
+      ...(n.author?.user?.avatarUrl || n.author?.avatarUrl ? { avatarUrl: (n.author?.user?.avatarUrl || n.author?.avatarUrl)! } : {}),
     };
   }
   return out;
