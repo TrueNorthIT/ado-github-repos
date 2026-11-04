@@ -32,17 +32,22 @@ export function groupChecks<R extends GroupableRow>(rows: R[]): { top: R[]; grou
   return { top, groups };
 }
 
+/** The Overview's rule: a group is open while something in it failed or is still running. */
+export const openWhenActionable = (state: PolicyState) => state === "failure" || state === "pending";
+
 /**
- * Which groups are open. A group with no entry starts open when it has a failure or is pending. After that the user's toggle (an entry in `open`) wins,
- * with one exception: a collapsed group that goes from passing (success or neutral) to failing opens. `seen` is each group's state last time round.
+ * Which groups are open. A group the user hasn't toggled follows `auto` (by default open while failing or running), so a group first seen running
+ * collapses once it passes. A toggle (an entry in `toggled`) wins, with one exception: a collapsed group that goes from passing (success or neutral)
+ * to failing opens again. `seen` is each group's state last time round.
  */
-export function reconcileOpen(open: Record<string, boolean>, seen: Record<string, PolicyState>, groups: { name: string; state: PolicyState }[]) {
-  const o = { ...open };
+export function reconcileOpen(toggled: Record<string, boolean>, seen: Record<string, PolicyState>, groups: { name: string; state: PolicyState }[], auto: (state: PolicyState) => boolean = openWhenActionable) {
+  const t = { ...toggled };
+  const open: Record<string, boolean> = {};
   const s: Record<string, PolicyState> = {};
   for (const { name, state } of groups) {
-    if (!(name in o)) o[name] = state === "failure" || state === "pending";
-    else if (!o[name] && state === "failure" && (seen[name] === "success" || seen[name] === "neutral")) o[name] = true;
+    if (t[name] === false && state === "failure" && (seen[name] === "success" || seen[name] === "neutral")) delete t[name];
+    open[name] = name in t ? t[name] : auto(state);
     s[name] = state;
   }
-  return { open: o, seen: s };
+  return { open, toggled: t, seen: s };
 }

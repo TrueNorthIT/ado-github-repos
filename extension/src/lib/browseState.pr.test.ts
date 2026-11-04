@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parse, serialize, BrowseState } from "./browseState";
 
 // Module under test: src/lib/browseState.ts (parse, serialize), extended for the Pull requests page.
-// New hash keys: view=prs, prTab=mine|active|completed|abandoned, pr=<positive integer>, prPage=overview|files|commits, file=<path>.
+// New hash keys: view=prs, prTab=mine|active|completed|abandoned, pr=<positive integer>, prPage=overview|files|updates|commits|checks, file=<path>.
 // Rules fixed here (the brief left them open):
 //  - All PR keys need a repo (as everything in this module does) and view=prs; without view=prs they are dropped.
 //  - prPage and file are only honoured together with pr.
@@ -60,13 +60,13 @@ describe("PR-5: A pull request page in the hash", () => {
     expect(typeof out.pr, "Expected pr to be a number, not a string").toBe("number");
   });
 
-  it.each(["overview", "files", "commits"] as const)("round-trips prPage=%s", (prPage) => {
+  it.each(["overview", "files", "commits", "checks"] as const)("round-trips prPage=%s", (prPage) => {
     const s: BrowseState = { repo: "acme/web", view: "prs", pr: 7, prPage };
     expect(roundTrip(s), `Expected page ${prPage} to survive`).toEqual(s);
   });
 
   it("drops an unknown prPage but keeps the pull request", () => {
-    expect(parse("#repo=acme/web&view=prs&pr=7&prPage=checks"), "Expected the invalid page dropped").toEqual({ repo: "acme/web", view: "prs", pr: 7 });
+    expect(parse("#repo=acme/web&view=prs&pr=7&prPage=builds"), "Expected the invalid page dropped").toEqual({ repo: "acme/web", view: "prs", pr: 7 });
   });
 
   it("drops prPage when there is no pr", () => {

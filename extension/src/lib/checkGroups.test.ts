@@ -67,37 +67,54 @@ describe("groupChecks", () => {
 });
 
 describe("reconcileOpen (default expansion)", () => {
+  type St = { open: Record<string, boolean>; toggled: Record<string, boolean>; seen: Record<string, GroupableRow["state"]> };
   const g = (name: string, state: GroupableRow["state"]) => ({ name, state });
-  const step = (s: { open: Record<string, boolean>; seen: Record<string, GroupableRow["state"]> }, ...gs: ReturnType<typeof g>[]) => reconcileOpen(s.open, s.seen, gs);
-  const start = { open: {}, seen: {} };
+  const step = (s: St, ...gs: ReturnType<typeof g>[]) => reconcileOpen(s.toggled, s.seen, gs);
+  const toggle = (s: St, name: string): St => ({ ...s, toggled: { ...s.toggled, [name]: !s.open[name] } });
+  const start: St = { open: {}, toggled: {}, seen: {} };
 
   it("opens a group with a failure or anything pending, collapses one that passed or is neutral", () => {
     const s = step(start, g("F", "failure"), g("P", "pending"), g("S", "success"), g("N", "neutral"));
     expect(s.open).toEqual({ F: true, P: true, S: false, N: false });
   });
 
+  it("an untouched group follows its state: one first seen running collapses once it passes, and opens if it then fails", () => {
+    let s = step(start, g("Publish", "pending"));
+    expect(s.open.Publish, "Expected a running group to start open").toBe(true);
+    s = step(s, g("Publish", "success"));
+    expect(s.open.Publish, "Expected it to collapse once it passed (it stayed open in 0.39.2)").toBe(false);
+    s = step(s, g("Publish", "failure"));
+    expect(s.open.Publish, "Expected it to open when it failed").toBe(true);
+  });
+
   it("the user's choice wins even when the state changes", () => {
     let s = step(start, g("F", "failure"), g("S", "success"));
-    s = { ...s, open: { ...s.open, F: false, S: true } }; // user collapses F, opens S
+    s = toggle(toggle(s, "F"), "S"); // user collapses F, opens S
     s = step(s, g("F", "success"), g("S", "success"));
     expect(s.open).toEqual({ F: false, S: true });
     s = step(s, g("F", "pending"), g("S", "pending"));
     expect(s.open).toEqual({ F: false, S: true });
   });
 
-  it("a group that goes from passing to failing while collapsed opens", () => {
+  it("a collapsed group that goes from passing to failing opens", () => {
     let s = step(start, g("G", "success"));
+    s = step({ ...s, toggled: { G: false } }, g("G", "success")); // the user opened it and closed it again
+    expect(s.open.G).toBe(false);
     s = step(s, g("G", "failure"));
     expect(s.open.G).toBe(true);
   });
 
   it("but not when the user collapsed it after it was already failing", () => {
     let s = step(start, g("G", "failure"));
-    s = { ...s, open: { G: false } };
-    s = step(s, g("G", "failure"));
+    s = step(toggle(s, "G"), g("G", "failure"));
     expect(s.open.G).toBe(false);
     s = step(s, g("G", "pending")); // a re-run: still the user's call
     expect(s.open.G).toBe(false);
+  });
+
+  it("takes another rule for untouched groups (the Checks tab opens everything)", () => {
+    const s = reconcileOpen({}, {}, [g("S", "success"), g("F", "failure")], () => true);
+    expect(s.open).toEqual({ S: true, F: true });
   });
 
   it("is idempotent for unchanged input", () => {

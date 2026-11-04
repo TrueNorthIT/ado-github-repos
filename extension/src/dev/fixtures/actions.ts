@@ -17,9 +17,10 @@ const run = (name: string, conclusion: string | null, isRequired: boolean, statu
 const wfRun = (name: string, workflow: string, minAgo: number, conclusion: string, isRequired = false): Check => ({
   ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>), startedAt: iso((minAgo + 1) * MIN), completedAt: iso(minAgo * MIN), checkSuite: { workflowRun: { workflow: { name: workflow } } },
 });
-/** A GitHub Actions job of workflow run `runId` (the id that re-run needs), with its annotation count. */
-const job = (name: string, runId: number, conclusion: string | null, isRequired: boolean, annotations = 0, workflow = "Validate"): Check => ({
+/** A GitHub Actions job of workflow run `runId` (the id that re-run needs), with its annotation count; `secs` is how long it ran (still running: from when it started). */
+const job = (name: string, runId: number, conclusion: string | null, isRequired: boolean, annotations = 0, workflow = "Validate", secs = 42): Check => ({
   ...(run(name, conclusion, isRequired) as Extract<Check, { __typename: "CheckRun" }>),
+  startedAt: iso(30 * MIN + secs * 1000), ...(conclusion ? { completedAt: iso(30 * MIN) } : {}),
   detailsUrl: `https://github.com/${PR_REPO}/actions/runs/${runId}/job/${name.length}`,
   checkSuite: { workflowRun: { workflow: { name: workflow } } }, runSuite: { workflowRun: { databaseId: runId } }, annotations: { totalCount: annotations },
 });
@@ -80,13 +81,16 @@ const SPECS: Record<number, Spec> = {
 
 function ciChecks(): Check[] {
   return [
-  job("build", RERUN_RUN, "SUCCESS", true),
-  job("unit tests", RERUN_RUN, "FAILURE", true, 2),
-  job("lint", RERUN_RUN, "FAILURE", false, 4),
+  job("build", RERUN_RUN, "SUCCESS", true, 0, "Validate", 95),
+  job("unit tests", RERUN_RUN, "FAILURE", true, 2, "Validate", 138),
+  job("lint", RERUN_RUN, "FAILURE", false, 4, "Validate", 21),
   { ...(run("code quality", "FAILURE", false) as Extract<Check, { __typename: "CheckRun" }>), detailsUrl: `https://checks.example.test/${PR_REPO}/312`, annotations: { totalCount: 1 }, appSuite: { app: { name: "SonarCloud" } } },
-  job("deploy preview", 9002, "SUCCESS", false, 0, "Storybook"),
-  job("build storybook", 9002, "SUCCESS", false, 0, "Storybook"),
-  job("screenshots", 9003, null, false, 0, "Screenshots"),
+  job("deploy preview", 9002, "SUCCESS", false, 0, "Storybook", 34),
+  job("build storybook", 9002, "SUCCESS", false, 0, "Storybook", 212),
+  job("screenshots", 9003, null, false, 0, "Screenshots", 70),
+  // Workflows that skip on a pull request, as a busy repository's do: they collapse to one row each on the Overview.
+  job("publish", 9004, "SKIPPED", false, 0, "Publish", 0), job("release notes", 9004, "SKIPPED", false, 0, "Publish", 0), job("tag", 9004, "SKIPPED", false, 0, "Publish", 0),
+  job("auto-merge", 9005, "SKIPPED", false, 0, "Dependabot auto-merge", 0),
   { __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS", targetUrl: null, isRequired: false },
   ];
 }

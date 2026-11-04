@@ -34,6 +34,8 @@ import { getBranchNames, getMergeMessages } from "./githubBrowse";
 import { mergeMethodLabel, supportsCustomMessage, type MergeMethod } from "./lib/mergeOptions";
 import { SEMI_LINEAR_LABEL, SEMI_LINEAR_STEP_TEXT } from "./lib/semiLinear";
 import { groupChecks, reconcileOpen, type CheckGroup } from "./lib/checkGroups";
+import { formatDuration } from "./lib/workflows";
+import { ZeroData } from "azure-devops-ui/ZeroData";
 import type { PolicyState } from "./lib/policies";
 import type { ActionablePolicyRow } from "./lib/updateBranch";
 import type { CheckRerun } from "./lib/reruns";
@@ -451,7 +453,7 @@ function UpdateBranchButton({ store, methods }: { store: ActionStore; methods: N
   );
 }
 
-function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }) {
+function PolicyItem({ r, store, all }: { r: ActionablePolicyRow; store: ActionStore; all?: boolean }) {
   const href = safeUrl(r.url);
   const hubHref = useHubHref();
   // REQ-16: a GitHub Actions job opens in the Actions hub; other checks keep their external link.
@@ -468,9 +470,12 @@ function PolicyItem({ r, store }: { r: ActionablePolicyRow; store: ActionStore }
       {r.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
       {!!info?.annotations && <span className="gh-policy-annotations secondary-text body-s">{info.annotations} {info.annotations === 1 ? "annotation" : "annotations"}</span>}
       {r.detail && <span className="gh-policy-detail secondary-text body-s text-ellipsis">{r.detail}</span>}
-      {href && (inHub ? <Link className="gh-policy-link body-s" href={hubHref("actions", inHub)} onClick={openInHub("actions", inHub)}>Details</Link> : <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>)}
-      {/* Only on the rows that failed: skipped and passing jobs of the same failed run offered it too (seen live on TrueTunes #234). */}
+      <span className="gh-policy-spacer" />
+      {/* Only on the rows that failed: skipped and passing jobs of the same failed run offered it too (seen live on TrueTunes #234).
+          It comes before the duration and Details, so those line up down the right-hand side whether a row has the button or not. */}
       {info && r.state === "failure" && <RerunButton store={store} title={r.title} rerun={info.rerun} />}
+      {all && r.state !== "neutral" && info?.durationMs !== undefined && <span className="gh-policy-dur secondary-text body-s">{formatDuration(info.durationMs)}</span>}
+      {href && (inHub ? <Link className="gh-policy-link body-s" href={hubHref("actions", inHub)} onClick={openInHub("actions", inHub)}>Details</Link> : <Link className="gh-policy-link body-s" href={href} target="_blank" rel="noopener noreferrer">Details</Link>)}
       {r.kind === "conflicts" && r.state === "failure" && conflictUrl && <Link className="gh-policy-link body-s" href={conflictUrl} target="_blank" rel="noopener noreferrer">Resolve conflicts on GitHub</Link>}
       {r.action?.kind === "updateBranch" && <UpdateBranchButton store={store} methods={r.action.methods} />}
     </div>
@@ -481,13 +486,16 @@ const STATE_LABEL: Record<PolicyState, string> = { success: "Passed", failure: "
 
 type PolicyNode = { kind: "group"; g: CheckGroup<ActionablePolicyRow> } | { kind: "row"; r: ActionablePolicyRow };
 
-/** The policies list as a Tree: the non-check rows as leaves, then one expandable node per workflow or app. Open state lives here, for the life of the card. */
-function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: ActionStore }) {
+/**
+ * The policies list as a Tree: the non-check rows as leaves, then one expandable node per workflow or app, open only while it failed or is running.
+ * `all` is the Checks tab: the checks alone, every group open to start, with durations. Open state lives here, for the life of the card.
+ */
+function PolicyRows({ rows, store, all }: { rows: ActionablePolicyRow[]; store: ActionStore; all?: boolean }) {
   const { top, groups } = groupChecks(rows);
-  const memo = React.useRef({ open: {} as Record<string, boolean>, seen: {} as Record<string, PolicyState> });
+  const memo = React.useRef({ open: {} as Record<string, boolean>, toggled: {} as Record<string, boolean>, seen: {} as Record<string, PolicyState> });
   const [, bump] = React.useState(0);
-  memo.current = reconcileOpen(memo.current.open, memo.current.seen, groups); // idempotent for unchanged input, so safe to run in render
-  const toggle = (name: string) => { memo.current = { ...memo.current, open: { ...memo.current.open, [name]: !memo.current.open[name] } }; bump((n) => n + 1); };
+  memo.current = reconcileOpen(memo.current.toggled, memo.current.seen, groups, all ? () => true : undefined); // idempotent for unchanged input, so safe to run in render
+  const toggle = (name: string) => { memo.current = { ...memo.current, toggled: { ...memo.current.toggled, [name]: !memo.current.open[name] } }; bump((n) => n + 1); };
   const leaf = (r: ActionablePolicyRow, i: number): ITreeItem<PolicyNode> => ({ id: `r-${r.kind}-${r.title}-${i}`, data: { kind: "row", r } });
   const open = memo.current.open;
   const sig = JSON.stringify([rows.map((r) => [r.kind, r.title, r.state, r.detail, r.required, r.group]), open, store.busy]);
@@ -495,7 +503,7 @@ function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: Actio
   // end, and the Re-run buttons read store.busy, so a busy flip must rebuild it too or they would not disable while a re-run runs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const provider = React.useMemo(() => new TreeItemProvider<PolicyNode>([
-    ...top.map(leaf),
+    ...(all ? [] : top.map(leaf)),
     ...groups.map((g): ITreeItem<PolicyNode> => ({ id: `g-${g.name}`, data: { kind: "group", g }, expanded: !!open[g.name], childItems: g.rows.map(leaf) })),
   ]), [sig]);
   const columns = React.useMemo<ITreeColumn<PolicyNode>[]>(() => [{
@@ -505,8 +513,8 @@ function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: Actio
       const n = treeItem.underlyingItem.data;
       return (
         <ExpandableTreeCell key="policy" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem} contentClassName="gh-policy-cell">
-          {n.kind === "row" ? <PolicyItem r={n.r} store={store} /> : (
-            <div className="gh-policy flex-row flex-center">
+          {n.kind === "row" ? <PolicyItem r={n.r} store={store} all={all} /> : (
+            <div className="gh-policy gh-policy-group flex-row flex-center">
               <Status {...STATUS_OF[n.g.state]} size={StatusSize.m} ariaLabel={STATE_LABEL[n.g.state]} />
               <span className="gh-policy-title body-m font-weight-semibold text-ellipsis">{n.g.name}</span>
               {n.g.required && <Pill size={PillSize.compact} variant={PillVariant.standard}>Required</Pill>}
@@ -516,10 +524,10 @@ function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: Actio
         </ExpandableTreeCell>
       );
     },
-  }], [store]);
+  }], [store, all]);
   return (
     <Tree<PolicyNode>
-      ariaLabel="Policies"
+      ariaLabel={all ? "Checks" : "Policies"}
       className="gh-policy-tree"
       columns={columns}
       itemProvider={provider as any}
@@ -532,7 +540,7 @@ function PolicyRows({ rows, store }: { rows: ActionablePolicyRow[]; store: Actio
 }
 
 /** The Overview's top card for an open pull request: one row per policy. Returns null when the page should show its fallback card instead. */
-export function PoliciesCard({ store }: { store: ActionStore }) {
+export function PoliciesCard({ store, viewChecks }: { store: ActionStore; viewChecks?: () => void }) {
   if (store.status === "loading" && !store.view) return <Card className="gh-pr-card gh-pr-merge"><div className="gh-pr-merge-row flex-row flex-center"><Spinner size={SpinnerSize.small} ariaLabel="Loading policies" /></div></Card>;
   const v = store.view;
   if (!v || v.pr.state !== "OPEN") return null;
@@ -553,6 +561,25 @@ export function PoliciesCard({ store }: { store: ActionStore }) {
         {v.rows.length > 0 && (
           <PolicyRows rows={v.rows} store={store} />
         )}
+        {viewChecks && v.rows.some((r) => r.kind === "check") && (
+          <div className="gh-policy-viewall"><Link href="#" onClick={(e) => { e.preventDefault(); viewChecks(); }}>View all checks</Link></div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** The Checks tab: every workflow and app with all its checks, durations, annotation counts, Details links and the re-run buttons, whatever the pull request's state. */
+export function ChecksCard({ store }: { store: ActionStore }) {
+  const v = store.view;
+  if (!v && store.status === "error") return <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Try again", onClick: () => void store.ensureLoaded(true) }]}>The checks could not be loaded from GitHub.</MessageCard>;
+  if (!v) return <Card className="gh-pr-card gh-pr-merge"><div className="gh-pr-merge-row flex-row flex-center"><Spinner size={SpinnerSize.small} ariaLabel="Loading checks" /></div></Card>;
+  const checks = v.rows.filter((r) => r.kind === "check");
+  if (!checks.length) return <ZeroData imageAltText="" iconProps={{ iconName: "TestBeaker" }} primaryText="No checks" secondaryText="No workflows or other checks have reported on this pull request's latest commit." />;
+  return (
+    <Card className="gh-pr-card gh-pr-policies bolt-card-no-vertical-padding">
+      <div className="gh-policies gh-policies-all flex-column">
+        <PolicyRows rows={checks} store={store} all />
       </div>
     </Card>
   );

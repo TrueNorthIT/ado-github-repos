@@ -73,6 +73,9 @@ const MOCK_PAGES = {
   releases: `?hub=tags${REPO}&tagTab=releases`,
   prs: `?hub=prs${REPO}&view=prs`,
   "pr-200": `?hub=prs${REPO}&view=prs&pr=200`,
+  // Checks: the Overview's one row per workflow (failing and running ones open, the rest collapsed) and the Checks tab with every job.
+  "pr-312": `?hub=prs${REPO}&view=prs&pr=312`,
+  "pr-312-checks": `?hub=prs${REPO}&view=prs&pr=312&prPage=checks`,
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
   // The code above each review thread in the Overview feed: Copilot's findings (title, severity, the "suggested a fix" link) and the ordinary threads (a range, a LEFT-side line, an outdated one).
   "pr-200-copilot": `?hub=prs&click=${encodeURIComponent('scroll:[aria-label="Code at src/retry.ts"]')}${REPO}&view=prs&pr=200`,

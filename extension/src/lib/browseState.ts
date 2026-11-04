@@ -1,6 +1,6 @@
 import type { PrTab } from "./prQuery";
 
-export type PrPage = "overview" | "files" | "updates" | "commits";
+export type PrPage = "overview" | "files" | "updates" | "commits" | "checks";
 
 /** Hub URL hash state for the GitHub file browser (B-8). */
 export interface BrowseState {
@@ -67,7 +67,7 @@ export function normalizePath(path: string): string {
 }
 
 const PR_TABS: PrTab[] = ["mine", "active", "completed", "abandoned"];
-const PR_PAGES: PrPage[] = ["overview", "files", "updates", "commits"];
+const PR_PAGES: PrPage[] = ["overview", "files", "updates", "commits", "checks"];
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const validRepo = (r: string) => REPO.test(r) && r.split("/").every((s) => s !== "." && s !== "..");
 

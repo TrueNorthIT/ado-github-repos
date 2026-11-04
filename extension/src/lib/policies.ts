@@ -149,3 +149,10 @@ export function mergeDecision(i: PolicyInput): PolicyDecision {
   const auto = (i.mergeStateStatus === "BLOCKED" || i.mergeStateStatus === "BEHIND") && i.autoMergeAllowed && !autoCompleteEnabled;
   return out(auto ? "autoComplete" : "none", blockers, false, auto);
 }
+
+/** How long a finished check run took, for the Checks tab; undefined while it runs, for a status context, or with a bad timestamp. */
+export function checkDurationMs(c: CheckContext): number | undefined {
+  if (c.__typename !== "CheckRun" || !c.startedAt || !c.completedAt) return undefined;
+  const ms = Date.parse(c.completedAt) - Date.parse(c.startedAt);
+  return Number.isFinite(ms) && ms >= 0 ? ms : undefined;
+}

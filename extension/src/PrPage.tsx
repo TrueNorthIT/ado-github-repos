@@ -39,7 +39,7 @@ import { ActivityFeed } from "./Feed";
 import { feedStore, useFeed } from "./feedStore";
 import { ReactionBar } from "./CommentParts";
 import { actionStore, useActions, type ActionStore } from "./actionStore";
-import { PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
+import { ChecksCard, PoliciesCard, PrActionDialogs, prCommandItems, type Ui } from "./PrActions";
 import { SignaturePill } from "./Signature";
 import { ClosingIssueAdd, DescriptionEditor, EditableTitle, EditError, IssueRow, LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButton, WorkItemsAdd, addItem, dueText, sameReviewer, useEdit, workItemInBody, type EditData } from "./PrEdit";
 import { toLabelOption } from "./lib/labels";
@@ -52,6 +52,7 @@ const PAGES: { id: PrPageId; name: string }[] = [
   { id: "files", name: "Files" },
   { id: "updates", name: "Updates" },
   { id: "commits", name: "Commits" },
+  { id: "checks", name: "Checks" },
 ];
 
 // ---------- header (PR-5) ----------
@@ -457,11 +458,11 @@ function Deployments({ repo, number, version }: { repo: string; number: number; 
   );
 }
 
-function Overview({ pr, repo, prTab, openFile, signIn, busy, actions, edit }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; signIn: () => void; busy: boolean; actions: ActionStore; edit?: EditData }) {
+function Overview({ pr, repo, prTab, openFile, viewChecks, signIn, busy, actions, edit }: { pr: PrPageData; repo: string; prTab: BrowseState["prTab"]; openFile: (path: string) => void; viewChecks: () => void; signIn: () => void; busy: boolean; actions: ActionStore; edit?: EditData }) {
   return (
     <div className="gh-pr-overview">
       <div className="gh-pr-main">
-        {PoliciesCard({ store: actions }) ?? <MergeCard pr={pr} />}
+        {PoliciesCard({ store: actions, viewChecks }) ?? <MergeCard pr={pr} />}
         <Description pr={pr} repo={repo} edit={edit} store={actions} />
         <ActivityFeed repo={repo} number={pr.number} baseRef={pr.baseRef} prTab={prTab} openFile={openFile} signIn={signIn} busy={busy} />
       </div>
@@ -612,8 +613,9 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
           <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request" permission="Pull requests" />
         </div>
       )}
-      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}
+      {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} viewChecks={() => nav({ prPage: "checks", file: undefined })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}
       {pr && page === "commits" && <div className="page-content page-content-top"><Commits pr={pr} repo={repo} /></div>}
+      {pr && page === "checks" && <div className="page-content page-content-top"><ChecksCard store={actions} /></div>}
       {pr && page === "updates" && <PrUpdatesTab repo={repo} number={n} pr={pr} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
       {pr && page === "files" && <PrFilesTab repo={repo} number={n} pr={pr} selected={state.file} select={(file) => nav({ prPage: "files", file }, true)} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
     </HoverRepoContext.Provider>

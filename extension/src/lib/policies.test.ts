@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { policyRows, mergeDecision, type PolicyInput, type CheckContext, type PolicyRow } from "./policies";
+import { policyRows, mergeDecision, checkDurationMs, type PolicyInput, type CheckContext, type PolicyRow } from "./policies";
 
 // Module under test: src/lib/policies.ts (policyRows, mergeDecision). Requirement A-3: "Can it merge? / policies panel".
 // GitHub names: PullRequest.mergeStateStatus (MergeStateStatus: CLEAN, HAS_HOOKS, UNSTABLE, BLOCKED, BEHIND, DIRTY, UNKNOWN),
@@ -362,5 +362,18 @@ describe("duplicate checks collapse to one row", () => {
   it("decides on the kept run only: an old failure no longer blocks", () => {
     const checks = [wf("build", "CI", "2026-01-01T10:00:00Z", { conclusion: "FAILURE", isRequired: true }), wf("build", "CI", "2026-01-01T11:00:00Z", { isRequired: true })];
     expect(mergeDecision(input({ mergeStateStatus: "BLOCKED", checks })).blockers).toEqual(["Blocked by the branch protection rules"]);
+  });
+});
+
+describe("checkDurationMs", () => {
+  const run = (startedAt?: string | null, completedAt?: string | null): CheckContext => ({ __typename: "CheckRun", name: "build", status: completedAt ? "COMPLETED" : "IN_PROGRESS", conclusion: completedAt ? "SUCCESS" : null, isRequired: false, startedAt, completedAt });
+  it("is the time from start to completion of a finished run", () => {
+    expect(checkDurationMs(run("2026-11-04T09:00:00Z", "2026-11-04T09:01:30Z"))).toBe(90_000);
+  });
+  it("is undefined while running, for a status context, and for timestamps that make no sense", () => {
+    expect(checkDurationMs(run("2026-11-04T09:00:00Z", null)), "Expected none while running").toBeUndefined();
+    expect(checkDurationMs({ __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS", isRequired: false }), "Expected none for a status").toBeUndefined();
+    expect(checkDurationMs(run("2026-11-04T09:05:00Z", "2026-11-04T09:00:00Z")), "Expected none when it ends before it starts").toBeUndefined();
+    expect(checkDurationMs(run("garbage", "2026-11-04T09:00:00Z")), "Expected none for a bad timestamp").toBeUndefined();
   });
 });

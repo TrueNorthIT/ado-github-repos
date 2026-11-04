@@ -297,14 +297,23 @@
 .gh-diagram-old { fill: var(--background-color, #fff); stroke: currentColor; stroke-width: 2; }
 .gh-diagram-new { fill: var(--communication-background, #0078d4); }
 .gh-policies { width: 100%; }
-.gh-policy { gap: 12px; padding: 4px 0; min-height: 40px; width: 100%; box-sizing: border-box; }
+/* Policy and check rows: 45px, as native's single-line list rows (measured on Pipelines' Jobs list) and our Branch policies list; a Re-run button (32px) fits.
+   A 1px rule above each workflow group separates the groups (and the first one from the policies above it). */
+.gh-policy { gap: 12px; padding: 0; min-height: 33px; width: 100%; box-sizing: border-box; } /* 33: a Re-run SplitButton's height */
 .gh-policy-cell { flex: 1 1 0; min-width: 0; }
 .gh-policy-tree { padding: 0 8px; }
+.gh-policy-tree .gh-policy-cell { padding-top: 5px; padding-bottom: 5px; } /* 1 + 5 + 33 + 5 + 1 = 45 */
+.gh-policy-tree .bolt-tree-row:has(.gh-policy-group):not(.first-row) > td { border-top: 1px solid rgba(var(--palette-neutral-8, 234, 234, 234), 1); }
 .gh-policy-title { flex: 0 1 auto; min-width: 0; }
 .gh-policy-detail { flex: 1 1 0; min-width: 0; }
-.gh-policy-link { margin-left: auto; flex: none; }
+.gh-policy-spacer { flex: 1 1 0; margin-left: -12px; } /* pushes the actions, duration and Details to the right (the margin cancels the gap it adds) */
+.gh-policy-detail + .gh-policy-spacer { flex: 0 0 0; }
+.gh-policy-link { flex: none; }
+.gh-policy-dur { flex: none; min-width: 48px; text-align: right; }
 .gh-policy-annotations { flex: none; }
 .gh-policy-action { flex: none; }
+.gh-policy-viewall { margin: 0 8px; padding: 8px 12px 16px; border-top: 1px solid rgba(var(--palette-neutral-8, 234, 234, 234), 1); }
+.gh-policies-all .gh-policy-tree { padding-top: 8px; padding-bottom: 8px; }
 .gh-complete .bolt-dropdown, .gh-complete .bolt-dropdown-expandable { width: 100%; max-width: none; box-sizing: border-box; } /* native's merge type dropdown fills the panel */
 .gh-complete { width: 100%; }
 /* Disabled-reason text in the Approve and Complete menus is longer than native's single line: let it wrap inside the callout instead of being clipped. */

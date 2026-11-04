@@ -3,7 +3,7 @@ import type { PrActionsNode } from "./actionsQuery";
 import { defaultCompleteOptions, deleteBranchDefault, allowedMergeMethods, type CompleteOptions, type DeleteBranchChoice, type DeleteBranchContext, type RepoMergeSettings } from "./mergeOptions";
 import { copilotAvailability, type CopilotAvailability } from "./copilotReview";
 import { mergeQueueDecision, type QueueDecision } from "./mergeQueue";
-import { dedupeChecks, policyRows, type CheckContext } from "./policies";
+import { checkDurationMs, dedupeChecks, policyRows, type CheckContext } from "./policies";
 import { checkRerun, type CheckRerun, type RerunCheck } from "./reruns";
 import { canPushHead, updateBranchOptions, withUpdateBranchAction, type ActionablePolicyRow, type UpdateBranchOptions } from "./updateBranch";
 import { semiLinearChoice, type SemiLinearChoice } from "./semiLinear";
@@ -25,7 +25,7 @@ export interface ActionsView {
   rows: ActionablePolicyRow[];
   decision: QueueDecision;
   /** Per check row title: whether it can be re-run, and how many annotations it has. */
-  checkInfo: Map<string, { rerun: CheckRerun; annotations: number }>;
+  checkInfo: Map<string, { rerun: CheckRerun; annotations: number; durationMs?: number }>;
   updateBranch: UpdateBranchOptions;
   copilot: CopilotAvailability;
   votes: VoteOption[];
@@ -88,7 +88,7 @@ export function deriveActions(repo: ActionsRepo, opts: { copilotFailure?: string
   const latest = pr.viewerLatestReview?.state;
   const deduped = dedupeChecks(policyInput.checks);
   const rerunInput = deduped.map(({ c }): RerunCheck => (c.__typename === "CheckRun" ? { __typename: "CheckRun", name: c.name, status: c.status, conclusion: c.conclusion, checkSuite: c.runSuite?.workflowRun?.databaseId ? { workflowRun: { databaseId: c.runSuite.workflowRun.databaseId, workflow: c.checkSuite?.workflowRun?.workflow ?? null } } : { workflowRun: null } } : { __typename: "StatusContext", context: c.context }));
-  const checkInfo = new Map(deduped.map(({ c, title }, i) => [title, { rerun: checkRerun(rerunInput[i], rerunInput), annotations: c.__typename === "CheckRun" ? c.annotations?.totalCount ?? 0 : 0 }]));
+  const checkInfo = new Map(deduped.map(({ c, title }, i) => [title, { rerun: checkRerun(rerunInput[i], rerunInput), annotations: c.__typename === "CheckRun" ? c.annotations?.totalCount ?? 0 : 0, durationMs: checkDurationMs(c) }]));
   const headAccess = {
     isCrossRepository: pr.isCrossRepository,
     maintainerCanModify: !!pr.maintainerCanModify,
