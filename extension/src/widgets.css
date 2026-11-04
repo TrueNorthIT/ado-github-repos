@@ -1,0 +1,33 @@
+/* Dashboard widgets. The chrome follows native widgets: a 16px/600 title with 10px padding (figures from the native dashboard,
+   given with the brief; dashboards need a signed-in ADO session, so not re-measured from here). Everything inside is azure-devops-ui,
+   except the Actions history bars, which no component draws. */
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+.gh-widget { height: 100%; box-sizing: border-box; min-width: 0; background: var(--callout-background-color, rgba(255, 255, 255, 1)); }
+.gh-widget-title { margin: 0; padding: 10px 10px 0; line-height: 22px; flex: 0 0 auto; }
+.gh-widget-subtitle { padding: 0 10px; line-height: 18px; flex: 0 0 auto; }
+.gh-widget-body { min-height: 0; padding: 8px 10px 10px; }
+.gh-widget-scroll { min-height: 0; overflow: auto; margin: 0 -10px -10px; }
+.gh-widget-scroll .bolt-table { background: transparent; }
+.gh-widget-pr-line1 { min-width: 0; gap: 6px; }
+.gh-widget .bolt-link { padding: 0; } /* Link pads itself sideways; in running text and table lines it should sit flush, as in the PR list */
+.gh-widget-pr-title { min-width: 0; flex: 0 1 auto; }
+.gh-widget-pill { flex: 0 0 auto; }
+.gh-widget-notice { padding: 4px 0; line-height: 20px; }
+.gh-widget-message { margin: 0; }
+.gh-widget-loading { min-height: 40px; }
+
+/* Actions history: the last run, then one bar per run (oldest left), height for duration, colour for result. Hand-rolled: no chart component. */
+.gh-widget-last { gap: 8px; align-items: center; flex: 0 0 auto; min-width: 0; padding-bottom: 8px; }
+.gh-widget-last-text { min-width: 0; flex: 1 1 auto; }
+.gh-widget-bars { align-items: flex-end; justify-content: flex-end; gap: 4px; min-height: 24px; border-bottom: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-widget-bar { display: block; width: 10px; flex: 0 0 10px; min-height: 2px; border-radius: 1px 1px 0 0; background: var(--component-status-neutral, rgba(160, 160, 160, 1)); }
+.gh-widget-bar:hover, .gh-widget-bar:focus { opacity: .75; outline: none; }
+.gh-widget-bar:focus-visible { outline: 2px solid var(--focus-border-color, rgba(0, 120, 212, 1)); outline-offset: 1px; }
+.gh-widget-bar-succeeded { background: var(--component-status-success, rgba(85, 163, 98, 1)); }
+.gh-widget-bar-failed { background: var(--component-status-error, rgba(205, 74, 69, 1)); }
+.gh-widget-bar-inProgress, .gh-widget-bar-queued, .gh-widget-bar-waiting { background: var(--component-status-info, rgba(0, 120, 212, 1)); }
+.gh-widget-bar-cancelled, .gh-widget-bar-skipped, .gh-widget-bar-neutral { background: var(--component-status-neutral, rgba(160, 160, 160, 1)); }
+
+/* Configuration panel (the host draws the general section: name and size). */
+.gh-widget-config { gap: 16px; padding: 2px; }
+.gh-widget-config-item .bolt-dropdown-expandable-button { width: 100%; }
