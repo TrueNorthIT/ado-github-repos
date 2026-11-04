@@ -2,7 +2,7 @@
 // history stays straight but each pull request is still one merge. GitHub has no single call for it, so it is two:
 //  1. update the pull request branch by rebase (GraphQL updatePullRequestBranch, updateMethod REBASE: the "Update branch (rebase)" the
 //     policies card already offers), skipped when the head already sits on the target's tip (REST compare `base...headSha`, behind_by 0);
-//  2. once GitHub reports the new head and has worked out mergeability (REST `GET /pulls/{n}`, polled), merge it with merge_method
+//  2. once GitHub reports the new head (the one the mutation answered, when it did) and has worked out mergeability (REST `GET /pulls/{n}`, polled), merge it with merge_method
 //     "merge" and `sha` set to that new head (REST `PUT /pulls/{n}/merge`). If anyone pushes in between, GitHub answers 409 and nothing
 //     unrebased is merged.
 // The option needs merge commits allowed on the repository, and a head this user may rewrite: not a fork without maintainer edits,
@@ -110,8 +110,9 @@ export class SemiLinearError extends Error {}
 export interface SemiLinearDeps {
   /** compare base...head: how many commits the head is behind the target. */
   behindBy(): Promise<number>;
-  /** updatePullRequestBranch REBASE with expectedHeadOid = the head the page loaded. */
-  rebase(): Promise<void>;
+  /** updatePullRequestBranch REBASE with expectedHeadOid = the head the page loaded. Answers the rebased head when GitHub reports it
+   *  (pullRequest.headRefOid); undefined, or the old head, when it doesn't know yet. */
+  rebase(): Promise<string | void>;
   getPull(): Promise<RestPull>;
   /** PUT merge expecting `sha`. */
   merge(sha: string): Promise<void>;
@@ -139,11 +140,16 @@ export async function runSemiLinear(d: SemiLinearDeps, headSha: string): Promise
   const rebased = behind > 0;
   if (rebased) {
     d.onStep("rebasing");
-    await d.rebase();
+    const made = await d.rebase();
+    // The head the rebase made, when the mutation said: a different head later means someone pushed after the rebase, and those
+    // commits must not be merged unseen. When it didn't say, any move off the old head is taken as the rebase.
+    const rebasedSha = typeof made === "string" && made && made !== headSha ? made : undefined;
     d.onStep("waiting");
     const t0 = d.now();
     for (;;) {
       const pull = await d.getPull();
+      if (rebasedSha && pull.head.sha !== headSha && pull.head.sha !== rebasedSha && pull.state === "open" && !pull.merged)
+        throw new SemiLinearError("The source branch changed after it was rebased, so it wasn't merged. Refresh and try again.");
       const s = rebaseStatus(pull, headSha);
       if (s === "ready") {
         sha = pull.head.sha;
