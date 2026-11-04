@@ -21,6 +21,7 @@ import type { StateActionId } from "./lib/stateActions";
 import { voteMutation, type VoteId } from "./lib/votes";
 import type { WorkItemRef } from "./lib/workItems";
 import { completeWorkItems } from "./workItemsApi";
+import { feedStore } from "./feedStore";
 import { addClosingIssueToBody, addWorkItemToBody, removeClosingIssueFromBody, removeWorkItemFromBody, updatePullRequestMutation, type EditField, type UpdatePullRequestInput } from "./lib/prEdit";
 import { addAssigneesMutation, removeAssigneesMutation, removeReviewRequestsRequest, requestReviewsMutation, type Candidate, type RequestedReviewer } from "./lib/reviewerSearch";
 import { mapRevert, revertPullRequestMutation } from "./lib/revertPr";
@@ -205,6 +206,9 @@ export class ActionStore {
       if (ok) {
         invalidatePrPage(this.repo, this.number);
         invalidatePrs();
+        // The timeline is its own store: dropping its cache didn't redraw it, so reviewer requests, labels, votes and state
+        // changes only appeared after a page reload (seen live). Reload it now, and again once GitHub has settled.
+        feedStore(this.repo, this.number).ensureLoaded(true);
       }
       this.pending--;
       this.busy = this.pending > 0;
@@ -212,7 +216,7 @@ export class ActionStore {
       if (!this.pending) this.optimisticStatus = undefined;
       if (ok) this.version++;
       this.emit();
-      if (ok) setTimeout(() => void this.refresh(), 3000); // GitHub settles a moment after a change (e.g. mergeability after a reopen)
+      if (ok) setTimeout(() => { invalidatePrPage(this.repo, this.number); void this.refresh(); feedStore(this.repo, this.number).ensureLoaded(true); }, 3000); // GitHub settles a moment after a change (e.g. mergeability after a reopen, a timeline event)
       return ok;
     });
   }
