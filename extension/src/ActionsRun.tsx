@@ -6,7 +6,7 @@ import { Checkbox } from "azure-devops-ui/Checkbox";
 import { FormItem } from "azure-devops-ui/FormItem";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon } from "azure-devops-ui/Icon";
-import { Tab, TabBar } from "azure-devops-ui/Tabs";
+import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { PersonHover } from "./HoverCard";
 import { Link } from "azure-devops-ui/Link";
@@ -311,8 +311,8 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
 
         <Annotations notes={notes} repo={repo} sha={run.headSha} open={openJob} />
 
-        <Card className="gh-act-card gh-act-stagecard">
-          <TabBar ariaLabel="Stages and jobs" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as "stages" | "jobs")} className="gh-act-innertabs" disableSticky>
+        <Card className="gh-act-card gh-act-stagecard bolt-table-card" contentProps={{ contentPadding: false }}>
+          <TabBar ariaLabel="Stages and jobs" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as "stages" | "jobs")} className="gh-act-innertabs" tabSize={TabSize.LargeLink} disableSticky>
             <Tab id="stages" name="Stages" />
             <Tab id="jobs" name="Jobs" />
           </TabBar>
@@ -543,8 +543,8 @@ function Annotations({ notes, repo, sha, open }: { notes: JobNote[]; repo: strin
   ], [repo, sha, sel?.level, open, href]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!sel) return null;
   return (
-    <Card className="gh-act-card gh-act-notescard">
-      <TabBar ariaLabel="Annotation levels" selectedTabId={sel.level} onSelectedTabChanged={(id) => setPicked(id as Annotation["level"])} className="gh-act-innertabs" disableSticky>
+    <Card className="gh-act-card gh-act-notescard bolt-table-card" contentProps={{ contentPadding: false }}>
+      <TabBar ariaLabel="Annotation levels" selectedTabId={sel.level} onSelectedTabChanged={(id) => setPicked(id as Annotation["level"])} className="gh-act-innertabs" tabSize={TabSize.LargeLink} disableSticky>
         {present.map((l) => <Tab key={l.level} id={l.level} name={l.label} badgeCount={notes.filter((n) => n.level === l.level).length} />)}
       </TabBar>
       <Table<JobNote> ariaLabel={`${sel.label}, ${shown.length}`} role="table" className="gh-act-jobtable" columns={cols} itemProvider={rows} showHeader={false} spacerWidth={8} />

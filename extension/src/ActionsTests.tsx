@@ -8,7 +8,7 @@ import { ListSelection } from "azure-devops-ui/List";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { SimpleTableCell, Table, TableColumnLayout, type ITableColumn } from "azure-devops-ui/Table";
-import { Tab, TabBar } from "azure-devops-ui/Tabs";
+import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Tree, ExpandableTreeCell, type ITreeColumn } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { ZeroData } from "azure-devops-ui/ZeroData";
@@ -206,9 +206,9 @@ function Results({ reports, notes }: { reports: TestResultsLoad["reports"]; note
         </div>
       </Card>
       <div className={`gh-act-tests-split${sel ? " gh-act-tests-split-open" : ""}`}>
-        <Card className="gh-act-card gh-act-notescard" contentProps={{ contentPadding: false }}>
+        <Card className="gh-act-card gh-act-notescard bolt-table-card" contentProps={{ contentPadding: false }}>
           <div className="flex-column flex-grow">
-            <TabBar ariaLabel="Test outcomes" selectedTabId={filter} onSelectedTabChanged={(id) => { setFilter(id as Filter); setPicked(undefined); }} className="gh-act-innertabs" disableSticky>
+            <TabBar ariaLabel="Test outcomes" selectedTabId={filter} onSelectedTabChanged={(id) => { setFilter(id as Filter); setPicked(undefined); }} className="gh-act-innertabs" tabSize={TabSize.LargeLink} disableSticky>
               {FILTERS.map((f) => <Tab key={f.id} id={f.id} name={f.name} badgeCount={count(f.id)} />)}
             </TabBar>
             {groups.length ? (

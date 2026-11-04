@@ -1,5 +1,5 @@
 /* Actions run page and log view. Colours come from the ADO palette variables (RGB triples) so both themes work. */
-.gh-act-body { padding: 0 0 24px; gap: 16px; } /* cards 32px in from the page edge, 16px apart, as native Pipelines */
+.gh-act-body { padding: 16px 0 24px; gap: 16px; } /* native Pipelines (measured): first card 16px below the 48px page tab bar, cards 16px apart */
 .gh-act-card { margin: 0; }
 .gh-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -17,9 +17,12 @@
 @media (max-width: 800px) { .gh-act-sum-cols { grid-template-columns: 1fr; } }
 
 /* stages | jobs card */
+/* stages | jobs and annotations (native, measured): a table card, 16px above a 40px large-link tab bar indented 12px;
+   annotations go straight to the rows 12px below it, stages and jobs 16px below it under a 1px rule */
 .gh-act-stagecard .bolt-card-content { padding: 0; flex-direction: column; }
-.gh-act-innertabs.bolt-tabbar { padding: 0 20px; height: 40px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); flex: none; }
-.gh-act-innertabs .bolt-tab { padding: 0 8px; }
+.gh-act-innertabs.bolt-tabbar { padding: 0 20px 0 12px; margin-top: 16px; flex: none; }
+.gh-act-stagecard .gh-act-innertabs.bolt-tabbar { padding-bottom: 16px; border-bottom: 1px solid rgba(var(--palette-neutral-8, 235, 235, 235), 1); }
+.gh-act-notescard .gh-act-innertabs.bolt-tabbar { padding-bottom: 12px; }
 .gh-act-empty { padding: 16px; }
 .gh-act-graph-wrap { overflow: auto; padding: 32px 32px 32px; }
 .gh-act-graph { position: relative; display: flex; align-items: flex-start; gap: 64px; min-width: min-content; }
