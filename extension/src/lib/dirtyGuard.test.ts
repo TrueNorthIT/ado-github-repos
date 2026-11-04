@@ -31,3 +31,13 @@ describe("decideNav", () => {
     expect(decideNav(false, form, { repo: "acme/web", tagTab: "releases" })).toBe("allow");
   });
 });
+
+describe("decideNav anyNav (Branch policies: its address is not in NavWhere)", () => {
+  it("asks on any navigation while dirty, even to an address that parses the same", () => {
+    expect(decideNav(true, { repo: "o/r" }, { repo: "o/r" }, true)).toBe("ask");
+    expect(decideNav(true, { repo: "o/r" }, { repo: "o/x" }, true)).toBe("ask");
+  });
+  it("allows everything when clean", () => {
+    expect(decideNav(false, { repo: "o/r" }, { repo: "o/r" }, true)).toBe("allow");
+  });
+});
