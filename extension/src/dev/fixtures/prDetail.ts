@@ -142,6 +142,15 @@ const RICH_BODY = `<h2>What changed</h2>
 <p>${LOGO}</p><p>${DIAGRAM}</p>
 <ul><li>New <code>retry()</code> with exponential backoff</li><li>Greeting now uses a template string</li><li>Removes the old notes</li></ul>
 <table><thead><tr><th>Package</th><th>Change</th></tr></thead><tbody><tr><td>typescript</td><td>5.8 to 5.9</td></tr></tbody></table>
+<h3>How a retry runs</h3>
+<div class="highlight highlight-source-mermaid notranslate position-relative overflow-auto" dir="auto"><pre><span class="pl-k">sequenceDiagram</span>
+    participant Job as Sync job
+    participant Api as GitHub API
+    Job-&gt;&gt;Api: GET /repos/{repo}/commits
+    Api--&gt;&gt;Job: 502 Bad Gateway
+    Note over Job: wait 1 s, then 2 s
+    Job-&gt;&gt;Api: GET /repos/{repo}/commits
+    Api--&gt;&gt;Job: 200 OK</pre></div>
 <p>See <a href="https://github.com/truenorthit/github-repos/blob/main/docs/guide.md">the guide</a> and <a href="https://example.com">an external page</a>.</p>`;
 
 const ANN = { name: "Ann Author", user: { login: "ann" } };

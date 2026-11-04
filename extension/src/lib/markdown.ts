@@ -80,6 +80,7 @@ export function prepareMarkdownHtml(html: string, ctx: MarkdownContext): Prepare
   const hub = (ref: string, path: string) => serialize({ repo, ref, path });
 
   body.querySelectorAll("source").forEach((el) => el.remove()); // srcset is stripped, so a <picture> falls back to its <img>
+  const diagrams = collectMermaid(body); // before the class filter, which strips GitHub's wrapper classes it looks for
 
   body.querySelectorAll("*").forEach((el) => {
     const tag = el.tagName.toLowerCase();
@@ -140,7 +141,38 @@ export function prepareMarkdownHtml(html: string, ctx: MarkdownContext): Prepare
   });
 
   dressAlerts(body);
+  diagrams.forEach((d) => (d.className = "markdown-mermaid"));
   return { html: body.innerHTML, images };
+}
+
+/**
+ * Replaces each ```mermaid block with `<div class="markdown-mermaid"><pre lang="mermaid"><code>source</code></pre></div>`, which the Markdown
+ * component renders as a diagram (and leaves as code if that fails). GitHub emits several shapes: the markdown API and bodyHTML wrap
+ * `<pre lang="mermaid" aria-label="Raw mermaid code">` in a `section.js-render-needs-enrichment` (whose data-json is stripped already); other
+ * paths give `div.highlight-source-mermaid > pre` or `pre > code.language-mermaid`. The section or highlight wrapper goes with the block.
+ * Returns the new divs; the caller sets their class after the class filter, so README HTML cannot ask for a diagram that GitHub didn't make.
+ */
+function collectMermaid(body: HTMLElement): HTMLElement[] {
+  const doc = body.ownerDocument;
+  const pres = new Set<HTMLElement>();
+  body.querySelectorAll<HTMLElement>('pre[lang="mermaid" i], div.highlight-source-mermaid pre, pre > code.language-mermaid').forEach((el) => pres.add(el.tagName === "CODE" ? (el.parentElement as HTMLElement) : el));
+  const out: HTMLElement[] = [];
+  pres.forEach((pre) => {
+    if (!pre.isConnected) return;
+    const source = pre.textContent ?? "";
+    const section = pre.closest("section");
+    const target = section && (section.textContent ?? "").trim() === source.trim() ? section : pre.closest<HTMLElement>("div.highlight-source-mermaid") ?? pre;
+    const div = doc.createElement("div");
+    const newPre = doc.createElement("pre");
+    const code = doc.createElement("code");
+    newPre.setAttribute("lang", "mermaid");
+    code.textContent = source;
+    newPre.appendChild(code);
+    div.appendChild(newPre);
+    target.replaceWith(div);
+    out.push(div);
+  });
+  return out;
 }
 
 /**

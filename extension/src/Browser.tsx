@@ -131,6 +131,18 @@ export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMa
     };
   }, [prepared, repo, refName]);
 
+  // ```mermaid blocks (normalised by prepareMarkdownHtml) become diagrams once the lazy mermaid chunk loads, and redraw when the theme changes.
+  React.useEffect(() => {
+    const blocks = Array.from(box.current?.querySelectorAll<HTMLElement>(".markdown-mermaid") ?? []);
+    if (!blocks.length) return;
+    let gen = 0;
+    const stop = watchTheme((dark) => void drawDiagrams(blocks, dark, ++gen, () => gen));
+    return () => {
+      gen = -1;
+      stop();
+    };
+  }, [prepared]);
+
   const onClick = (e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest("a");
     const href = a?.getAttribute("href");
@@ -148,6 +160,38 @@ export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMa
 
   // prepared.html has been through prepareMarkdownHtml (DOMPurify + link/image rewriting); nothing else goes in here.
   return <div ref={box} className="gh-markdown" onClick={onClick} dangerouslySetInnerHTML={{ __html: prepared.html }} />;
+}
+
+let mermaidReady: Promise<typeof import("./mermaidChunk")> | undefined;
+const loadMermaid = () => (mermaidReady ??= import("./mermaidChunk").catch((e) => ((mermaidReady = undefined), Promise.reject(e))));
+
+/** Draws each block's source beside its code block and hides the code; on failure the code block stays. `current()` going past `gen` drops a stale pass. */
+async function drawDiagrams(blocks: HTMLElement[], dark: boolean, gen: number, current: () => number) {
+  let m: typeof import("./mermaidChunk");
+  try {
+    m = await loadMermaid();
+  } catch {
+    return; // the chunk failed to load: the source stays visible
+  }
+  for (const block of blocks) {
+    const source = block.querySelector("pre")?.textContent ?? "";
+    let svg: string | null = null;
+    try {
+      svg = await m.renderMermaid(source, dark);
+    } catch {
+      /* falls back to the source */
+    }
+    if (current() !== gen) return;
+    block.querySelector(":scope > .markdown-mermaid-diagram")?.remove();
+    block.classList.toggle("is-rendered", !!svg);
+    if (!svg) continue;
+    const fig = document.createElement("div");
+    fig.className = "markdown-mermaid-diagram";
+    fig.setAttribute("role", "img");
+    fig.setAttribute("aria-label", "Mermaid diagram");
+    fig.innerHTML = svg; // sanitised in renderMermaid (mermaid strict mode, then DOMPurify)
+    block.appendChild(fig);
+  }
 }
 
 // ---------- code (B-5) ----------

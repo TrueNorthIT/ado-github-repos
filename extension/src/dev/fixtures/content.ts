@@ -22,6 +22,16 @@ export const README_HTML = `<div class="markdown-body"><h1><a id="user-content-g
 <div class="markdown-alert markdown-alert-important" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Important</p><p dir="auto">Mocks stay behind the esbuild alias.</p><ul><li>They never reach <code>dist</code>.</li><li>The publish workflow checks.</li></ul></div>
 <div class="markdown-alert markdown-alert-warning" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Warning</p><p dir="auto">Nothing here is real.</p></div>
 <div class="markdown-alert markdown-alert-caution" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Caution</p><p dir="auto">Writes in live mode land in the real sandbox.</p></div>
+<h2><a id="user-content-how-it-fits" class="anchor" aria-hidden="true" href="#how-it-fits"></a>How it fits</h2>
+<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-identity="0d3e" data-host="https://viewscreen.githubusercontent.com" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com" data-type="mermaid" aria-label="mermaid rendered output container"><div class="js-render-enrichment-target" data-json="{&quot;data&quot;:&quot;flowchart LR&quot;}" data-plain="flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]" dir="auto"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]</pre></div></div><span class="js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full" role="presentation"><svg class="octicon" width="16" height="16"></svg></span></section>
 <h2><a id="user-content-install" class="anchor" aria-hidden="true" href="#install"></a>Install</h2>
 <div class="highlight highlight-source-shell"><pre>npm install
 npm run dev <span class="pl-c"><span class="pl-c">#</span> http://localhost:3000</span></pre></div>
@@ -38,7 +48,20 @@ npm run dev <span class="pl-c"><span class="pl-c">#</span> http://localhost:3000
 <blockquote><p>A quote, for the border colour.</p></blockquote></div>`;
 
 export const GUIDE_HTML = `<div class="markdown-body"><h1><a id="user-content-guide" class="anchor" aria-hidden="true" href="#guide"></a>Guide</h1>
-<p>Short markdown doc. Back to the <a href="../README.md">README</a>.</p></div>`;
+<p>Short markdown doc. Back to the <a href="../README.md">README</a>.</p>
+<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-identity="0d3e" data-host="https://viewscreen.githubusercontent.com" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com" data-type="mermaid" aria-label="mermaid rendered output container"><div class="js-render-enrichment-target" data-json="{&quot;data&quot;:&quot;flowchart LR&quot;}" data-plain="flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]" dir="auto"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]</pre></div></div><span class="js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full" role="presentation"><svg class="octicon" width="16" height="16"></svg></span></section>
+<p>A diagram GitHub's renderer would reject stays as its source:</p>
+<div class="highlight highlight-source-mermaid notranslate" dir="auto"><pre>flowchart TD
+    A[Broken --&gt;</pre></div>
+</div>`;
 
 export const INDEX_TS = `import { greet } from "./util/greet";
 

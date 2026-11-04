@@ -91,6 +91,11 @@
 .gh-markdown .markdown-alert-body { min-width: 0; }
 .gh-markdown .markdown-alert-body > .markdown-alert-title { margin-bottom: 4px; }
 .gh-markdown .markdown-alert-body > :last-child { margin-bottom: 0; }
+/* Mermaid diagrams (Browser.tsx, drawDiagrams): the source block shows until the diagram is drawn, and stays if drawing fails. */
+.gh-markdown .markdown-mermaid { margin: 0 0 12px; }
+.gh-markdown .markdown-mermaid.is-rendered > pre { display: none; }
+.gh-markdown .markdown-mermaid-diagram { display: flex; justify-content: center; overflow: auto; padding: 8px 0; }
+.gh-markdown .markdown-mermaid-diagram svg { max-width: 100%; height: auto; }
 .gh-markdown sub { vertical-align: baseline; } /* Copilot's "Review effort" line is a whole <sub> paragraph: keep it on the baseline at 85% */
 .gh-markdown .anchor { display: none; }
 

@@ -416,3 +416,37 @@ describe("GitHub alerts", () => {
     expect(root.querySelector(".bolt-messagebar, .severity-error"), "Expected the library classes stripped").toBeNull();
   });
 });
+
+describe("mermaid blocks", () => {
+  const SRC = "graph TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C\n";
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  it.each([
+    [
+      "the enrichment section from the markdown API",
+      `<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-type="mermaid" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid"><div class="js-render-enrichment-target" data-json="{}" data-plain="x"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">${esc(SRC)}</pre></div></div><span class="js-render-enrichment-loader d-flex" role="presentation"><svg class="octicon"></svg></span></section>`,
+    ],
+    ["a highlight wrapper", `<div class="highlight highlight-source-mermaid notranslate"><pre>${esc(SRC)}</pre></div>`],
+    ["a language-mermaid code block", `<pre><code class="language-mermaid">${esc(SRC)}</code></pre>`],
+    ["a bare pre lang", `<pre lang="mermaid"><code>${esc(SRC)}</code></pre>`],
+  ])("normalises %s to one markdown-mermaid block with the source", (_l, html) => {
+    const { root } = run(`<p>before</p>${html}<p>after</p>`);
+    const blocks = root.querySelectorAll(".markdown-mermaid");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].querySelector('pre[lang="mermaid"] > code')?.textContent, "Expected the diagram source verbatim").toBe(SRC);
+    expect(root.querySelector("section"), "Expected the enrichment section gone").toBeNull();
+    expect(root.querySelector(".highlight"), "Expected the highlight wrapper gone").toBeNull();
+    expect(root.querySelectorAll("p").length).toBe(2);
+  });
+
+  it("does not let README HTML mark its own block as a diagram", () => {
+    const { root } = run(`<div class="markdown-mermaid"><pre>graph TD</pre></div>`);
+    expect(root.querySelector(".markdown-mermaid")).toBeNull();
+  });
+
+  it("leaves other code blocks alone", () => {
+    const { root } = run(`<div class="highlight highlight-source-shell"><pre>npm i</pre></div><pre lang="js"><code>x</code></pre>`);
+    expect(root.querySelector(".markdown-mermaid")).toBeNull();
+    expect(root.querySelector(".highlight-source-shell pre")?.textContent).toBe("npm i");
+  });
+});
