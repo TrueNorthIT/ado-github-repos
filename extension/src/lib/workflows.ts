@@ -430,3 +430,15 @@ export function parseScheduleCrons(yamlText: string): string[] {
     .filter((c: unknown): c is string => typeof c === "string" && c.trim() !== "")
     .map((c: string) => c.trim());
 }
+
+/** A workflow's status badge (native Pipelines' "Status badge"): the image GitHub serves for its latest run on `branch` (any branch when
+ *  absent), the runs page it links to, and the Markdown for a README. `path` is the workflow's file path (.github/workflows/ci.yml). */
+export function statusBadge(repo: string, path: string, name: string, branch?: string): { imageUrl: string; linkUrl: string; markdown: string } {
+  const file = encodeURIComponent(path.split("/").pop() ?? path);
+  const base = `https://github.com/${repo}/actions/workflows/${file}`;
+  const b = branch?.trim();
+  const imageUrl = `${base}/badge.svg${b ? `?branch=${encodeURIComponent(b)}` : ""}`;
+  const linkUrl = b ? `${base}?query=${encodeURIComponent(`branch:${b}`)}` : base;
+  const alt = name.replace(/[[\]\\]/g, "\\$&");
+  return { imageUrl, linkUrl, markdown: `[![${alt}](${imageUrl})](${linkUrl})` };
+}

@@ -103,3 +103,10 @@
 .gh-act-tests-pre, .gh-act-tests-code { margin: 0; padding: 8px 12px; font-family: Menlo, Consolas, "Courier New", monospace; font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; border-radius: 4px; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); text-align: left; }
 .gh-act-tests-zero-text { gap: 8px; align-items: center; }
 .gh-act-tests-zero-text .gh-act-tests-code { min-width: 320px; }
+
+/* Status badge dialog */
+.gh-badge-form { width: 520px; max-width: 100%; }
+.gh-badge-field { gap: 4px; align-items: flex-start; }
+.gh-badge-text { flex: 1 1 auto; min-width: 0; }
+.gh-badge-preview { min-height: 24px; }
+.gh-badge-preview img { display: block; height: 20px; }

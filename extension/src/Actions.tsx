@@ -27,7 +27,7 @@ import type { HubProps } from "./RepoHub";
 import { PersonLine, RepoHubPage, skeletonRows, titleSwitcher } from "./RepoHub";
 import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
-import { DeleteRunDialog, RunStatusIcon, writeError, type DeleteTarget } from "./ActionsUi";
+import { DeleteRunDialog, RunStatusIcon, StatusBadgeDialog, writeError, type DeleteTarget } from "./ActionsUi";
 import { RunPage } from "./ActionsRun";
 import { EnvironmentsTab, isEnvironmentPage } from "./ActionsEnvironments";
 import { gotoHash, openHub, patchHash, useHashExtras } from "./hostNav";
@@ -625,6 +625,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
   const [toggling, setToggling] = React.useState(false);
   const [failure, setFailure] = React.useState<string>();
   const [schedules, setSchedules] = React.useState(false);
+  const [badge, setBadge] = React.useState(false);
   const toggle = async (on: boolean) => {
     if (!wf) return;
     setToggling(true);
@@ -669,6 +670,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
             id: "gh-act-wf-more",
             items: [
               { id: "schedules", text: "Scheduled runs", iconProps: { iconName: "Clock" }, disabled: !info, onActivate: () => setSchedules(true) },
+              { id: "badge", text: "Status badge", iconProps: { iconName: "Ribbon" }, disabled: !info, onActivate: () => setBadge(true) },
               ...(info?.canWrite ? [
                 { id: "sep", itemType: MenuItemType.Divider },
                 wf.disabled
@@ -693,6 +695,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       <FilterRow st={st} goto={goto} />
       <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} tick={refresh} showWorkflow={false} />
       {panel && wf && info?.inputs && <RunWorkflowPanel repo={repo} wf={wf} info={info} onClose={() => setPanel(false)} onQueued={onQueued} />}
+      {badge && wf && info && <StatusBadgeDialog repo={repo} path={wf.path} name={wf.name} defaultBranch={info.defaultBranch} onClose={() => setBadge(false)} />}
       {schedules && wf && info && <ScheduledRunsPanel repo={repo} wf={wf} branch={info.defaultBranch} onClose={() => setSchedules(false)} />}
     </div>
     </>
