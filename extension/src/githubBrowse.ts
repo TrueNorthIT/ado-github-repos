@@ -1187,3 +1187,43 @@ export const getLockedBranches = (repo: string): Promise<Set<string>> =>
     const full = await Promise.all(mine.map((m) => restJson<Ruleset>(rulesetRequest(repo, m.id)).then((r) => r.body)));
     return new Set(mine.filter((m, i) => isOwnedRuleset(full[i], m.branch) && isLocked(full[i])).map((m) => m.branch));
   });
+
+// ---------- Batch I: cherry-pick and revert (REST Git data + merges; lib/cherryPick.ts) ----------
+import {
+  MAX_REBASE_WALK, PickError, canPushRequest, gitCommitRequest, prLanding, prPickMessage, pullCommitsRequest, pullRestRequest, runPick, toGitCommit,
+  type GitCommit, type GitPerson, type PickRun,
+} from "./lib/cherryPick";
+
+/** One commit as REST's Git data sees it (tree, parents, message, author). */
+export const getGitCommit = async (repo: string, sha: string): Promise<GitCommit> => toGitCommit(await restSend(gitCommitRequest(repo, sha)));
+
+/** Whether the viewer may push to the repository (GET /repos/{repo} permissions.push). False when it can't be read. */
+export const getCanPush = (repo: string): Promise<boolean> =>
+  refTtl(`push|${repo}`, () => restSend<{ permissions?: { push?: boolean } }>(canPushRequest(repo)).then((j) => !!j?.permissions?.push, () => false));
+
+/** Runs a cherry-pick or revert (lib/cherryPick.ts runPick) over REST. */
+export const runCherryPick = (p: PickRun) => runPick((r) => restSend(r), p);
+
+/** What cherry-picking a merged pull request applies: its target branch, base → merge commit (mainline 1 for a merge commit; the
+ *  rebased commits' base for a rebase merge), the message and, for a squash, the squash commit's author. */
+export async function getPrPickSource(repo: string, number: number): Promise<{ target: string; range: { from: string; to: string }; message: string; author?: GitPerson; mergeSha: string }> {
+  const pull = await restSend<{ merged?: boolean; merge_commit_sha?: string | null; base: { ref: string }; title: string; commits?: number }>(pullRestRequest(repo, number));
+  if (!pull.merged || !pull.merge_commit_sha) throw new PickError("other", "Only a completed pull request can be cherry-picked.");
+  const m = await getGitCommit(repo, pull.merge_commit_sha);
+  const count = pull.commits ?? 1;
+  let last: string | undefined;
+  if (m.parents.length === 1 && count > 1 && count <= 100) {
+    const list = await restSend<{ commit: { message: string } }[]>(pullCommitsRequest(repo, number));
+    last = list[list.length - 1]?.commit.message;
+  }
+  const landing = prLanding(m, count, last);
+  let from = m.parents[0];
+  if (landing.how === "rebase") {
+    if (landing.count > MAX_REBASE_WALK) throw new PickError("other", `This pull request was rebased as ${landing.count} commits, too many to cherry-pick from here. Do it locally.`);
+    let at = m;
+    for (let i = 1; i < landing.count; i++) at = await getGitCommit(repo, at.parents[0]);
+    from = at.parents[0];
+  }
+  if (!from) throw new PickError("rootCommit", "The pull request's merge commit has no parent.");
+  return { target: pull.base.ref, range: { from, to: m.sha }, message: prPickMessage(pull.title, number, m.sha), author: landing.how === "squash" ? m.author : undefined, mergeSha: m.sha };
+}

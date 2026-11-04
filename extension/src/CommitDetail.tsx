@@ -180,7 +180,7 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
   const [load, retry] = useLoad(() => getCommitDetail(repo, sha), [repo, sha, props.signedIn]);
-  const actions = useCommitActions(repo, props.signedIn);
+  const actions = useCommitActions(repo, props.signedIn, state.ref ?? defaultBranch ?? undefined);
   const wiIds = React.useMemo(() => (load.t === "ready" ? findWorkItemIds(load.v.message) : []), [load]);
   const wiLinks = useWorkItemLinks(wiIds);
   const tab = state.commitTab ?? "files";

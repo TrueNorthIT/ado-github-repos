@@ -22,6 +22,7 @@ import { codeSearchRest } from "./codeSearchMock";
 import { widgetRest } from "./widgetMock";
 import { forksRest } from "./forksMock";
 import { libraryRest } from "./libraryMock";
+import { cherryPickRest } from "./cherryPickMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -158,6 +159,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const rest = m[3] ?? "";
   const polAnswer = policiesRest(repo.fullName, rest, init, sc); // Branches: policies, rename, set as default, tag names
   if (polAnswer) return polAnswer;
+  const pick = cherryPickRest(repo.fullName, rest, init, sc); // batch I: cherry-pick and revert (Git data, merges, a merged PR's merge commit)
+  if (pick) return pick;
   if (!rest) return json({ node_id: `R_${repo.fullName}`, default_branch: defaultBranchOf(repo.fullName), private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly", admin: isAdmin(sc) }, clone_url: `https://github.com/${repo.fullName}.git`, ssh_url: `git@github.com:${repo.fullName}.git` });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);

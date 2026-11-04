@@ -179,7 +179,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
     f.setState({ keyword: { value: fromHash.text ?? "" }, author: { value: fromHash.author ?? "" }, from: { value: formatDayText(fromHash.from) }, to: { value: formatDayText(fromHash.to) }, path: { value: fromHash.path ?? "" } }, true);
     return f;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- the hash only seeds it
-  const actions = useCommitActions(repo, signedIn);
+  const actions = useCommitActions(repo, signedIn, ref ?? undefined);
 
   React.useEffect(() => {
     // The keyword applies at once; the server-side filters wait for typing to pause. A date that does not parse is left out (and said so).
