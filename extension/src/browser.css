@@ -602,7 +602,6 @@
 .gh-sec-pill { flex: none; }
 .gh-sec-more { padding: 12px 0; gap: 12px; }
 .gh-sec-more-err { color: var(--status-error-text, rgba(var(--palette-error, 205, 74, 69), 1)); }
-.gh-sec-crumb { padding: 12px 20px 0; }
 .gh-sec-detail-header.bolt-header { padding-bottom: 8px; }
 .gh-sec-facts { gap: 8px; padding: 4px 0; }
 .gh-sec-fact { gap: 12px; align-items: baseline; }

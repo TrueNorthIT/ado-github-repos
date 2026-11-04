@@ -180,10 +180,11 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   const [reload, setReload] = React.useState(0);
 
   // Typing is debounced; every change is kept in the hash so a reload or a link keeps it.
+  const hashState = (next: typeof applied): Omit<SecurityHashState, "repo"> => ({ tab, state: next.state === "open" ? undefined : next.state, severity: next.severity, branch: next.branch, tool: next.tool, rule: next.rule, text: next.text, ecosystem: next.ecosystem, package: next.package, validity: next.validity });
   const commit = React.useCallback((next: typeof applied) => {
     setApplied(next);
-    patchHash((h) => applySecurity(h, { tab, state: next.state === "open" ? undefined : next.state, severity: next.severity, branch: next.branch, tool: next.tool, rule: next.rule, text: next.text, ecosystem: next.ecosystem, package: next.package, validity: next.validity }));
-  }, [tab]);
+    patchHash((h) => applySecurity(h, hashState(next)));
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = React.useRef(applied);
   latest.current = applied;
   React.useEffect(() => {
@@ -232,7 +233,8 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
     );
   };
 
-  const open = React.useCallback((n: number) => gotoHash(alertDetailHash(repo, kind, n)), [repo, kind]);
+  // The filters ride along in the hash, so the alert page's back button returns to this list as it was.
+  const open = React.useCallback((n: number) => gotoHash(serializeSecurity({ repo, ...hashState(latest.current), alert: n })), [repo, kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const cols = React.useMemo(() => columns(kind, repo, open), [kind, repo, open]);
   const rows = React.useMemo(() => (load.t === "ready" ? filterRows(load.page.rows, { text: applied.text, rule: kind === "code" ? applied.rule : undefined }) : []), [load, applied.text, applied.rule, kind]);
   const provider = React.useMemo(() => new ArrayItemProvider(rows), [rows]);
@@ -369,7 +371,7 @@ function DismissDialog({ kind, busy, error, clearError, submit, close }: { kind:
   );
 }
 
-function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kind: AlertKind; number: number; props: HubProps; onChanged: () => void }) {
+function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: string; kind: AlertKind; number: number; props: HubProps; back: string; onChanged: () => void }) {
   const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: DetailData }>({ t: "loading" });
   const [reload, setReload] = React.useState(0);
   const [picked, setPicked] = React.useState<AlertInstance | undefined>();
@@ -411,6 +413,7 @@ function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kin
   const canReopen = d && (d.state === "Dismissed" || d.state === "AutoDismissed" || d.state === "Resolved");
   const reasonLabel = (r: string) => (r === "auto_dismissed" ? "Auto-dismissed" : dismissReasons(kind).find((x) => x.value === r)?.label ?? r);
   const secret = kind === "secret";
+  const backLabel = `Back to ${TABS.find((t) => t.id === tabForKind(kind))!.name.toLowerCase()} alerts`;
 
   const bar = [
     ...(d ? [{ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: d.url, target: "_blank", important: true }] : []),
@@ -420,10 +423,14 @@ function AlertPage({ repo, kind, number, props, onChanged }: { repo: string; kin
 
   return (
     <>
-      <div className="gh-sec-crumb">
-        <Link className="body-s" href={serializeSecurity({ repo, tab: tabForKind(kind) })} onClick={(e) => { e.preventDefault(); gotoHash(serializeSecurity({ repo, tab: tabForKind(kind) })); }}>Back to {TABS.find((t) => t.id === tabForKind(kind))!.name.toLowerCase()} alerts</Link>
-      </div>
-      <Header className="gh-sec-detail-header" title={d?.title ?? `Alert #${number}`} titleSize={TitleSize.Large} titleAriaLevel={2} commandBarItems={bar} />
+      <Header
+        className="gh-sec-detail-header"
+        title={d?.title ?? `Alert #${number}`}
+        titleSize={TitleSize.Large}
+        titleAriaLevel={2}
+        backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: backLabel, tooltipProps: { text: backLabel }, onClick: () => gotoHash(back) }}
+        commandBarItems={bar}
+      />
       <div className="page-content gh-pr-body flex-column">
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setWrites({ busy: false, error: null })}>{writes.error}</MessageCard>}
         {data.t === "loading" && <Loading label="Loading alert" />}
@@ -547,7 +554,7 @@ function SecurityPage({ repo, props }: { repo: string; props: HubProps }) {
         })}
       </TabBar>
       {sec?.alert ? (
-        <AlertPage key={`${repo}/${tab}/${sec.alert}`} repo={repo} kind={kind} number={sec.alert} props={props} onChanged={() => setTick((n) => n + 1)} />
+        <AlertPage key={`${repo}/${tab}/${sec.alert}`} repo={repo} kind={kind} number={sec.alert} props={props} back={serializeSecurity({ ...sec, alert: undefined })} onChanged={() => setTick((n) => n + 1)} />
       ) : (
         <div className="page-content page-content-top gh-pr-body flex-column">
           <AlertList key={`${repo}/${tab}`} repo={repo} kind={kind} seed={sec} props={props} />
