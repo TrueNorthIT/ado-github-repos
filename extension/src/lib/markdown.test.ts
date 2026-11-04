@@ -325,7 +325,7 @@ describe("B-6 (security): extra sanitiser rules", () => {
     const div = root.querySelector("div")!;
     for (const c of ["bolt-portal-host", "absolute-fill", "depth-16", "flex-column"]) expect(div.classList.contains(c), `Expected class ${c} to be stripped`).toBe(false);
     expect(div.classList.contains("markdown-alert-note"), "Expected markdown-alert-note to survive").toBe(true);
-    expect(root.querySelector("span")?.getAttribute("class"), "Expected pl-k kept and bolt-page-white dropped").toBe("pl-k");
+    expect(root.querySelector(".markdown-alert-body span")?.getAttribute("class"), "Expected pl-k kept and bolt-page-white dropped").toBe("pl-k");
     expect(run(`<p class="bolt-portal-host">y</p>`).root.querySelector("p")?.hasAttribute("class"), "Expected an emptied class attribute to be removed").toBe(false);
   });
 
@@ -380,5 +380,73 @@ describe("B-4/B-6: Link and image decisions", () => {
     const { root, images } = run(`<img src="${src}">`);
     expect(root.querySelector("img")?.getAttribute("src"), "Expected the other repo's image unchanged").toBe(src);
     expect(images, "Expected no images").toEqual([]);
+  });
+});
+
+describe("GitHub alerts", () => {
+  const alert = (type: string, title: string) =>
+    `<div class="markdown-alert markdown-alert-${type}" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16"><path d="M0 8"></path></svg>${title}</p><p dir="auto">Body of ${type}.</p><ul><li>item</li></ul></div>`;
+
+  it.each([
+    ["note", "Note", "severity-info", "ms-Icon--Info"],
+    ["tip", "Tip", "severity-success", "ms-Icon--Lightbulb"],
+    ["important", "Important", "severity-info", "ms-Icon--ChatWarning"],
+    ["warning", "Warning", "severity-warning", "ms-Icon--Warning"],
+    ["caution", "Caution", "severity-error", "ms-Icon--ErrorBadge"],
+  ])("dresses a %s alert as a MessageBar", (type, title, severity, icon) => {
+    const { root } = run(alert(type, title));
+    const div = root.querySelector(`div.markdown-alert-${type}`)!;
+    expect(div.classList.contains("bolt-messagebar"), "Expected the MessageBar class").toBe(true);
+    expect(div.classList.contains(severity), `Expected ${severity}`).toBe(true);
+    expect(div.querySelector(`.bolt-messagebar-icon.${icon}`)?.getAttribute("aria-hidden"), "Expected the hidden severity icon").toBe("true");
+    const body = div.querySelector(".bolt-messagebar-content > .markdown-alert-body")!;
+    expect(body.querySelector(".markdown-alert-title")?.textContent, "Expected the title kept, first").toBe(title);
+    expect(body.firstElementChild?.classList.contains("markdown-alert-title")).toBe(true);
+    expect(body.querySelector("ul li")?.textContent, "Expected the alert's content moved into the body").toBe("item");
+    expect(div.querySelector("svg"), "Expected the octicon dropped").toBeNull();
+  });
+
+  it("leaves an unknown alert type and a plain div alone", () => {
+    const { root } = run(`<div class="markdown-alert markdown-alert-bogus"><p>x</p></div><div><p>y</p></div>`);
+    expect(root.querySelector(".bolt-messagebar"), "Expected nothing dressed").toBeNull();
+  });
+
+  it("does not let README HTML reach the MessageBar classes outside an alert", () => {
+    const { root } = run(`<div class="bolt-messagebar severity-error"><p>z</p></div>`);
+    expect(root.querySelector(".bolt-messagebar, .severity-error"), "Expected the library classes stripped").toBeNull();
+  });
+});
+
+describe("mermaid blocks", () => {
+  const SRC = "graph TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C\n";
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  it.each([
+    [
+      "the enrichment section from the markdown API",
+      `<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-type="mermaid" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid"><div class="js-render-enrichment-target" data-json="{}" data-plain="x"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">${esc(SRC)}</pre></div></div><span class="js-render-enrichment-loader d-flex" role="presentation"><svg class="octicon"></svg></span></section>`,
+    ],
+    ["a highlight wrapper", `<div class="highlight highlight-source-mermaid notranslate"><pre>${esc(SRC)}</pre></div>`],
+    ["a language-mermaid code block", `<pre><code class="language-mermaid">${esc(SRC)}</code></pre>`],
+    ["a bare pre lang", `<pre lang="mermaid"><code>${esc(SRC)}</code></pre>`],
+  ])("normalises %s to one markdown-mermaid block with the source", (_l, html) => {
+    const { root } = run(`<p>before</p>${html}<p>after</p>`);
+    const blocks = root.querySelectorAll(".markdown-mermaid");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].querySelector('pre[lang="mermaid"] > code')?.textContent, "Expected the diagram source verbatim").toBe(SRC);
+    expect(root.querySelector("section"), "Expected the enrichment section gone").toBeNull();
+    expect(root.querySelector(".highlight"), "Expected the highlight wrapper gone").toBeNull();
+    expect(root.querySelectorAll("p").length).toBe(2);
+  });
+
+  it("does not let README HTML mark its own block as a diagram", () => {
+    const { root } = run(`<div class="markdown-mermaid"><pre>graph TD</pre></div>`);
+    expect(root.querySelector(".markdown-mermaid")).toBeNull();
+  });
+
+  it("leaves other code blocks alone", () => {
+    const { root } = run(`<div class="highlight highlight-source-shell"><pre>npm i</pre></div><pre lang="js"><code>x</code></pre>`);
+    expect(root.querySelector(".markdown-mermaid")).toBeNull();
+    expect(root.querySelector(".highlight-source-shell pre")?.textContent).toBe("npm i");
   });
 });

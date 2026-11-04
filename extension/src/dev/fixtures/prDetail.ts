@@ -99,6 +99,21 @@ Start here, then read **the notes**.
 - Run the \`tests\`
 `;
 
+const PRICES_BASE = `sku,name,price,stock
+A-100,Widget,4.50,120
+A-200,Gadget,12.00,75
+A-300,Gizmo,19.99,40
+A-400,"Bolt, M6",0.10,5000
+A-500,Washer,0.05,8000
+`;
+const PRICES_HEAD = `sku,name,price,stock
+A-100,Widget,4.75,120
+A-200,Gadget,12.00,75
+A-400,"Bolt, M6",0.10,4200
+A-450,"Nut, M6",0.08,3000
+A-500,Washer,0.05,8000
+`;
+
 interface FixtureFile { path: string; status: string; additions: number; deletions: number; previous?: string; patch?: string; base?: string; head?: string }
 const diffStat = (a?: string, b?: string) => {
   const x = a ? a.split("\n") : [], y = b ? b.split("\n") : [];
@@ -117,6 +132,7 @@ const RICH: FixtureFile[] = [
   f("src/format.ts", "modified", FORMAT_BASE, FORMAT_HEAD),
   f("docs/img/diagram.svg", "modified", DIAGRAM_BASE, DIAGRAM_HEAD),
   f("docs/guide.md", "modified", GUIDE_BASE, GUIDE_HEAD),
+  f("data/prices.csv", "modified", PRICES_BASE, PRICES_HEAD),
   { path: "assets/data.bin", status: "added", additions: 12, deletions: 0 }, // binary: GitHub sends no patch
 ];
 const SMALL: FixtureFile[] = [f("package.json", "modified", PKG_BASE, PKG_HEAD)];
@@ -147,6 +163,15 @@ const RICH_BODY = `<h2>What changed</h2>
 <p>${LOGO}</p><p>${DIAGRAM}</p>
 <ul><li>New <code>retry()</code> with exponential backoff</li><li>Greeting now uses a template string</li><li>Removes the old notes</li></ul>
 <table><thead><tr><th>Package</th><th>Change</th></tr></thead><tbody><tr><td>typescript</td><td>5.8 to 5.9</td></tr></tbody></table>
+<h3>How a retry runs</h3>
+<div class="highlight highlight-source-mermaid notranslate position-relative overflow-auto" dir="auto"><pre><span class="pl-k">sequenceDiagram</span>
+    participant Job as Sync job
+    participant Api as GitHub API
+    Job-&gt;&gt;Api: GET /repos/{repo}/commits
+    Api--&gt;&gt;Job: 502 Bad Gateway
+    Note over Job: wait 1 s, then 2 s
+    Job-&gt;&gt;Api: GET /repos/{repo}/commits
+    Api--&gt;&gt;Job: 200 OK</pre></div>
 <p>See <a href="https://github.com/truenorthit/github-repos/blob/main/docs/guide.md">the guide</a> and <a href="https://example.com">an external page</a>.</p>`;
 
 const ANN = { name: "Ann Author", user: { login: "ann" } };

@@ -17,8 +17,21 @@ Short markdown doc. Back to the [README](../README.md).
 export const README_HTML = `<div class="markdown-body"><h1><a id="user-content-github-repos" class="anchor" aria-hidden="true" href="#github-repos"></a>GitHub Repos</h1>
 <p><img src="docs/img/logo.png" alt="Logo" width="192"></p>
 <p>A <strong>fixture</strong> README. See the <a href="docs/guide.md">guide</a> or <a href="src/index.ts">the entry point</a>, or the <a href="https://example.com/">outside world</a>.</p>
-<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p><p>This is mock data served by <code>src/dev/mockFetch.ts</code>.</p></div>
-<div class="markdown-alert markdown-alert-warning"><p class="markdown-alert-title">Warning</p><p>Nothing here is real.</p></div>
+<div class="markdown-alert markdown-alert-note" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Note</p><p dir="auto">This is mock data served by <code>src/dev/mockFetch.ts</code>.</p></div>
+<div class="markdown-alert markdown-alert-tip" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Tip</p><p dir="auto">Add <code>?theme=dark</code> to see the dark theme.</p></div>
+<div class="markdown-alert markdown-alert-important" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Important</p><p dir="auto">Mocks stay behind the esbuild alias.</p><ul><li>They never reach <code>dist</code>.</li><li>The publish workflow checks.</li></ul></div>
+<div class="markdown-alert markdown-alert-warning" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Warning</p><p dir="auto">Nothing here is real.</p></div>
+<div class="markdown-alert markdown-alert-caution" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-info mr-2" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Z"></path></svg>Caution</p><p dir="auto">Writes in live mode land in the real sandbox.</p></div>
+<h2><a id="user-content-how-it-fits" class="anchor" aria-hidden="true" href="#how-it-fits"></a>How it fits</h2>
+<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-identity="0d3e" data-host="https://viewscreen.githubusercontent.com" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com" data-type="mermaid" aria-label="mermaid rendered output container"><div class="js-render-enrichment-target" data-json="{&quot;data&quot;:&quot;flowchart LR&quot;}" data-plain="flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]" dir="auto"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]</pre></div></div><span class="js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full" role="presentation"><svg class="octicon" width="16" height="16"></svg></span></section>
 <h2><a id="user-content-install" class="anchor" aria-hidden="true" href="#install"></a>Install</h2>
 <div class="highlight highlight-source-shell"><pre>npm install
 npm run dev <span class="pl-c"><span class="pl-c">#</span> http://localhost:3000</span></pre></div>
@@ -35,7 +48,20 @@ npm run dev <span class="pl-c"><span class="pl-c">#</span> http://localhost:3000
 <blockquote><p>A quote, for the border colour.</p></blockquote></div>`;
 
 export const GUIDE_HTML = `<div class="markdown-body"><h1><a id="user-content-guide" class="anchor" aria-hidden="true" href="#guide"></a>Guide</h1>
-<p>Short markdown doc. Back to the <a href="../README.md">README</a>.</p></div>`;
+<p>Short markdown doc. Back to the <a href="../README.md">README</a>.</p>
+<section class="js-render-needs-enrichment render-needs-enrichment position-relative" data-identity="0d3e" data-host="https://viewscreen.githubusercontent.com" data-src="https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com" data-type="mermaid" aria-label="mermaid rendered output container"><div class="js-render-enrichment-target" data-json="{&quot;data&quot;:&quot;flowchart LR&quot;}" data-plain="flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]" dir="auto"><div class="render-plaintext-hidden" dir="auto"><pre lang="mermaid" aria-label="Raw mermaid code">flowchart LR
+    Repo[GitHub repo] --&gt;|REST| Hub(Files hub)
+    Hub --&gt; Readme{README?}
+    Readme --&gt;|yes| Render[Rendered card]
+    Readme --&gt;|no| List[Listing only]</pre></div></div><span class="js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full" role="presentation"><svg class="octicon" width="16" height="16"></svg></span></section>
+<p>A diagram GitHub's renderer would reject stays as its source:</p>
+<div class="highlight highlight-source-mermaid notranslate" dir="auto"><pre>flowchart TD
+    A[Broken --&gt;</pre></div>
+</div>`;
 
 export const INDEX_TS = `import { greet } from "./util/greet";
 
@@ -95,3 +121,20 @@ jobs:
 `;
 
 export const LICENSE = "MIT License\n\nCopyright (c) 2026 TrueNorthIT\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.\n";
+
+// A table for the Files Preview tab: quoted fields with commas, a doubled quote and a line break inside quotes.
+export const SALES_CSV = `Region,Product,Units,Unit price,Notes
+North,Widget,120,4.50,
+North,Gadget,75,12.00,"Bulk order, repeat customer"
+South,Widget,98,4.50,"Said ""fine"" on the phone"
+South,Gizmo,40,19.99,"Two deliveries:
+one in May, one in June"
+East,Widget,211,4.25,Discounted
+East,Gadget,64,12.00,
+West,Gizmo,12,19.99,Trial
+West,Widget,150,4.50,
+Central,Gadget,88,11.50,"Price match, see ticket 1042"
+`;
+
+/** Over the 5,000-row cap of the preview, for its "Showing the first …" note. */
+export const BIG_TSV = ["id\tname\tscore", ...Array.from({ length: 6200 }, (_, i) => `${i + 1}\tuser-${String(i + 1).padStart(4, "0")}\t${(i * 37) % 100}`)].join("\n") + "\n";

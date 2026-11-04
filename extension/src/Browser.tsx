@@ -53,6 +53,8 @@ import { Toast } from "azure-devops-ui/Toast";
 import { CloneButton } from "./CloneButton";
 import { archiveUrl, cloneUrls, type CloneUrls } from "./lib/cloneUrls";
 import { copyLinkText, selectionLines, withLines, type LineRange } from "./lib/lineHash";
+import { CsvPreview } from "./CsvTable";
+import { tableDelimiter } from "./lib/csv";
 import "./browser.css";
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
@@ -131,6 +133,18 @@ export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMa
     };
   }, [prepared, repo, refName]);
 
+  // ```mermaid blocks (normalised by prepareMarkdownHtml) become diagrams once the lazy mermaid chunk loads, and redraw when the theme changes.
+  React.useEffect(() => {
+    const blocks = Array.from(box.current?.querySelectorAll<HTMLElement>(".markdown-mermaid") ?? []);
+    if (!blocks.length) return;
+    let gen = 0;
+    const stop = watchTheme((dark) => void drawDiagrams(blocks, dark, ++gen, () => gen));
+    return () => {
+      gen = -1;
+      stop();
+    };
+  }, [prepared]);
+
   const onClick = (e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest("a");
     const href = a?.getAttribute("href");
@@ -148,6 +162,38 @@ export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMa
 
   // prepared.html has been through prepareMarkdownHtml (DOMPurify + link/image rewriting); nothing else goes in here.
   return <div ref={box} className="gh-markdown" onClick={onClick} dangerouslySetInnerHTML={{ __html: prepared.html }} />;
+}
+
+let mermaidReady: Promise<typeof import("./mermaidChunk")> | undefined;
+const loadMermaid = () => (mermaidReady ??= import("./mermaidChunk").catch((e) => ((mermaidReady = undefined), Promise.reject(e))));
+
+/** Draws each block's source beside its code block and hides the code; on failure the code block stays. `current()` going past `gen` drops a stale pass. */
+async function drawDiagrams(blocks: HTMLElement[], dark: boolean, gen: number, current: () => number) {
+  let m: typeof import("./mermaidChunk");
+  try {
+    m = await loadMermaid();
+  } catch {
+    return; // the chunk failed to load: the source stays visible
+  }
+  for (const block of blocks) {
+    const source = block.querySelector("pre")?.textContent ?? "";
+    let svg: string | null = null;
+    try {
+      svg = await m.renderMermaid(source, dark);
+    } catch {
+      /* falls back to the source */
+    }
+    if (current() !== gen) return;
+    block.querySelector(":scope > .markdown-mermaid-diagram")?.remove();
+    block.classList.toggle("is-rendered", !!svg);
+    if (!svg) continue;
+    const fig = document.createElement("div");
+    fig.className = "markdown-mermaid-diagram";
+    fig.setAttribute("role", "img");
+    fig.setAttribute("aria-label", "Mermaid diagram");
+    fig.innerHTML = svg; // sanitised in renderMermaid (mermaid strict mode, then DOMPurify)
+    block.appendChild(fig);
+  }
 }
 
 // ---------- code (B-5) ----------
@@ -290,6 +336,7 @@ function FileView({ f, repo, refName, dark, go, tab, lines, onSelect }: { f: Fil
   if (f.kind === "markdown" && !source) return <Card className="no-padding gh-readme" contentProps={{ contentPadding: false }}><Markdown prepared={f.md!} repo={repo} refName={refName} go={go} /></Card>;
   if (f.kind === "markdown")
     return <CardFill>{rawText === undefined ? <Spinner size={SpinnerSize.large} ariaLabel="Loading" /> : <CodeView text={rawText} name={f.entry.name} dark={dark} lines={lines} onSelect={onSelect} />}</CardFill>;
+  if (f.kind === "text" && tab === "preview" && tableDelimiter(f.entry.name)) return <Card className="no-padding gh-csv-card" contentProps={{ contentPadding: false }}><CsvPreview text={f.text ?? ""} path={f.entry.path} /></Card>;
   return <CardFill><CodeView text={f.text ?? ""} name={f.entry.name} dark={dark} lines={lines} onSelect={onSelect} /></CardFill>;
 }
 
@@ -840,10 +887,11 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   );
 
   const isMd = classifyFile(baseOf(path), 0) === "markdown";
+  const hasPreview = isMd || !!tableDelimiter(path); // markdown renders; CSV and TSV show as a table
   // Folders get Contents and History; files add Compare and Blame. Until the path resolves, the root is a folder and anything else a file.
   const kind = view.t === "folder" || (view.t === "loading" && path === "") ? "folder" : "file";
   const hasTabs = view.t === "file" || view.t === "folder" || view.t === "loading";
-  const tab = resolveTab(state.tab, kind, isMd && kind === "file");
+  const tab = resolveTab(state.tab, kind, hasPreview && kind === "file");
   const { against, lines, edit: editAsked } = useHashExtras();
   const [prefs] = usePrefs();
   const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
@@ -854,7 +902,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const copyLink = async (r: LineRange | null) => {
     try {
       const p = await loadProject();
-      await navigator.clipboard.writeText(withLines(repoHubHref(p.ctx, { repo, ref: state.ref, path, tab: r && isMd ? "contents" : state.tab }), r));
+      await navigator.clipboard.writeText(withLines(repoHubHref(p.ctx, { repo, ref: state.ref, path, tab: r && hasPreview ? "contents" : state.tab }), r));
       flash("Link copied to the clipboard.");
     } catch {
       flash("Could not copy the link.");
@@ -943,7 +991,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                       tabSize={TabSize.Tall}
                       disableSticky
                     >
-                      {(hasTabs ? tabsFor(kind, isMd && kind === "file") : (["contents"] as FileTab[])).map((t) => <Tab key={t} id={t} name={TAB_NAMES[t]} />)}
+                      {(hasTabs ? tabsFor(kind, hasPreview && kind === "file") : (["contents"] as FileTab[])).map((t) => <Tab key={t} id={t} name={TAB_NAMES[t]} />)}
                     </TabBar>
                     <div className="page-content page-content-top gh-body flex-column">
                       {notice && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}

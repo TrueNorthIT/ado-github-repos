@@ -31,6 +31,8 @@ import { githubDevFileUrl } from "./lib/githubDev";
 import { ImageDiff, RenderedMarkdown } from "./PrRichDiff";
 import { TreeFilter } from "./PrFilesBar";
 import { ErrorView, loadMonaco } from "./Browser";
+import { CsvDiff } from "./CsvTable";
+import { TABLE_DIFF_VIEWS, tableDelimiter } from "./lib/csv";
 import { FileIcon } from "./fileIcons";
 import { getAnnotations, getPrFiles, getRaw, getRangeContext, getRangeFiles, getViewedStates, invalidatePr, setFileViewed } from "./githubBrowse";
 import { openInRepos, useRepoHref } from "./repoHref";
@@ -302,7 +304,8 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
   const href = useRepoHref();
   const [fileComment, setFileComment] = React.useState(false);
   const kind = richKind(file.path);
-  const views = kind ? diffViews(kind) : null;
+  const table = !kind && !!tableDelimiter(file.path); // CSV/TSV: a Rendered view as a table diff (CsvTable.tsx)
+  const views = kind ? diffViews(kind) : table ? TABLE_DIFF_VIEWS : null;
   const [view, setView] = React.useState<DiffView>(views?.default ?? "source");
   const [side, setSide] = React.useState<RenderedSide>("after");
   const ws = whitespaceNotice(file.patch, ignoreWhitespace);
@@ -345,6 +348,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
         </div>
       )}
       {kind === "image" || (kind === "svg" && view === "rendered") ? <ImageDiff file={file} repo={repo} pr={pr} />
+        : table && view === "rendered" ? <CsvDiff file={file} repo={repo} pr={pr} />
         : kind === "markdown" && view === "rendered" ? <RenderedMarkdown file={file} repo={repo} pr={pr} side={toggleRenderedSide(file.changeType, side)} />
         : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} />}
     </Card>
