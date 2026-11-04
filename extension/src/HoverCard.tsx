@@ -18,6 +18,7 @@ import { getPullCard, getUserCard, isOrgMember } from "./hoverApi";
 import { fetchWorkItemCard } from "./workItemsApi";
 import { PR_STATUS_PILL, hoverStep, isLogin, prLinkNumber, isShown, reviewSummary, type HoverEvent, type HoverPhase, type PullCard, type UserCard, type WorkItemCard } from "./lib/hoverCard";
 import type { WorkItemType } from "./workItemsApi";
+import { botIdentity, type BotIdentity } from "./lib/botIdentity";
 import "./hoverCard.css";
 
 /** The repo the page is showing, so a bare PR number (#123) can be looked up. RepoHubPage provides it. */
@@ -252,11 +253,46 @@ function PersonCard({ login, name, avatarUrl, org }: { login: string; name?: str
   );
 }
 
-/** A GitHub user's avatar and name with a profile card. No login (an unlinked commit email, the ghost) means no card. */
-export function PersonHover({ login, name, avatarUrl, repo: repoProp, className, children }: { login: string | null | undefined; name?: string; avatarUrl?: string; repo?: string; className?: string; children: React.ReactNode }) {
+// ---------- bots ----------
+
+/** "AI" beside Copilot and "Bot" beside other apps, as GitHub labels them. */
+export const BotPill = ({ bot }: { bot: BotIdentity }) => <Pill className="gh-bot-pill" size={PillSize.compact} variant={PillVariant.outlined}>{bot.label}</Pill>;
+
+/** A login as people should read it: Copilot as "Copilot" with an AI pill, another app by its name with a Bot pill, a person as is. */
+export function ActorName({ login, type, className }: { login: string; type?: string | null; className?: string }) {
+  const bot = botIdentity({ login, type });
+  return <span className={`gh-actor${className ? ` ${className}` : ""}`}><span className="text-ellipsis">{bot?.name ?? login}</span>{bot && <BotPill bot={bot} />}</span>;
+}
+
+/** A bot has no person's profile to fetch (/users/copilot-pull-request-reviewer has a stub bio): its card is built from what is known. Same IdentityCard frame as a person's. */
+function BotCard({ bot, login, avatarUrl }: { bot: BotIdentity; login: string; avatarUrl?: string }) {
+  const copilot = bot.kind === "copilot";
+  return (
+    <div className="bolt-identity-default-card-without-header bolt-identity-card-content">
+      <div className="flex-row">
+        <VssPersona className="bolt-identity-card-persona-main" imageUrl={bot.avatarUrl ?? avatarUrl} displayName={bot.name} size="extra-large" suppressPersonaCard showInitialsOnImageError />
+        <div className="flex-column flex-grow bolt-identity-card-name gh-hover-min0">
+          <div className="flex-row flex-center gh-hover-gap"><span className="word-wrap title-s">{bot.name}</span><BotPill bot={bot} /></div>
+          <div className="secondary-text">{copilot ? "AI code review by GitHub Copilot" : login === bot.name ? "GitHub App" : `${login} · GitHub App`}</div>
+        </div>
+      </div>
+      <hr className="bolt-identity-card-hr" />
+      <div className="bolt-identity-default-card-contact-line-wrapper flex-row flex-center">
+        <Icon iconName={copilot ? "Info" : "GitHubLogo"} className="bolt-identity-default-card-contact-line-label" />
+        <Link href={bot.url} target="_blank" rel="noopener noreferrer" removeUnderline>{copilot ? "About Copilot code review" : "Open on GitHub"}</Link>
+      </div>
+    </div>
+  );
+}
+
+/** A GitHub user's avatar and name with a profile card. No login (an unlinked commit email, the ghost) means no card. A bot gets BotCard and no lookup;
+ *  `type` ("Bot" from GraphQL's __typename or REST's user.type) catches an app whose GraphQL login has no "[bot]" suffix. */
+export function PersonHover({ login, name, avatarUrl, type, repo: repoProp, className, children }: { login: string | null | undefined; name?: string; avatarUrl?: string; type?: string | null; repo?: string; className?: string; children: React.ReactNode }) {
   const pageRepo = React.useContext(HoverRepoContext);
   const repo = repoProp ?? pageRepo;
   if (!isLogin(login)) return <>{children}</>;
+  const bot = botIdentity({ login, type });
+  if (bot) return <HoverCard className={className} label={`Card for ${bot.name}`} card={() => <BotCard bot={bot} login={login} avatarUrl={avatarUrl} />}>{children}</HoverCard>;
   return <HoverCard className={className} label={`Profile card for ${login}`} card={() => <PersonCard login={login} name={name} avatarUrl={avatarUrl} org={repo?.split("/")[0]} />}>{children}</HoverCard>;
 }
 

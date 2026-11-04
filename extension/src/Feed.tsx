@@ -24,6 +24,7 @@ import { SuggestionBar, people } from "./ReviewUi";
 import { openRepoHub } from "./hostNav";
 import { ErrorView, Markdown, hubClick } from "./Browser";
 import { SeverityPill } from "./Security";
+import { ActorName, PersonHover } from "./HoverCard";
 import type { Severity } from "./lib/securityTypes";
 
 const Avatar = ({ url, name, size }: { url: string; name: string; size: "small" }) => (
@@ -85,9 +86,9 @@ function Composer({ store, repo }: { store: FeedStore; repo: string }) {
 function CommentHead({ c, store, children }: { c: FeedComment; store: FeedStore; children?: React.ReactNode }) {
   return (
     <div className="gh-feed-head">
-      <Avatar url={c.avatarUrl} name={c.author} size="small" />
+      <PersonHover login={c.author} avatarUrl={c.avatarUrl} type={c.authorType}><Avatar url={c.avatarUrl} name={c.author} size="small" /></PersonHover>
       <div className="gh-feed-who flex-column">
-        <span className="gh-feed-author font-weight-semibold">{c.author}</span>
+        <PersonHover login={c.author} avatarUrl={c.avatarUrl} type={c.authorType}><ActorName className="gh-feed-author font-weight-semibold" login={c.author} type={c.authorType} /></PersonHover>
         <When date={c.date} />
       </div>
       {isPending(c) && <PendingPill />}
@@ -308,7 +309,7 @@ function EventRow({ e, repo, baseRef }: { e: EventItem; repo: string; baseRef: s
     <div className="gh-feed-event">
       <div className="gh-feed-event-line">
         <span className="gh-feed-event-text">
-          <span className="gh-feed-actor">{e.actor}</span> <Phrase e={e} baseRef={baseRef} />
+          <ActorName className="gh-feed-actor" login={e.actor} type={e.actorType} /> <Phrase e={e} baseRef={baseRef} />
           {pushed && (
             <Button className="gh-feed-expand" subtle iconProps={{ iconName: open ? "ChevronDown" : "ChevronRight" }} ariaLabel={open ? "Hide commits" : "Show commits"} ariaExpanded={open} ariaControls={listId} onClick={() => setOpen(!open)} />
           )}
@@ -335,9 +336,9 @@ function ReviewCard({ e, repo, baseRef }: { e: EventItem; repo: string; baseRef:
     <Card className="bolt-card-no-vertical-padding gh-feed-card gh-feed-thread" contentProps={{ contentPadding: false }}>
       <div className="gh-feed-section">
         <div className="gh-feed-head">
-          <Avatar url={e.avatarUrl} name={e.actor} size="small" />
+          <PersonHover login={e.actor} avatarUrl={e.avatarUrl} type={e.actorType}><Avatar url={e.avatarUrl} name={e.actor} size="small" /></PersonHover>
           <div className="gh-feed-who flex-column">
-            <span><span className="gh-feed-author font-weight-semibold">{e.actor}</span><span className="secondary-text"><Phrase e={e} baseRef={baseRef} /></span></span>
+            <span className="flex-row flex-center"><PersonHover login={e.actor} avatarUrl={e.avatarUrl} type={e.actorType}><ActorName className="gh-feed-author font-weight-semibold" login={e.actor} type={e.actorType} /></PersonHover><span className="secondary-text"><Phrase e={e} baseRef={baseRef} /></span></span>
             <When date={e.date} />
           </div>
         </div>

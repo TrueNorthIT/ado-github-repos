@@ -196,6 +196,8 @@ export function detailNode(p: FixturePr) {
           { author: who("ann"), state: "APPROVED", submittedAt: "2026-10-30T10:00:00Z" },
           { author: who("carol"), state: "CHANGES_REQUESTED", submittedAt: "2026-10-30T11:00:00Z" },
           { author: who("dave"), state: "COMMENTED", submittedAt: "2026-10-30T12:00:00Z" },
+          // Copilot's review bot, as GraphQL names it: shown as "Copilot" with an AI pill, and a Copilot card on hover (no /users lookup)
+          { author: { __typename: "Bot", login: "copilot-pull-request-reviewer", avatarUrl: "https://avatars.githubusercontent.com/in/946600?v=4" }, state: "COMMENTED", submittedAt: "2026-10-30T12:30:00Z" },
         ]
       : n === 199 ? [{ author: who(ME), state: "APPROVED", submittedAt: "2026-10-30T10:00:00Z" }] : [];
   return {

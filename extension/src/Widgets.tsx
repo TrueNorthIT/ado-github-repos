@@ -4,6 +4,7 @@ import * as React from "react";
 import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { PersonHover } from "./HoverCard";
+import { actorName } from "./lib/botIdentity";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
@@ -131,7 +132,7 @@ function prColumns(ctx: ProjectCtx, repo: string, wide: boolean): ITableColumn<W
       columnLayout: TableColumnLayout.none,
       renderCell: (_r, columnIndex, tableColumn, pr) => (
         <SimpleTableCell key="avatar" columnIndex={columnIndex} tableColumn={tableColumn}>
-          <PersonHover repo={repo} login={pr.authorLogin} avatarUrl={pr.avatarUrl}><VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
+          <PersonHover repo={repo} login={pr.authorLogin} avatarUrl={pr.avatarUrl}><VssPersona imageUrl={pr.avatarUrl} displayName={actorName(pr.authorLogin)} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
         </SimpleTableCell>
       ),
     },
@@ -152,7 +153,7 @@ function prColumns(ctx: ProjectCtx, repo: string, wide: boolean): ITableColumn<W
           }
           line2={
             <span className="secondary-text body-s text-ellipsis">
-              #{pr.number} · {pr.authorLogin} · <RelDate date={pr.createdAt} />{wide && pr.baseRef ? <> · into <span className="monospaced-xs">{pr.baseRef}</span></> : null}
+              #{pr.number} · {actorName(pr.authorLogin)} · <RelDate date={pr.createdAt} />{wide && pr.baseRef ? <> · into <span className="monospaced-xs">{pr.baseRef}</span></> : null}
             </span>
           }
         />

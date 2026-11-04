@@ -10,6 +10,7 @@
 //  - In GraphQL the reviewer's login is "copilot-pull-request-reviewer" (type Bot), without the "[bot]" suffix that REST and requestReviewsByLogin use.
 //  - Unverified: whether a GitHub App user-to-server token is allowed to call the mutation (it answers failureReason ACTOR_INELIGIBLE or a GraphQL error if not).
 import type { GraphQlRequest } from "./prQuery";
+import { actorName } from "./botIdentity";
 
 export type CopilotReviewEffort = "LITE" | "BALANCED" | "MAX" | "AUTO";
 
@@ -75,7 +76,7 @@ export function copilotResult(payload: { success?: boolean | null; failureReason
 }
 
 /** How a reviewer is labelled: GitHub shows the Copilot bot as "Copilot", not its GraphQL login. */
-export const reviewerName = (login: string): string => (login === "copilot-pull-request-reviewer" ? "Copilot" : login);
+export const reviewerName = (login: string): string => actorName(login);
 
 /** The bot's GraphQL login, on its reviews and on its review comments. */
 export const COPILOT_LOGIN = "copilot-pull-request-reviewer";

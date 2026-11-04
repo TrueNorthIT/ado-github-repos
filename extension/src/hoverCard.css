@@ -19,3 +19,5 @@
 .gh-hover-shimmer-lines .gh-hover-shimmer-title { height: 18px; width: 70%; }
 .gh-hover-shimmer-lines .gh-hover-shimmer-short { width: 45%; }
 body.gh-hover-on-anchor .bolt-tooltip-portal { display: none; }
+.gh-actor { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.gh-bot-pill { flex: none; }

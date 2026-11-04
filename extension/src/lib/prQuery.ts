@@ -35,7 +35,7 @@ export const STATES: Record<Exclude<PrTab, "mine">, { states: string[]; tokens: 
 
 // Fields of PrListNode. reviewThreads first:100 so `resolved` is exact.
 const NODE = `number title url state isDraft createdAt updatedAt mergedAt closedAt baseRefName
-  author { login avatarUrl ... on User { name } }
+  author { __typename login avatarUrl ... on User { name } }
   labels(first: 10) { nodes { name color } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
   comments { totalCount }`;

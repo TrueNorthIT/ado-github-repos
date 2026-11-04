@@ -52,6 +52,8 @@ export interface FeedComment {
   url: string;
   /** Review-thread comments only: the diff hunk it was written on. */
   diffHunk?: string;
+  /** The author's GraphQL __typename: "Bot" for an app account. */
+  authorType?: string;
   /** Set on Copilot's review comments: the finding's title and severity from its review's overview, when the overview lists it (else empty). */
   copilot?: Partial<CopilotFinding>;
 }
@@ -115,6 +117,8 @@ export interface EventItem {
   /** Login; "ghost" for a deleted account. For "pushed" the commit author. For review_*, the display name (the Copilot bot is "Copilot"); the type is the verdict. */
   actor: string;
   avatarUrl: string;
+  /** review_*: the reviewer's GraphQL __typename ("Bot" for an app). */
+  actorType?: string;
   /** For "pushed" the date of the last commit in the group. */
   date: Date;
   /** pushed: number of commits in the group. */
@@ -147,7 +151,7 @@ const PUSH_WINDOW_MS = 10 * 60 * 1000;
 
 const toComment = (n: ReviewThreadCommentNode | IssueNode): FeedComment => {
   const a = who(n.author);
-  return { id: n.id, author: a.login, avatarUrl: a.avatarUrl, html: n.bodyHTML, date: new Date(n.createdAt), url: n.url, ...("diffHunk" in n && n.diffHunk ? { diffHunk: n.diffHunk } : {}) };
+  return { id: n.id, author: a.login, ...(n.author?.__typename ? { authorType: n.author.__typename } : {}), avatarUrl: a.avatarUrl, html: n.bodyHTML, date: new Date(n.createdAt), url: n.url, ...("diffHunk" in n && n.diffHunk ? { diffHunk: n.diffHunk } : {}) };
 };
 type IssueNode = Omit<ReviewThreadCommentNode, "replyTo" | "databaseId" | "body" | "diffHunk"> & { body?: string };
 
@@ -167,7 +171,7 @@ function toEvent(n: TimelineNode): EventItem | null {
       const type = REVIEW_TYPE[n.state];
       if (!type) return null; // PENDING: not submitted yet
       const a = who(n.author);
-      const e: EventItem = { kind: "event", id: n.id, type, actor: reviewerName(a.login), avatarUrl: a.avatarUrl, date: new Date(n.submittedAt ?? n.createdAt) };
+      const e: EventItem = { kind: "event", id: n.id, type, actor: reviewerName(a.login), avatarUrl: a.avatarUrl, date: new Date(n.submittedAt ?? n.createdAt), ...(n.author?.__typename ? { actorType: n.author.__typename } : {}) };
       if (n.bodyHTML?.trim() && n.body?.trim()) e.html = n.bodyHTML;
       return e;
     }

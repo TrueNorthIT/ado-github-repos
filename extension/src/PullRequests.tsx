@@ -16,6 +16,7 @@ import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { VssPersona } from "azure-devops-ui/VssPersona";
 import { PersonHover } from "./HoverCard";
+import { actorName } from "./lib/botIdentity";
 import { FilterBar } from "azure-devops-ui/FilterBar";
 import { KeywordFilterBarItem, TextFilterBarItem } from "azure-devops-ui/TextFilterBarItem";
 import { DropdownFilterBarItem } from "azure-devops-ui/Dropdown";
@@ -71,7 +72,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
       columnLayout: TableColumnLayout.none, // the title column's twoLinePrefix draws the avatar's shimmer
       renderCell: (_r, columnIndex, tableColumn, row) => (
         <SimpleTableCell key="avatar" columnIndex={columnIndex} tableColumn={tableColumn}>
-          <PersonHover repo={repo} login={row.authorLogin} name={row.authorName} avatarUrl={row.avatarUrl}><VssPersona imageUrl={row.avatarUrl} displayName={row.authorName ?? row.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
+          <PersonHover repo={repo} login={row.authorLogin} name={row.authorName} avatarUrl={row.avatarUrl} type={row.authorType}><VssPersona imageUrl={row.avatarUrl} displayName={row.authorName ?? actorName(row.authorLogin, row.authorType)} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
         </SimpleTableCell>
       ),
     },
@@ -95,7 +96,7 @@ function columns(repo: string, open: (n: number) => void, lastViewed: LastViewed
           }
           line2={
             <span className="secondary-text body-s gh-pr-line2">
-              {row.authorName ?? row.authorLogin} request #{row.number} into <Icon iconName="OpenSource" size={IconSize.small} className="gh-pr-branch-icon" />
+              {row.authorName ?? actorName(row.authorLogin, row.authorType)} request #{row.number} into <Icon iconName="OpenSource" size={IconSize.small} className="gh-pr-branch-icon" />
               <span className="monospaced-xs gh-pr-branch">{row.baseRef}</span>
             </span>
           }

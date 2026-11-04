@@ -12,7 +12,8 @@ import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { Table, ITableColumn, TwoLineTableCell } from "azure-devops-ui/Table";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
-import { HoverRepoContext, PersonHover } from "./HoverCard";
+import { ActorName, HoverRepoContext, PersonHover } from "./HoverCard";
+import { actorName } from "./lib/botIdentity";
 import { RelDate } from "./RelDate";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState, type PrPage as PrPageId } from "./lib/browseState";
@@ -71,9 +72,9 @@ function Meta({ pr, repo, status }: { pr: PrPageData; repo: string; status?: PrS
     <div className="gh-pr-meta flex-row flex-center">
       <Pill size={PillSize.regular} variant={s.color ? PillVariant.colored : PillVariant.standard} color={s.color}>{s.text}</Pill>
       <span className="secondary-text">#{pr.number}</span>
-      <PersonHover login={pr.authorLogin} name={pr.authorName} avatarUrl={pr.avatarUrl}><VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorName ?? pr.authorLogin} size="small" suppressPersonaCard showInitialsOnImageError /></PersonHover>
+      <PersonHover login={pr.authorLogin} name={pr.authorName} avatarUrl={pr.avatarUrl} type={pr.authorType}><VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorName ?? actorName(pr.authorLogin, pr.authorType)} size="small" suppressPersonaCard showInitialsOnImageError /></PersonHover>
       <span className="gh-pr-meta-text">
-        <span className="secondary-text">{pr.authorName ?? pr.authorLogin} proposes to merge </span>
+        <span className="secondary-text">{pr.authorName ?? actorName(pr.authorLogin, pr.authorType)} proposes to merge </span>
         {branch(pr.headRef)}
         <ClipboardButton className="gh-pr-copy" getContent={() => pr.headRef} ariaLabel={`Copy branch name ${pr.headRef}`} showCopiedTooltip subtle />
         <span className="secondary-text"> into </span>
@@ -202,7 +203,7 @@ function Reviewers({ list, store, edit, repo, number, baseRef }: { list: PrRevie
       <li key={r.login} className="gh-pr-row flex-row flex-center">
         <PersonHover className="gh-pr-grow" login={r.login} avatarUrl={r.avatarUrl}>
           <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
-          <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
+          <ActorName className="gh-pr-grow" login={r.login} />
         </PersonHover>
         {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
         <span className="secondary-text body-s">{REVIEW[r.state].text}</span>

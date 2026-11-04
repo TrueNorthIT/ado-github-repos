@@ -16,6 +16,7 @@ import { PENDING_LABEL, type PendingFeedComment } from "./lib/pendingReview";
 import { reactionDefs, visibleReactions, type ReactionContent } from "./lib/reactions";
 import { applyFailureText, canSuggest, parseSuggestions, targetLinesFromDiffHunk, type Suggestion } from "./lib/suggestions";
 import { BATCH_KEY, type FeedStore } from "./feedStore";
+import { actorName } from "./lib/botIdentity";
 
 export const Failure = ({ store, id }: { store: FeedStore; id: string }) => {
   const text = store.errors.get(id);
@@ -49,7 +50,7 @@ function HistoryDialog({ id, close }: { id: string; close: () => void }) {
           {rows.map((r, i) => (
             <li key={i} className="gh-history-item">
               <div className="gh-history-head flex-row flex-center">
-                <span className="font-weight-semibold">{r.editor}</span>
+                <span className="font-weight-semibold">{actorName(r.editor)}</span>
                 <span className="secondary-text">{r.isCreation ? "wrote this" : "edited this"} <RelDate date={r.editedAt} /></span>
                 {r.isCreation && <Pill size={PillSize.compact} variant={PillVariant.outlined}>Original</Pill>}
               </div>

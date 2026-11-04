@@ -4,6 +4,8 @@ import { relativeTime } from "./tokens";
 import { findWorkItemIds } from "./workItems";
 
 export interface GhActor {
+  /** "Bot" for an app account (its GraphQL login has no "[bot]" suffix), "User", "Organization"…, where the query selects it. */
+  __typename?: string;
   login: string;
   avatarUrl?: string;
   /** Display name (User only). */
@@ -74,6 +76,8 @@ export interface PrListRow {
   url: string;
   authorLogin: string;
   authorName?: string;
+  /** GraphQL __typename of the author: "Bot" for an app. */
+  authorType?: string;
   avatarUrl: string;
   baseRef: string;
   labels: PrLabel[];
@@ -120,6 +124,7 @@ export interface PrDetail {
   isDraft: boolean;
   authorLogin: string;
   authorName?: string;
+  authorType?: string;
   avatarUrl: string;
   baseRef: string;
   headRef: string;
@@ -169,6 +174,7 @@ export function toListRow(node: PrListNode, now: number): PrListRow {
     url: node.url,
     authorLogin: node.author?.login ?? "ghost",
     authorName: node.author?.name || undefined,
+    authorType: node.author?.__typename,
     avatarUrl: node.author ? node.author.avatarUrl ?? "" : GHOST,
     baseRef: node.baseRefName,
     labels: labelsOf(node),
@@ -227,6 +233,7 @@ export function toDetail(node: PrDetailNode): PrDetail {
     isDraft: row.isDraft,
     authorLogin: row.authorLogin,
     authorName: row.authorName,
+    authorType: row.authorType,
     avatarUrl: row.avatarUrl,
     baseRef: row.baseRef,
     headRef: node.headRefName,
