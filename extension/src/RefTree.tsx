@@ -36,7 +36,6 @@ export function RefTree<T extends { name: string }>({ nodes, columns, name, name
   /** Shimmer rows in the same columns (a Table: Tree has no loading rows), until the refs arrive. */
   loading?: boolean;
 }) {
-  const provider = React.useMemo(() => new TreeItemProvider<RefNode<T>>(nodes.map((n) => toItem(n, collapsed))), [nodes, collapsed]);
   const cols = React.useMemo<ITreeColumn<RefNode<T>>[]>(
     () => [
       {
@@ -76,6 +75,9 @@ export function RefTree<T extends { name: string }>({ nodes, columns, name, name
     ],
     [columns, name, nameCell]
   );
+  // A new provider whenever the cells change too: Tree rows don't re-render for new columns alone, so a lock (or any state a cell reads)
+  // arriving after the rows rendered was sometimes never shown.
+  const provider = React.useMemo(() => new TreeItemProvider<RefNode<T>>(nodes.map((n) => toItem(n, collapsed))), [nodes, collapsed, cols]);
   const skeletonCols = React.useMemo<ITableColumn<object>[]>(
     () => [
       { id: "name", name, width: -100, columnLayout: TableColumnLayout.singleLinePrefix, renderCell: () => null as never },
