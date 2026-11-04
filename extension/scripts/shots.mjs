@@ -38,6 +38,8 @@ const MOCK_PAGES = {
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
   actions: `?hub=actions${REPO}&view=actions`,
   "run-9001": `?hub=actions${REPO}&view=actions&actRun=9001`,
+  "run-9001-tests": `?hub=actions${REPO}&view=actions&actRun=9001&actRunTab=tests`,
+  "run-9004-tests": `?hub=actions${REPO}&view=actions&actRun=9004&actRunTab=tests`,
   "log-900151": `?hub=actions${REPO}&view=actions&actRun=9001&actJob=900151`,
   "actions-wf-disabled": `?hub=actions${REPO}&view=actions&actWorkflow=103`,
   "actions-envs": `?hub=actions${REPO}&view=actions&actTab=environments`,
@@ -63,7 +65,7 @@ async function livePages() {
     branches: `?hub=branches${REPO}&branchTab=all`, tags: `?hub=tags${REPO}`, releases: `?hub=tags${REPO}&tagTab=releases`,
     "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`, "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v0.1.0&cmpHead=main`,
     prs: `?hub=prs${REPO}&view=prs`, "pr-3": `?hub=prs${REPO}&view=prs&pr=3`, "pr-3-files": `?hub=prs${REPO}&view=prs&pr=3&prPage=files`, "pr-4": `?hub=prs${REPO}&view=prs&pr=4`,
-    actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
+    actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`run-${run.id}-tests`]: `${base}&actRun=${run.id}&actRunTab=tests`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
   };
 }

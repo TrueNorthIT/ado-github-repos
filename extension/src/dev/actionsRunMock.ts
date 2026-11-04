@@ -9,6 +9,7 @@
 // Scenarios: `actionsFail` answers 403 to re-run/cancel; `reviewFails` answers 422 to a review; `readOnly` is handled in mockFetch.
 import { avatar } from "./fixtures/refs";
 import { actionsRest, deletedLogs, deletedRuns } from "./actionsMock";
+import { artifactZip } from "./testResultsMock";
 
 const REPO = "truenorthit/github-repos";
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -214,6 +215,7 @@ const ARTIFACTS: Record<number, { id: number; name: string; size_in_bytes: numbe
     { id: 7001, name: "coverage-report", size_in_bytes: 2907697, expired: false, expires_at: iso(NOW0 + 20 * 86400e3) },
     { id: 7002, name: "build-output", size_in_bytes: 15728640, expired: false, expires_at: iso(NOW0 + 20 * 86400e3) },
     { id: 7003, name: "old-logs", size_in_bytes: 512, expired: true, expires_at: iso(NOW0 - 2 * 86400e3) },
+    { id: 7005, name: "test-results", size_in_bytes: 4813, expired: false, expires_at: iso(NOW0 + 20 * 86400e3) },
   ],
   9004: [{ id: 7004, name: "dist", size_in_bytes: 1229, expired: false, expires_at: iso(NOW0 + 5 * 86400e3) }],
 };
@@ -271,7 +273,7 @@ export async function actionsRunRest(u: URL, init: RequestInit | undefined, sc: 
     return raw ? simFromRaw(raw as unknown, seen) : undefined;
   };
 
-  if (m[8]) return new Response(new Uint8Array([0x50, 0x4b, 3, 4, 20, 0, 0, 0, 0, 0, 1, 2, 3]), { headers: { "Content-Type": "application/zip" } });
+  if (m[8]) return new Response(await artifactZip(Number(m[8])) as BlobPart, { headers: { "Content-Type": "application/zip" } });
   if (m[9]) {
     const id = Number(m[9]);
     return json(annotationsFor(Math.floor(id / 100), id % 50));

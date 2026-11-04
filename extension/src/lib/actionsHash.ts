@@ -17,6 +17,7 @@
 //  - Filters only with actWorkflow, or with tab=runs: actBranch (trimmed, max 255), actActor (trimmed, max 100),
 //    actEvent (trimmed, max 50), actStatus one of RUN_STATUS_FILTERS. Blank values are dropped.
 //  - actEnv (an environment name, trimmed, max 255) only with tab=environments and without actWorkflow/actRun: that environment's deployments.
+//  - actRunTab (tests | artifacts) only with actRun and without actJob: the run page's tab; absent means Summary. Written last.
 //  - serializeActions writes `#repo=...&view=actions` then the keys in the order listed above, leaving out anything absent, and
 //    never writes tab=recent (the default). Values are encodeURIComponent-encoded.
 //  - applyActions(hash, s) keeps the hash's other segments verbatim and in order, drops every earlier `view` and every key of this
@@ -43,10 +44,15 @@ export interface ActionsHashState {
   event?: string;
   /** An environment's name: its deployment history. Only with tab=environments (and no workflow or run). */
   env?: string;
+  /** The run page's tab (native Pipelines: Summary, Tests, Artifacts...). Only with run and without job; absent means Summary. */
+  runTab?: RunTab;
 }
 
+export type RunTab = "tests" | "artifacts";
+const RUN_TABS: RunTab[] = ["tests", "artifacts"];
+
 const REPO = /^[\w.-]+\/[\w.-]+$/;
-const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent", "actEnv"];
+const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent", "actEnv", "actRunTab"];
 const TABS: ActTab[] = ["recent", "all", "runs", "environments"];
 
 const id = (v: string | null): number | undefined => (v && /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
@@ -79,6 +85,9 @@ export function parseActions(hash: string): ActionsHashState | null {
       out.job = job;
       const line = id(p.get("actLine"));
       if (line) out.line = line;
+    } else {
+      const runTab = p.get("actRunTab") as RunTab;
+      if (RUN_TABS.includes(runTab)) out.runTab = runTab;
     }
   }
   if (workflow || out.tab === "runs") {
@@ -117,5 +126,6 @@ export function applyActions(hash: string, s: Omit<ActionsHashState, "repo">): s
   add("actActor", s.actor);
   add("actEvent", s.event);
   if (s.tab === "environments") add("actEnv", s.env?.trim().slice(0, 255));
+  if (s.run && !s.job && s.runTab && RUN_TABS.includes(s.runTab)) add("actRunTab", s.runTab);
   return "#" + kept.join("&");
 }

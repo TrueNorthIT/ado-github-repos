@@ -81,3 +81,25 @@
 .gh-act-body .bolt-pill { display: inline-flex; width: auto; }
 .gh-act-body .bolt-table-cell-content > .bolt-status, .gh-act-body .bolt-table-cell-content > .bolt-icon { margin-right: 8px; }
 .gh-act-jobtree .bolt-status { margin-right: 8px; flex: none; }
+
+/* Tests tab: summary figures (hand-rolled: azure-devops-ui has no statistic component), results tree, details card beside it */
+.gh-act-stats { gap: 8px 40px; padding: 8px 0 4px; }
+.gh-act-stat { gap: 4px; min-width: 96px; font-size: 14px; }
+.gh-act-stat-value { gap: 6px; font-size: 21px; line-height: 28px; font-weight: 600; }
+.gh-act-stat-value .bolt-status, .gh-act-stat-value .fabric-icon { flex: none; font-size: 16px; font-weight: 400; }
+.gh-act-tests-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.gh-act-tests-split-open { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+@media (max-width: 900px) { .gh-act-tests-split-open { grid-template-columns: minmax(0, 1fr); } }
+.gh-act-tests-icon { flex: none; margin-right: 8px; }
+.gh-act-tests-group { font-weight: 600; min-width: 0; }
+.gh-act-tests-count { flex: none; margin-left: 6px; }
+.gh-act-tests-source { min-width: 0; margin-left: 8px; font-size: 12px; }
+.gh-act-tests-details .bolt-card-content { flex-direction: column; min-width: 0; }
+.gh-act-tests-detail-body { gap: 16px; min-width: 0; }
+.gh-act-tests-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; font-size: 14px; }
+.gh-act-tests-fact { gap: 6px; }
+.gh-act-tests-wrap { overflow-wrap: anywhere; }
+.gh-act-tests-h { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.gh-act-tests-pre, .gh-act-tests-code { margin: 0; padding: 8px 12px; font-family: Menlo, Consolas, "Courier New", monospace; font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; border-radius: 4px; background: var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); text-align: left; }
+.gh-act-tests-zero-text { gap: 8px; align-items: center; }
+.gh-act-tests-zero-text .gh-act-tests-code { min-width: 320px; }
