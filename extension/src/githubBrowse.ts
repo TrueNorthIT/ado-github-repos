@@ -236,7 +236,9 @@ const COMMIT_PARALLEL = 4;
 
 /** Latest commit per entry of a folder (one GraphQL request per 50 entries, a few at a time). Cached per repo, ref and folder. Rejects only when every request failed. */
 export const getCommits = (repo: string, ref: string, folder: string, entries: TreeEntry[]) =>
-  memo(commits, `${repo}@${ref}:${folder}`, async () => {
+  // The key carries the entries too: on a branch switch the new ref renders one frame before its folder listing does, and a
+  // lookup keyed by ref alone cached the old branch's few paths under the new ref (seen live: folders left without a last change).
+  memo(commits, `${repo}@${ref}:${folder}|${entries.map((e) => e.path).join("\0")}`, async () => {
     const queue = buildQueries(repo, ref, entries);
     const out: Record<string, CommitInfo> = {};
     let failure: unknown;

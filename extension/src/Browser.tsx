@@ -583,6 +583,9 @@ function FolderTree({ repo, tree, folder, current, go, onEntries }: { repo: stri
 export function BranchPicker({ refName, items, loading, onOpen, setQuery, onSelect }: { refName: string; items: { id: string; text: string }[]; loading: boolean; onOpen: () => void; setQuery: (q: string) => void; onSelect: (b: string) => void }) {
   return (
     <Dropdown
+      // A new ref remounts it: the Dropdown keeps its own selection, and once a switch reloads the branch list the picked item is
+      // gone, so it showed a blank label over the placeholder that carries the branch name (seen live after picking a branch).
+      key={refName}
       ariaLabel={`Branch: ${refName}`}
       className="gh-branch"
       minCalloutWidth={280}
