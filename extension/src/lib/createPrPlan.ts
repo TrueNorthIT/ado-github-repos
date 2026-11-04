@@ -34,6 +34,8 @@ export interface CreatePrParams {
   body?: string;
   draft?: boolean;
   maintainerCanModify?: boolean;
+  /** A fork's node id when the head branch lives there (batch H, lib/forks.ts); absent for a branch of this repository. */
+  headRepositoryId?: string;
   /** User node ids. */
   reviewerUserIds?: string[];
   /** Team node ids. */
@@ -77,7 +79,7 @@ export interface CreatePrPlan {
  * variables.input is exactly { repositoryId, baseRefName, headRefName, title, body, draft, maintainerCanModify }.
  * Throws "repositoryId is required", "baseRefName is required", "headRefName is required", "title is required" (blank after trimming) and `Title is too long (maximum is 256 characters)` (prEdit.MAX_TITLE_LENGTH code points).
  */
-export function createPullRequestMutation(p: Pick<CreatePrParams, "repositoryId" | "baseRefName" | "headRefName" | "title" | "body" | "draft" | "maintainerCanModify">): GraphQlRequest {
+export function createPullRequestMutation(p: Pick<CreatePrParams, "repositoryId" | "baseRefName" | "headRefName" | "title" | "body" | "draft" | "maintainerCanModify" | "headRepositoryId">): GraphQlRequest {
   if (!p.repositoryId.trim()) throw new Error("repositoryId is required");
   if (!p.baseRefName.trim()) throw new Error("baseRefName is required");
   if (!p.headRefName.trim()) throw new Error("headRefName is required");
@@ -86,7 +88,7 @@ export function createPullRequestMutation(p: Pick<CreatePrParams, "repositoryId"
   if ([...title].length > MAX_TITLE_LENGTH) throw new Error(`Title is too long (maximum is ${MAX_TITLE_LENGTH} characters)`);
   return {
     query: `mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id number url headRefOid } } }`,
-    variables: { input: { repositoryId: p.repositoryId, baseRefName: p.baseRefName, headRefName: p.headRefName, title, body: p.body ?? "", draft: p.draft ?? false, maintainerCanModify: p.maintainerCanModify ?? true } },
+    variables: { input: { repositoryId: p.repositoryId, baseRefName: p.baseRefName, headRefName: p.headRefName, title, body: p.body ?? "", draft: p.draft ?? false, maintainerCanModify: p.maintainerCanModify ?? true, ...(p.headRepositoryId ? { headRepositoryId: p.headRepositoryId } : {}) } },
   };
 }
 

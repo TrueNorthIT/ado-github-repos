@@ -16,6 +16,7 @@ import { releasesGraphql, releasesRest } from "./releasesMock";
 import { releaseFormRest } from "./releaseFormMock";
 import { actionsRest } from "./actionsMock";
 import { actionsRunRest } from "./actionsRunMock";
+import { forksRest } from "./forksMock";
 import { writesGraphql, writtenFile } from "./writesMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
@@ -151,7 +152,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const repo = m && repoOf(`${decodeURIComponent(m[1])}/${decodeURIComponent(m[2])}`);
   if (!m || !repo || repo.missing) return status(404);
   const rest = m[3] ?? "";
-  if (!rest) return json({ default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" } });
+  if (!rest) return json({ node_id: `R_${repo.fullName}`, default_branch: "main", private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly" } });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);
     const names = repo.branches.slice((page - 1) * BRANCH_PAGE, page * BRANCH_PAGE);
@@ -215,6 +216,10 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "api.github.com" && sc !== "rateLimit") {
     const run = await actionsRunRest(u, init, sc); // Actions run page: run detail, jobs, logs, artifacts, annotations, re-run, cancel, review
     if (run) return run;
+  }
+  if (u.hostname === "api.github.com" && sc !== "rateLimit") {
+    const fk = forksRest(u, init, sc); // batch H: forks, their compares and branches, creating one, the viewer's organisations
+    if (fk) return fk;
   }
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });

@@ -265,6 +265,8 @@
 .gh-complete-why { margin-left: 28px; } /* under the label, past the checkbox */
 .gh-complete-step { gap: 8px; } /* the semi-linear merge's spinner and its step */
 .gh-complete-note { margin-top: -8px; } /* why Semi-linear merge is disabled, tucked under the merge type */
+.gh-fork-dialog { gap: 12px; } /* the Fork dialog's explanation, owner and checkbox */
+.gh-fork-name { gap: 8px; } /* owner avatar, fork name, Private pill */
 .gh-diagram { width: 100%; max-width: 280px; height: auto; color: var(--text-secondary-color, rgba(0,0,0,.55)); }
 .gh-diagram-line { fill: none; stroke: currentColor; stroke-width: 2; }
 .gh-diagram-dashed { stroke-dasharray: 3 3; }

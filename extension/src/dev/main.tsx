@@ -59,7 +59,7 @@ function toolbar() {
 }
 
 SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
-SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
+SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", "forkDenied", "noForks"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
 
 // `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
 // exactly that text), waiting up to 8 s for each. For screenshots of panels and menus that only open on a click (npm run shots).

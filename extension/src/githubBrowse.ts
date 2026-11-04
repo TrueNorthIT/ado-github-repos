@@ -944,6 +944,8 @@ export const deleteRelease = async (repo: string, releaseId: number) => {
 // ---------- Batch H: semi-linear merge, branch rules (rulesets) and forks ----------
 import { branchRulesRequest, toBranchRules, type BranchRule } from "./lib/branchRules";
 import { CODEOWNERS_PATHS, codeOwnerSet, parseCodeOwners, type CodeOwnerSet } from "./lib/codeOwners";
+import { createForkRequest, forkCompareRequest, forksRequest, mapForkCompare, openPullsFromRequest, toFork, toForks, type Fork } from "./lib/forks";
+import { MAX_COMPARE_COMMITS as NEW_PR_COMMITS } from "./lib/newPr";
 
 /** A GET that skips the HTTP cache (GitHub's REST answers carry max-age=60): for polling a pull request while it is rebased. */
 export async function restJsonFresh<T = any>(r: RestRequest): Promise<T> {
@@ -983,4 +985,53 @@ export const getCodeOwnerSet = (repo: string, base: string, number: number): Pro
     const files = await getPrFiles(repo, number);
     if (files.length >= MAX_PR_FILES) throw new Error("Too many changed files to match against CODEOWNERS");
     return codeOwnerSet(parseCodeOwners(text), files.map((f) => f.path));
+  });
+
+const forkLists = new Map<string, { at: number; p: Promise<Fork[]> }>();
+const MAX_FORKS = 300;
+/** The forks of `repo` the viewer can see, newest first, up to 300 (lib/forks.ts). Cached like the PR page. */
+export const listForks = (repo: string): Promise<Fork[]> =>
+  ttl(forkLists, repo, async () => {
+    const out: Fork[] = [];
+    for (let page = 1; out.length < MAX_FORKS; page++) {
+      const { body, link } = await restJson(forksRequest(repo, page));
+      out.push(...toForks(body));
+      if (!link?.includes('rel="next"')) break;
+    }
+    return out.slice(0, MAX_FORKS);
+  });
+export const invalidateForks = () => forkLists.clear();
+
+/** Behind / ahead of a fork's default branch against the parent's `base`, from the cross-repository compare. */
+export const getForkAheadBehind = (repo: string, base: string, fork: Fork): Promise<AheadBehind> =>
+  refTtl(`forkcompare|${repo}|${base}|${fork.fullName}|${fork.defaultBranch}`, async () => mapCompare((await restJson(forkCompareRequest(repo, base, fork.owner, fork.defaultBranch))).body));
+
+/** Creates a fork (POST /repos/{repo}/forks): under the viewer's account, or `organization`. Resolves with the new repository as GitHub reports it. */
+export async function createFork(repo: string, p: { organization?: string; defaultBranchOnly?: boolean }): Promise<Fork | null> {
+  const made = toFork(await restSend(createForkRequest(repo, p)));
+  invalidateForks();
+  return made;
+}
+
+/** The organisations the viewer belongs to (logins), for "Fork into". [] when GitHub won't say. */
+export async function getViewerOrgs(): Promise<string[]> {
+  try {
+    const { body } = await restJson<{ login?: string }[]>({ method: "GET", path: "/user/orgs?per_page=100" });
+    return Array.isArray(body) ? body.map((o) => o.login).filter((l): l is string => typeof l === "string") : [];
+  } catch (e) {
+    if (e instanceof GhError && e.kind === "auth") throw e;
+    return [];
+  }
+}
+
+/** The New pull request comparison for `forkOwner:head` into `base` (lib/forks.ts mapForkCompare). Shares the page's compare cache. */
+export const getForkNewPrCompare = (repo: string, base: string, forkRepo: string, head: string) =>
+  ttl(newPrCompares, JSON.stringify([repo, base, forkRepo, head]), async () => {
+    const owner = forkRepo.split("/")[0];
+    const [info, cmp, pulls] = await Promise.all([
+      json<any>(repoPath(repo)),
+      restJson(forkCompareRequest(repo, base, owner, head, NEW_PR_COMMITS)).then((r) => r.body, (e) => { if (e instanceof GhError && e.status === 404) return null; throw e; }),
+      restJson(openPullsFromRequest(repo, base, owner, head)).then((r) => r.body, () => []),
+    ]);
+    return mapForkCompare(info, cmp, pulls);
   });

@@ -25,6 +25,8 @@ import { serializeActions } from "./lib/actionsHash";
 import { branchRowNewPrHash } from "./lib/newPrHash";
 import { branchCompareHash, compareBaseFor, withCompareBase } from "./lib/compareHash";
 import { BranchCompare } from "./BranchCompare";
+import { ForksView } from "./Forks";
+import { serializeForks } from "./lib/forks";
 import { gotoHash, useHashExtras } from "./hostNav";
 import { usePrefs } from "./prefs";
 import { useRefWrites } from "./refWrites";
@@ -36,7 +38,7 @@ const COMPARE_BATCH = 6;
 const NO_FAVS: string[] = [];
 
 /** The Behind | Ahead cell: both numbers, with a bar under each growing away from the divider (native's split bar). */
-function BehindAhead({ value, max }: { value?: AheadBehind; max: number }) {
+export function BehindAhead({ value, max }: { value?: AheadBehind; max: number }) {
   if (!value) return null;
   const w = barWidths(value, max);
   return (
@@ -207,6 +209,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         titleAriaLevel={1}
         commandBarItems={[
           { id: "new", text: "New branch", isPrimary: true, important: true, disabled: !v || writes.busy, onActivate: () => setDialog({ kind: "new" }) },
+          { id: "forks", text: "Forks", important: false, iconProps: { iconName: "GitFork" }, onActivate: () => gotoHash(serializeForks(repo)) },
         ]}
       >
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r }))}
@@ -258,10 +261,10 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
 }
 
 export function BranchesHub(props: HubProps) {
-  const { compare } = useHashExtras(); // BrowseState drops view=compare, so the page is routed on its own parse of the hash
+  const { compare, forks } = useHashExtras(); // BrowseState drops view=compare and view=forks, so the page is routed on its own parse of the hash
   return (
     <RepoHubPage state={props.state} go={props.go}>
-      {(repo) => (compare && compare.repo === repo ? <BranchCompare key={repo} repo={repo} cmp={compare} props={props} /> : <BranchList repo={repo} props={props} />)}
+      {(repo) => (compare && compare.repo === repo ? <BranchCompare key={repo} repo={repo} cmp={compare} props={props} /> : forks && forks.repo === repo ? <ForksView key={repo} repo={repo} props={props} /> : <BranchList repo={repo} props={props} />)}
     </RepoHubPage>
   );
 }
