@@ -18,7 +18,8 @@ import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
 import { ContentSize } from "azure-devops-ui/Callout";
-import type { ActionsHashState } from "./lib/actionsHash";
+import type { ActionsHashState, RunTab } from "./lib/actionsHash";
+import { TestsTab } from "./ActionsTests";
 import { parseWorkflowJobs, jobGraph, formatDuration, type Annotation, type Artifact, type Job, type JobGroup, type PendingDeployment, type RunState, type WorkflowRun, type WorkflowJobDef } from "./lib/workflows";
 import { formatBytes } from "./lib/releases";
 import {
@@ -177,7 +178,9 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
   const href = useHubHref();
   const defs = useWorkflowDefs(repo, run);
   const notes = useAnnotations(repo, jobs);
-  const [page, setPage] = React.useState<"summary" | "artifacts">("summary");
+  // Native keeps the run page's tab in the URL; so do we (actRunTab), so a link can open the Tests tab.
+  const page: "summary" | RunTab = state.runTab ?? "summary";
+  const setPage = (p: "summary" | RunTab) => go({ run: run.id, attempt: state.attempt, runTab: p === "summary" ? undefined : p }, true);
   const [tab, setTab] = React.useState<"stages" | "jobs">("stages");
   const [failure, setFailure] = React.useState<string>();
   const [reviewing, setReviewing] = React.useState(false);
@@ -244,8 +247,9 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
         description={<span className="flex-row flex-center gh-act-pipeline"><Icon iconName="Rocket" />{run.name}</span>}
         commandBarItems={items}
       />
-      <TabBar ariaLabel="Run" selectedTabId={page} onSelectedTabChanged={(id) => setPage(id as "summary" | "artifacts")} className="gh-act-pagetabs" disableSticky>
+      <TabBar ariaLabel="Run" selectedTabId={page === "artifacts" && !data.artifacts.length ? "summary" : page} onSelectedTabChanged={(id) => setPage(id as "summary" | RunTab)} className="gh-act-pagetabs" disableSticky>
         <Tab id="summary" name="Summary" />
+        <Tab id="tests" name="Tests" />
         {data.artifacts.length > 0 && <Tab id="artifacts" name="Artifacts" badgeCount={data.artifacts.length} />}
       </TabBar>
       <div className="gh-act-body flex-column">
@@ -253,7 +257,8 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
         {!latest && <MessageCard severity={MessageCardSeverity.Info} buttonProps={[{ text: "Go to the latest attempt", onClick: () => go({ run: run.id }) }]}>You are looking at attempt {run.attempt} of {data.latestAttempt}.</MessageCard>}
         {data.pending.length > 0 && <MessageCard severity={MessageCardSeverity.Warning}>Waiting for review: {data.pending.map((p) => p.environmentName).join(", ")}.</MessageCard>}
 
-        {page === "artifacts" && data.artifacts.length > 0 ? <Artifacts repo={repo} artifacts={data.artifacts} /> : <>
+        {page === "tests" ? <TestsTab repo={repo} runId={run.id} artifacts={data.artifacts} active={isActive(run.state)} />
+        : page === "artifacts" && data.artifacts.length > 0 ? <Artifacts repo={repo} artifacts={data.artifacts} /> : <>
         <Card className="gh-act-card gh-act-summary">
           <div className="gh-act-sum-top flex-row flex-center">
             <h2 className="gh-act-sum-title flex-row flex-center flex-grow">

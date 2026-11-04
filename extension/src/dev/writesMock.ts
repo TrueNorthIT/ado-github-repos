@@ -49,6 +49,9 @@ export function writesGraphql(query: string, v: Record<string, any>, sc: string)
     const r = repoOf(full);
     const head = headOf(full, branch.branchName);
     if (!r || !head) return notFound(`Could not resolve to a Ref with the name '${branch.branchName}'.`);
+    // A GitHub App without the Workflows permission may not touch .github/workflows/ (GitHub's own wording).
+    const wf = [...(fileChanges?.additions ?? []), ...(fileChanges?.deletions ?? [])].find((c: { path: string }) => c.path.startsWith(".github/workflows/"));
+    if (sc === "noWorkflowsPermission" && wf) return json({ data: { createCommitOnBranch: null }, errors: [{ type: "UNPROCESSABLE", message: `refusing to allow a GitHub App to create or update workflow \`${wf.path}\` without \`workflows\` permission` }] });
     if (sc === "staleHead" && !staleFired) {
       staleFired = true;
       heads.set(headKey(full, branch.branchName), newOid()); // someone else pushed

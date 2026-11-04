@@ -43,6 +43,7 @@ import { BlameTab, CompareTab, HistoryTab } from "./FileTabs";
 import { applyAgainst, resolveTab, tabsFor, type FileTab } from "./lib/fileTabs";
 import { compareBaseFor } from "./lib/compareHash";
 import { openHub, patchHash, repoHubHref, useHashExtras } from "./hostNav";
+import { applyEditFlag } from "./lib/editHash";
 import { EditPane, WriteDialogs, type WriteDialog } from "./FileWrites";
 import { decodeForEdit, treeLookup, validatePath, type CommitPlan, type WriteContext } from "./lib/fileCommit";
 import { branchRowNewPrHash } from "./lib/newPrHash";
@@ -843,7 +844,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const kind = view.t === "folder" || (view.t === "loading" && path === "") ? "folder" : "file";
   const hasTabs = view.t === "file" || view.t === "folder" || view.t === "loading";
   const tab = resolveTab(state.tab, kind, isMd && kind === "file");
-  const { against, lines } = useHashExtras();
+  const { against, lines, edit: editAsked } = useHashExtras();
   const [prefs] = usePrefs();
   const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
   const tabProps = { repo, urlRef: state.ref, refName, path, signedIn, signIn: () => void doSignIn(), busy };
@@ -866,6 +867,13 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
     ...entryMenu({ path, kind: view.t }),
   ] : [];
   const editable = canEdit && view.t === "file" && tab === "contents" && (view.f.kind === "text" || view.f.kind === "markdown") && !editing;
+  // A link with edit=true (the Actions hub's "Edit" on a workflow) opens the file straight in the editor once it has loaded, then drops the key.
+  React.useEffect(() => {
+    if (!editAsked || !ctx || view.t === "loading") return;
+    patchHash((h) => applyEditFlag(h, false));
+    if (editable) void startEdit();
+    else if (view.t === "file" && !editing) setNotice(canEdit ? "This file can't be edited here." : `You can't edit files on ${refName} here: your GitHub sign-in has no write access to it.`);
+  }, [editAsked, ctx, view.t]); // eslint-disable-line react-hooks/exhaustive-deps
   const headerItems = editing ? [] : [
     ...(ctx ? [{ id: "clone", text: "Clone", important: true, renderButton: () => <CloneButton key="clone" urls={ctx.clone} /> }] : []),
     ...(editable ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, disabled: loadingEdit || writes.busy, onActivate: () => void startEdit() }] : []),

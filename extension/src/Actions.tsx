@@ -27,10 +27,12 @@ import type { HubProps } from "./RepoHub";
 import { PersonLine, RepoHubPage, skeletonRows, titleSwitcher } from "./RepoHub";
 import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
-import { DeleteRunDialog, RunStatusIcon, writeError, type DeleteTarget } from "./ActionsUi";
+import { DeleteRunDialog, RunStatusIcon, StatusBadgeDialog, writeError, type DeleteTarget } from "./ActionsUi";
 import { RunPage } from "./ActionsRun";
 import { EnvironmentsTab, isEnvironmentPage } from "./ActionsEnvironments";
-import { gotoHash, patchHash, useHashExtras } from "./hostNav";
+import { gotoHash, openHub, patchHash, useHashExtras } from "./hostNav";
+import { applyEditFlag } from "./lib/editHash";
+import { serialize } from "./lib/browseState";
 import { GhError, listBranches } from "./githubBrowse";
 import { dispatchWorkflow, getDispatchInputs, getRepoAccess, getScheduleCrons, listEnvironments, listRuns, listWorkflows, setWorkflowEnabled, useCanWriteActions } from "./actionsApi";
 import { nextScheduledRuns, timeUntil, type ScheduledRun } from "./lib/cron";
@@ -50,6 +52,9 @@ import {
 import "./browser.css";
 
 type Goto = (s: Omit<ActionsHashState, "repo">, replace?: boolean) => void;
+
+/** The Files hub at a workflow file with its editor open (lib/editHash.ts). */
+const editWorkflowHash = (repo: string, branch: string, path: string) => applyEditFlag(serialize({ repo, ref: branch, path }), true);
 
 const TABS: { id: ActTab; name: string }[] = [
   { id: "recent", name: "Recent" },
@@ -620,6 +625,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
   const [toggling, setToggling] = React.useState(false);
   const [failure, setFailure] = React.useState<string>();
   const [schedules, setSchedules] = React.useState(false);
+  const [badge, setBadge] = React.useState(false);
   const toggle = async (on: boolean) => {
     if (!wf) return;
     setToggling(true);
@@ -653,6 +659,8 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       titleAriaLevel={1}
       backButtonProps={{ ariaLabel: "All workflows", onClick: () => goto({}) }}
       commandBarItems={[
+        // Native Pipelines: "Edit" beside "Run pipeline" opens the YAML editor. Ours is the Files hub's editor, on the default branch.
+        ...(wf && info?.canWrite ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, onActivate: () => void openHub("files", editWorkflowHash(repo, info.defaultBranch, wf.path)) }] : []),
         ...(info?.inputs && !wf?.disabled ? [{ id: "run", text: "Run workflow", isPrimary: true, important: true, iconProps: { iconName: "Play" }, onActivate: () => setPanel(true) }] : []),
         ...(wf ? [{ id: "gh", text: "Open on GitHub", iconProps: { iconName: "OpenInNewTab" }, href: wf.htmlUrl, target: "_blank", important: true }] : []),
         // Native Pipelines keeps Disable/Enable and Scheduled runs in the pipeline's "..." menu.
@@ -662,6 +670,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
             id: "gh-act-wf-more",
             items: [
               { id: "schedules", text: "Scheduled runs", iconProps: { iconName: "Clock" }, disabled: !info, onActivate: () => setSchedules(true) },
+              { id: "badge", text: "Status badge", iconProps: { iconName: "Ribbon" }, disabled: !info, onActivate: () => setBadge(true) },
               ...(info?.canWrite ? [
                 { id: "sep", itemType: MenuItemType.Divider },
                 wf.disabled
@@ -686,6 +695,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       <FilterRow st={st} goto={goto} />
       <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} tick={refresh} showWorkflow={false} />
       {panel && wf && info?.inputs && <RunWorkflowPanel repo={repo} wf={wf} info={info} onClose={() => setPanel(false)} onQueued={onQueued} />}
+      {badge && wf && info && <StatusBadgeDialog repo={repo} path={wf.path} name={wf.name} defaultBranch={info.defaultBranch} onClose={() => setBadge(false)} />}
       {schedules && wf && info && <ScheduledRunsPanel repo={repo} wf={wf} branch={info.defaultBranch} onClose={() => setSchedules(false)} />}
     </div>
     </>

@@ -386,3 +386,18 @@ describe("Environments tab: actTab=environments and actEnv", () => {
     expect(h).toBe("#repo=octo%2Fdemo&other=1&view=actions&actTab=environments&actEnv=new");
   });
 });
+
+describe("the run page tab (actRunTab)", () => {
+  it("is kept only with a run and without a job", () => {
+    expect(parseActions(`${base}&actRun=5&actRunTab=tests`)?.runTab).toBe("tests");
+    expect(parseActions(`${base}&actRun=5&actRunTab=artifacts`)?.runTab).toBe("artifacts");
+    expect(parseActions(`${base}&actRun=5&actJob=6&actRunTab=tests`)?.runTab).toBeUndefined();
+    expect(parseActions(`${base}&actRunTab=tests`)?.runTab).toBeUndefined();
+    expect(parseActions(`${base}&actRun=5&actRunTab=summary`)?.runTab).toBeUndefined();
+  });
+  it("is written last, and dropped with a job", () => {
+    expect(serializeActions({ repo: REPO, run: 5, attempt: 2, runTab: "tests" })).toBe(`${base}&actRun=5&actAttempt=2&actRunTab=tests`);
+    expect(serializeActions({ repo: REPO, run: 5, job: 6, runTab: "tests" })).toBe(`${base}&actRun=5&actJob=6`);
+    expect(applyActions(`${base}&actRun=5&actRunTab=tests`, { run: 5 })).toBe(`${base}&actRun=5`);
+  });
+});

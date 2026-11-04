@@ -189,6 +189,51 @@ export async function listDeployments(repo: string, environment: string, page = 
   return { deployments, next: nextPage(link) };
 }
 
+// ---------- test results from artifacts (the run page's Tests tab) ----------
+
+import { isReportFile, parseTestReport, pickArtifacts, type TestReport } from "./lib/testResults";
+import { listZipEntries, readZipEntry } from "./lib/zip";
+
+/** Each zip entry read is capped (uncompressed), and so is the number of report files per artifact. */
+const MAX_REPORT_BYTES = 50 * 1024 * 1024;
+const MAX_REPORT_FILES = 200;
+
+export interface TestResultsLoad {
+  reports: TestReport[];
+  /** Artifacts that were not read, with why. */
+  skipped: { name: string; reason: "expired" | "tooLarge" | "unreadable" }[];
+  /** Names of the artifacts that were read. */
+  scanned: string[];
+}
+
+/** Downloads the run's likely artifacts (up to 20 MB in all), unzips them in the browser and parses every JUnit or TRX file in them. */
+export async function loadTestResults(repo: string, artifacts: Artifact[]): Promise<TestResultsLoad> {
+  const { read, skipped } = pickArtifacts(artifacts);
+  const results = await Promise.all(read.map(async (a): Promise<TestReport[] | null> => {
+    try {
+      const zip = new Uint8Array(await (await downloadArtifact(repo, a.id)).arrayBuffer());
+      const entries = listZipEntries(zip).filter((e) => isReportFile(e.name) && e.size <= MAX_REPORT_BYTES).slice(0, MAX_REPORT_FILES);
+      const reports: TestReport[] = [];
+      for (const e of entries) {
+        try {
+          const report = parseTestReport(new TextDecoder().decode(await readZipEntry(zip, e)), `${a.name}/${e.name}`);
+          if (report) reports.push(report);
+        } catch {
+          // A damaged or encrypted entry: skip it, keep the rest.
+        }
+      }
+      return reports;
+    } catch {
+      return null;
+    }
+  }));
+  return {
+    reports: results.flatMap((r) => r ?? []),
+    scanned: read.filter((_a, i) => results[i]).map((a) => a.name),
+    skipped: [...skipped.map((s) => ({ name: s.artifact.name, reason: s.reason })), ...read.filter((_a, i) => !results[i]).map((a) => ({ name: a.name, reason: "unreadable" as const }))],
+  };
+}
+
 /** The latest deployment of an environment, with its status; undefined when there is none or it cannot be read. */
 export async function latestDeployment(repo: string, environment: string): Promise<Deployment | undefined> {
   try {
