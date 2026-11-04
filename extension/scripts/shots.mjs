@@ -62,6 +62,13 @@ const MOCK_PAGES = {
   "log-900151": `?hub=actions${REPO}&view=actions&actRun=9001&actJob=900151`,
   "actions-wf-disabled": `?hub=actions${REPO}&view=actions&actWorkflow=103`,
   "actions-envs": `?hub=actions${REPO}&view=actions&actTab=environments`,
+  "actions-library": `?hub=actions${REPO}&view=actions&actTab=library`,
+  "actions-library-noperm": `?hub=actions&scenario=noSecretsPermission${REPO}&view=actions&actTab=library`,
+  "actions-library-readonly": `?hub=actions&scenario=notAdmin${REPO}&view=actions&actTab=library`,
+  // ?click= (src/dev/main.tsx): "edit" waits for the admin-only Add button (so rows are editable), closes that panel and opens a variable;
+  // "add" submits an empty editor to show the validation.
+  "actions-library-edit": `?hub=actions&click=${encodeURIComponent("text:Add variable|text:Cancel|text:NODE_VERSION")}${REPO}&view=actions&actTab=library`,
+  "actions-library-add": `?hub=actions&click=${encodeURIComponent("text:Add variable|input[aria-label=Name]|.bolt-panel button.primary")}${REPO}&view=actions&actTab=library`,
   "actions-env-staging": `?hub=actions${REPO}&view=actions&actTab=environments&actEnv=staging`,
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
   search: `?hub=files${REPO}&search=greet`,
@@ -89,7 +96,7 @@ async function livePages() {
     branches: `?hub=branches${REPO}&branchTab=all`, tags: `?hub=tags${REPO}`, releases: `?hub=tags${REPO}&tagTab=releases`,
     "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`, "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v0.1.0&cmpHead=main`,
     prs: `?hub=prs${REPO}&view=prs`, "pr-3": `?hub=prs${REPO}&view=prs&pr=3`, "pr-3-files": `?hub=prs${REPO}&view=prs&pr=3&prPage=files`, "pr-4": `?hub=prs${REPO}&view=prs&pr=4`,
-    actions: base, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`run-${run.id}-tests`]: `${base}&actRun=${run.id}&actRunTab=tests`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
+    actions: base, "actions-library": `${base}&actTab=library`, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`run-${run.id}-tests`]: `${base}&actRun=${run.id}&actRunTab=tests`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
     search: `?hub=files${REPO}&search=Hello`,
     "widget-prs": `/widget.html?widget=prs&size=3x2&repo=${encodeURIComponent(SANDBOX)}`, "widget-runs": `/widget.html?widget=runs&size=4x2&repo=${encodeURIComponent(SANDBOX)}`,

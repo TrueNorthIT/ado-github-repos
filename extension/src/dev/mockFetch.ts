@@ -21,6 +21,7 @@ import { writesGraphql, writesRest, writtenFile } from "./writesMock";
 import { codeSearchRest } from "./codeSearchMock";
 import { widgetRest } from "./widgetMock";
 import { forksRest } from "./forksMock";
+import { libraryRest } from "./libraryMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -174,6 +175,8 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;
+  const libAnswer = libraryRest(repo.fullName, rest, u, init, sc); // batch K: Actions variables and secrets (Library tab)
+  if (libAnswer) return libAnswer;
   // Actions lists (actions-lists): workflows, runs, dispatch, environments and the workflow files (before the generic /contents route)
   const actAnswer = actionsRest(repo.fullName, rest, u, init, sc);
   if (actAnswer) return actAnswer;

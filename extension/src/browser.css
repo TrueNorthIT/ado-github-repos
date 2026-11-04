@@ -678,3 +678,11 @@
 /* Files: the Edit / Preview tabs of a markdown file's editor sit on the left of the Commit bar. */
 .gh-edit-tabs.bolt-tabbar { padding: 0; }
 .gh-edit-preview { flex: 1 1 auto; min-height: 420px; }
+
+/* Actions > Library: variable groups as stacked collapsible cards (the cards' own 16px gap, as between native Library sections). */
+.gh-lib { gap: 16px; }
+.gh-lib-problems { gap: 8px; padding: 0 20px 12px; }
+.gh-lib-empty { padding: 0 20px 16px; }
+.gh-lib-lock { margin-left: 6px; font-size: 12px; }
+.gh-lib-group .bolt-card-expandable-header { flex-grow: 1; min-width: 0; } /* a collapsible Card wraps its header in a plain flex-row, so the command bar would sit beside the title rather than at the right */
+.gh-lib-editor { width: 100%; }

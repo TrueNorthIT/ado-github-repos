@@ -60,6 +60,7 @@ function toolbar() {
 
 SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
 SCENARIOS.push("noEnvironments"); // Actions > Environments with none
+SCENARIOS.push("noVariablesPermission", "noSecretsPermission", "notAdmin", "manyVariables"); // batch K: Actions > Library without the app's Variables or Secrets permission, or as a non-admin
 SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", "forkDenied", "noForks"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
 
 // `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
