@@ -41,6 +41,12 @@ const MOCK_PAGES = {
   branches: `?hub=branches${REPO}&branchTab=all`,
   "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`,
   "branch-policies-reader": `?hub=branches&scenario=notAdmin${REPO}&view=policies&polBranch=release%2F1.0`,
+  // Batch J: an admin editing (the extension's own ruleset), after a Save, refused for want of admin rights, a locked branch and its menu.
+  "branch-policies-edit": `?hub=branches&click=${encodeURIComponent('[aria-label="Require a minimum number of reviewers: off"]')}${REPO}&view=policies&polBranch=develop`,
+  "branch-policies-saved": `?hub=branches&click=${encodeURIComponent('[aria-label="Require a minimum number of reviewers: off"]|[aria-label="Check for comment resolution: off"]|text:Save')}${REPO}&view=policies&polBranch=main`,
+  "branch-policies-denied": `?hub=branches&scenario=rulesetsDenied&click=${encodeURIComponent('[aria-label="Block force pushes: off"]|text:Save')}${REPO}&view=policies&polBranch=develop`,
+  "branch-policies-locked": `?hub=branches${REPO}&view=policies&polBranch=release%2F2.0`,
+  "branches-locked": `?hub=branches&click=${encodeURIComponent('text:Branches|text:Branches|text:Branches|text:Branches|[aria-label="Actions for release/2.0"]')}${REPO}&branchTab=all&q=release`,
   "compare-tag": `?hub=branches${REPO}&view=compare&cmpBase=v1.0.0&cmpHead=develop`,
   tags: `?hub=tags${REPO}`,
   releases: `?hub=tags${REPO}&tagTab=releases`,

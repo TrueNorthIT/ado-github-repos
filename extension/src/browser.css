@@ -365,6 +365,17 @@
 .gh-bpol-source { margin-top: 4px; }
 .gh-bpol-na .gh-bpol-title { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
 .gh-bpol-empty { padding: 4px 0 8px; }
+/* Editing (admins): settings under a toggle, the status check add box, and the read-only rules from GitHub below the editor. */
+.gh-bpol-detail-edit { gap: 12px; }
+.gh-bpol-count { max-width: 280px; }
+.gh-bpol-checks { gap: 12px; }
+.gh-bpol-add { gap: 8px; align-items: center; }
+.gh-bpol-add-name { flex: 0 1 360px; min-width: 0; }
+.gh-bpol-error { color: var(--status-error-text, rgba(205, 74, 69, 1)); }
+.gh-bpol-message { margin-bottom: 16px; }
+.gh-bpol-others { margin-top: 16px; }
+.gh-bpol-others-header { padding-left: 0; padding-right: 0; }
+.gh-branch-locked { color: var(--text-secondary-color, rgba(0, 0, 0, .55)); }
 .gh-tag-kind { margin-left: 8px; }
 .gh-fav.bolt-button .fabric-icon.ms-Icon--FavoriteStarFill { color: rgb(214, 127, 60); }
 .gh-tags-empty { min-height: 320px; justify-content: center; }

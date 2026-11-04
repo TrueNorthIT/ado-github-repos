@@ -62,6 +62,7 @@ SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
 SCENARIOS.push("noEnvironments"); // Actions > Environments with none
 SCENARIOS.push("noVariablesPermission", "noSecretsPermission", "notAdmin", "manyVariables"); // batch K: Actions > Library without the app's Variables or Secrets permission, or as a non-admin
 SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", "forkDenied", "noForks"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
+SCENARIOS.push("rulesetsDenied", "rulesetsInvalid"); // batch J: an admin whose GitHub App may not write rulesets, and GitHub refusing the rules
 
 // `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
 // exactly that text), waiting up to 8 s for each. For screenshots of panels and menus that only open on a click (npm run shots).

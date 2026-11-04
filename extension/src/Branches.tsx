@@ -19,7 +19,8 @@ import { ErrorView } from "./Browser";
 import { CheckStatusCell, forgetDefaultBranch, HubProps, PersonLine, PrCell, RepoHubPage, titleSwitcher } from "./RepoHub";
 import { NewBranchDialog, ConfirmDeleteDialog, RenameBranchDialog, SetDefaultBranchDialog } from "./RefDialogs";
 import { RefColumn, RefTree } from "./RefTree";
-import { createBranch, deleteRef, getAheadBehind, getIsRepoAdmin, getViewerLogin, GhError, invalidateRefs, listAllBranches, renameBranch, setDefaultBranch, type BranchesData } from "./githubBrowse";
+import { applyRulesetPlan, createBranch, deleteRef, getAheadBehind, getIsRepoAdmin, getLockedBranches, getOwnedRuleset, getViewerLogin, GhError, invalidateRefs, listAllBranches, renameBranch, setDefaultBranch, type BranchesData } from "./githubBrowse";
+import { lockPlan, policyWriteError } from "./lib/policyEdit";
 import { openInHub, useHubHref } from "./repoHref";
 import { serializeActions } from "./lib/actionsHash";
 import { branchRowNewPrHash } from "./lib/newPrHash";
@@ -67,12 +68,19 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   const [dialog, setDialog] = React.useState<{ kind: "new"; base?: string } | { kind: "delete" | "rename" | "default"; branch: Branch } | null>(null);
   const [admin, setAdmin] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [locked, setLocked] = React.useState<ReadonlySet<string>>(() => new Set());
 
   React.useEffect(() => {
     let dead = false;
     setData({ t: "loading" });
     setCompares({});
     listAllBranches(repo).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
+    return () => { dead = true; };
+  }, [repo, signedIn, reload]);
+  // Branches the extension's own rulesets lock (Lock branch); read for everyone, so readers see the lock too.
+  React.useEffect(() => {
+    let dead = false;
+    getLockedBranches(repo).then((l) => !dead && setLocked(l), () => !dead && setLocked(new Set()));
     return () => { dead = true; };
   }, [repo, signedIn, reload]);
   React.useEffect(() => { getViewerLogin().then(setViewer, () => setViewer("")); }, [signedIn]);
@@ -173,6 +181,9 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
                   { id: "history", text: "View history", iconProps: { iconName: "History" }, href: href("commits", { repo, ref: b.name === def ? undefined : b.name }), onActivate: openInHub("commits", { repo, ref: b.name === def ? undefined : b.name }) as any },
                   { id: "compare", text: "Compare", iconProps: { iconName: "BranchCompare" }, href: compareHash(b.name), onActivate: () => { const h = compareHash(b.name); if (h) gotoHash(h); }, disabled: !compareHash(b.name) },
                   { id: "setcompare", text: "Set as compare branch", iconProps: { iconName: "BranchCompare" }, disabled: b.name === compareBranch, onActivate: () => setCompareBranch(b.name) },
+                  ...(admin ? [locked.has(b.name)
+                    ? { id: "unlock", text: "Unlock", iconProps: { iconName: "Unlock" }, disabled: writes.busy, onActivate: () => doLock(b, false) }
+                    : { id: "lock", text: "Lock", iconProps: { iconName: "Lock" }, disabled: writes.busy, onActivate: () => doLock(b, true) }] : []),
                   ...(admin ? [{ id: "setdefault", text: "Set as default branch", iconProps: { iconName: "Home" }, disabled: b.isDefault || writes.busy, onActivate: () => setDialog({ kind: "default", branch: b }) }] : []),
                   { id: "copy", text: "Copy branch name", iconProps: { iconName: "Copy" }, onActivate: () => { void navigator.clipboard?.writeText(b.name); } },
                   { id: "divider", itemType: MenuItemType.Divider },
@@ -184,7 +195,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         );
       },
     },
-  ], [compares, max, favs, def, href, repo, writes.busy, compareBranch, admin]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [compares, max, favs, def, href, repo, writes.busy, compareBranch, admin, locked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameCell = React.useCallback((leaf: RefLeaf<Branch>) => {
     const b = leaf.item;
@@ -197,12 +208,14 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         {b.name === compareBranch && (
           <Pill className="gh-pr-pill gh-compare-pill" size={PillSize.compact} variant={PillVariant.standard} onClick={() => gotoHash(branchCompareHash(repo, def && def !== b.name ? def : b.name, b.name))} ariaLabel={`Compare against ${b.name}`}>Compare</Pill>
         )}
-        {b.protected && (
+        {locked.has(b.name) ? (
+          <Button subtle className="gh-branch-lock gh-branch-locked" iconProps={{ iconName: "Lock", size: IconSize.small }} ariaLabel={`${b.name} is locked. Branch policies for ${b.name}`} tooltipProps={{ text: "Locked: nobody can push to this branch" }} href={serializePolicies({ repo, branch: b.name })} onClick={(e) => { e?.preventDefault(); gotoHash(serializePolicies({ repo, branch: b.name })); }} />
+        ) : b.protected && (
           <Button subtle className="gh-branch-lock" iconProps={{ iconName: "Shield", size: IconSize.small }} ariaLabel={`Branch policies for ${b.name}`} tooltipProps={{ text: "Branch policies apply" }} href={serializePolicies({ repo, branch: b.name })} onClick={(e) => { e?.preventDefault(); gotoHash(serializePolicies({ repo, branch: b.name })); }} />
         )}
       </>
     );
-  }, [def, href, repo, compareBranch]);
+  }, [def, href, repo, compareBranch, locked]);
 
   const create = (name: string, base: string) => {
     const from = v?.branches.find((b) => b.name === base);
@@ -222,6 +235,18 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
     () => { setPrefs((p) => renameInPrefs(p, repo, b.name, to)); setDialog(null); setNotice(`Renamed branch ${b.name} to ${to}.`); refresh(); }
   );
   const doSetDefault = (b: Branch) => void writes.run(() => setDefaultBranch(repo, b.name), () => { forgetDefaultBranch(repo); setDialog(null); setNotice(`${b.name} is now the default branch.`); refresh(); });
+  // Lock / Unlock: the `update` rule of the extension's own ruleset for the branch (lib/policyEdit.ts), read fresh so its policies are kept.
+  const doLock = (b: Branch, lock: boolean) => void writes.run(
+    async () => {
+      try {
+        await applyRulesetPlan(lockPlan(repo, b.name, await getOwnedRuleset(repo, b.name), lock));
+      } catch (e) {
+        const w = e instanceof GhError && (e.kind === "access" || e.kind === "other") ? policyWriteError(e.status, e.apiMessage) : null;
+        throw w ? new RefWriteError(w.text) : e;
+      }
+    },
+    () => { setNotice(lock ? `Locked ${b.name}. Nobody can push to it until it is unlocked.` : `Unlocked ${b.name}.`); refresh(); }
+  );
   const closeDialog = () => { if (!writes.busy) { setDialog(null); writes.clearError(); } };
 
   const error = data.t === "error" ? data.err : null;

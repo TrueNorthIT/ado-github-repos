@@ -844,6 +844,10 @@ export interface BranchPoliciesData {
   classic: ClassicState["t"];
   /** GitHub calls the branch protected (GET /branches/{branch}). */
   protected: boolean;
+  /** What `policies` was built from, so the editor can show the rules that are not the extension's own (toPolicies without them). */
+  rules: BranchRule[];
+  classicState: ClassicState;
+  branchInfo: unknown;
 }
 
 /** The rules that apply to a branch: its ruleset rules, plus the classic protection rule when the viewer may read it. Cached 30 s. */
@@ -853,11 +857,11 @@ export const getBranchPolicies = (repo: string, branch: string): Promise<BranchP
     const [info, rules, prot] = await Promise.all([
       json<any>(`${repoPath(repo)}/branches/${enc}`),
       (async () => {
-        const out: any[] = [];
-        let url: string | undefined = `${repoPath(repo)}/rules/branches/${enc}?per_page=100`;
+        const out: BranchRule[] = [];
+        let url: string | undefined = `${branchRulesRequest(repo, branch).path}?per_page=100`;
         for (let i = 0; url && i < 5; i++) {
           const res = await request(url, "application/vnd.github+json");
-          out.push(...(await res.json()));
+          out.push(...toBranchRules(await res.json()));
           url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1];
         }
         return out;
@@ -868,7 +872,7 @@ export const getBranchPolicies = (repo: string, branch: string): Promise<BranchP
       ),
     ]);
     const classic = classicState(prot, !!info?.protected);
-    return { policies: toPolicies(rules, classic, info), classic: classic.t, protected: !!info?.protected };
+    return { policies: toPolicies(rules, classic, info), classic: classic.t, protected: !!info?.protected, rules, classicState: classic, branchInfo: info };
   });
 
 /** Lightweight tag (no message) or annotated tag (message: the tag object first, then the ref). */
@@ -1151,4 +1155,35 @@ export const getForkNewPrCompare = (repo: string, base: string, forkRepo: string
       restJson(openPullsFromRequest(repo, base, owner, head)).then((r) => r.body, () => []),
     ]);
     return mapForkCompare(info, cmp, pulls);
+  });
+
+// ---------- Batch J: editing branch policies and locking branches (lib/policyEdit.ts) ----------
+import { findOwnedSummary, isLocked, isOwnedRuleset, ownedSummaries, rulesetRequest, rulesetsListRequest, type Ruleset, type SavePlan } from "./lib/policyEdit";
+
+/** The ruleset the extension owns for `branch` (full: conditions and rules), or null when there is none. Uncached: the editor reads it fresh before each change. Throws GhError (403/404 without admin). */
+export async function getOwnedRuleset(repo: string, branch: string): Promise<Ruleset | null> {
+  const hit = findOwnedSummary(await restJsonFresh(rulesetsListRequest(repo)), branch);
+  if (!hit) return null;
+  const full = await restJsonFresh<Ruleset>(rulesetRequest(repo, hit.id));
+  return isOwnedRuleset(full, branch) ? full : null;
+}
+
+/** Sends a save or lock plan; the caches that show rules are dropped afterwards, whether it worked or not. */
+export async function applyRulesetPlan(plan: SavePlan): Promise<void> {
+  if (plan.kind === "none") return;
+  try {
+    await restSend(plan.req);
+  } finally {
+    invalidateRefs();
+    branchRuleSets.clear();
+  }
+}
+
+/** The branches the extension's own rulesets lock (their `update` rule). Cached 30 s with the branch list. */
+export const getLockedBranches = (repo: string): Promise<Set<string>> =>
+  refTtl(`locked|${repo}`, async () => {
+    // A failed read rejects (and so isn't cached); the list shows no locks then.
+    const mine = ownedSummaries((await restJson(rulesetsListRequest(repo))).body).slice(0, 50);
+    const full = await Promise.all(mine.map((m) => restJson<Ruleset>(rulesetRequest(repo, m.id)).then((r) => r.body)));
+    return new Set(mine.filter((m, i) => isOwnedRuleset(full[i], m.branch) && isLocked(full[i])).map((m) => m.branch));
   });
