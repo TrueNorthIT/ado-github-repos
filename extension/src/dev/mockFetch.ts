@@ -5,7 +5,7 @@ import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
 import { commentsGraphql, overlayFeed } from "./fixtures/comments";
-import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, rerunRun } from "./fixtures/actions";
+import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, prActionsRest, rerunRun } from "./fixtures/actions";
 import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from "./fixtures/edit";
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rangeData, renderMd, searchTerms, setViewed, sideOfOid, updatesData, viewedData } from "./fixtures/b4";
@@ -160,7 +160,9 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   }
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
-  const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
+  const prAct = prActionsRest(repo.fullName, rest + u.search, init, sc); // batch H: semi-linear merge (compare, poll, merge) and branch rules (before the generic compare)
+  if (prAct) return json(prAct.body, prAct.status);
+  const cmp =/^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;

@@ -3,7 +3,9 @@
 // optimistic changes are rolled back on failure, and a success drops the cached page and list so they refetch.
 import * as React from "react";
 import { PermissionError } from "./connections";
-import { GhError, getActions, getBodyNow, invalidateActions, invalidatePrPage, invalidatePrs, mutate, rest } from "./githubBrowse";
+import { GhError, getActions, getBodyNow, getBranchRules, invalidateActions, invalidatePrPage, invalidatePrs, mutate, rest, restJsonFresh } from "./githubBrowse";
+import type { BranchRule } from "./lib/branchRules";
+import { SemiLinearError, headCompareRequest, mergeFailureText, pullRequestRequest, runSemiLinear, semiLinearMergeRequest, type RestPull, type SemiLinearStep } from "./lib/semiLinear";
 import {
   closePullRequestMutation, convertToDraftMutation, deleteRefMutation, disableAutoMergeMutation, enableAutoMergeMutation, markReadyForReviewMutation,
   mergePullRequestMutation, reopenPullRequestMutation, updateBaseMutation, type MergeMethod,
@@ -33,6 +35,7 @@ const headMoved = (e: unknown) => e instanceof GhError && /head branch was modif
 
 /** What to tell the user when an action fails. */
 export function actionErrorText(e: unknown): string {
+  if (e instanceof SemiLinearError) return e.message;
   if (headMoved(e)) return "The branch changed since you loaded this page. Refresh and try again.";
   if (e instanceof PermissionError) return "The extension doesn't have permission to update work items. An organisation admin needs to approve the new work item permission.";
   if (e instanceof GhError) {
@@ -80,6 +83,10 @@ export class ActionStore {
   copilotReason?: string | null;
   /** Set when an edit (batch 2) failed: shown in the panel of that field. */
   editError?: { field: EditField; text: string };
+  /** The rulesets on the head branch (for Semi-linear merge): undefined until read, null when unknown. */
+  headRules?: BranchRule[] | null;
+  /** While a semi-linear merge runs: the step the Complete panel shows. */
+  semiLinearStep?: SemiLinearStep;
   private listeners = new Set<() => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private loadedAt = 0;
@@ -97,7 +104,25 @@ export class ActionStore {
   }
   private setRaw(raw: ActionsRepo) {
     this.raw = raw;
-    this.view = deriveActions(raw, { copilotFailure: this.copilotReason });
+    this.view = deriveActions(raw, { copilotFailure: this.copilotReason, headRules: this.headRules });
+    this.loadHeadRules();
+  }
+  /** Reads the head branch's rulesets once, for an open same-repository head (a fork's rules live in the fork). */
+  private headRulesFor?: string;
+  private loadHeadRules() {
+    const pr = this.raw?.pullRequest;
+    if (!pr || pr.state !== "OPEN") return;
+    if (pr.isCrossRepository) return void (this.headRules = null);
+    if (this.headRulesFor === pr.headRefName) return;
+    this.headRulesFor = pr.headRefName;
+    getBranchRules(this.repo, pr.headRefName).then(
+      (rules) => {
+        this.headRules = rules;
+        if (this.raw) this.view = deriveActions(this.raw, { copilotFailure: this.copilotReason, headRules: rules });
+        this.emit();
+      },
+      () => void (this.headRules = null)
+    );
   }
   private patchPr(p: Partial<ActionsPr>) {
     this.setRaw({ ...this.raw!, pullRequest: { ...this.raw!.pullRequest!, ...p } });
@@ -251,6 +276,53 @@ export class ActionStore {
       const params = { pullRequestId: pr.id, mergeMethod: r.mergeMethod, expectedHeadOid: pr.headRefOid, commitHeadline: r.commitHeadline, commitBody: r.commitBody };
       await mutate(r.mode === "complete" ? mergePullRequestMutation(params) : enableAutoMergeMutation(params));
       if (r.mode === "autoComplete") return;
+      return this.afterMerge(r);
+    });
+  }
+
+  /**
+   * Semi-linear merge (lib/semiLinear.ts): rebase the head onto the target when it is behind, wait for GitHub to report the new head
+   * and its mergeability, then merge with a merge commit expecting exactly that head. `semiLinearStep` follows the steps for the panel.
+   */
+  completeSemiLinear(r: Omit<CompleteRequest, "mode" | "mergeMethod">) {
+    const { pr } = this.v();
+    return this.run(async () => {
+      let rebased = false;
+      let merging = false;
+      const step = (s: SemiLinearStep) => {
+        this.semiLinearStep = s;
+        merging = s === "merging";
+        if (s === "rebasing") rebased = true;
+        this.emit();
+      };
+      try {
+        await runSemiLinear(
+          {
+            behindBy: async () => Number((await restJsonFresh<{ behind_by?: number }>(headCompareRequest(this.repo, pr.baseRefName, pr.headRefOid))).behind_by ?? 0),
+            rebase: async () => void (await mutate(updateBranchMutation({ pullRequestId: pr.id, expectedHeadOid: pr.headRefOid, updateMethod: "REBASE" }))),
+            getPull: () => restJsonFresh<RestPull>(pullRequestRequest(this.repo, this.number)),
+            merge: (sha) => rest(semiLinearMergeRequest(this.repo, this.number, { sha, commitTitle: r.commitHeadline, commitMessage: r.commitBody })),
+            sleep: (ms) => new Promise((ok) => setTimeout(ok, ms)),
+            now: () => Date.now(),
+            onStep: step,
+          },
+          pr.headRefOid
+        );
+      } catch (e) {
+        // A refused merge (409 head moved, 405 not mergeable) is explained in the light of the rebase; anything else keeps GitHub's own words.
+        if (merging && e instanceof GhError && e.kind === "other") throw new SemiLinearError(mergeFailureText(e.status, e.apiMessage, rebased));
+        throw e;
+      } finally {
+        this.semiLinearStep = undefined;
+      }
+      return this.afterMerge({ ...r, mode: "complete", mergeMethod: "MERGE" });
+    });
+  }
+
+  /** After a merge: delete the branch, then complete the work items. Failures become a notice; the merge stands. */
+  private async afterMerge(r: CompleteRequest): Promise<string | undefined> {
+    const { pr, repo } = this.v();
+    {
       const warnings: string[] = [];
       // GitHub deletes the branch itself when the repository setting is on; a second deleteRef would only fail.
       if (r.deleteSourceBranch && !repo.deleteBranchOnMerge && pr.headRef) {
@@ -269,7 +341,7 @@ export class ActionStore {
         }
       }
       return warnings.join(" ") || undefined;
-    });
+    }
   }
 
   /** CI-2: re-run the failed jobs of one workflow run, or all of its jobs. The checks are then polled (useActions). */

@@ -60,8 +60,7 @@ export function updateBranchOptions(i: UpdateBranchInput): UpdateBranchOptions {
   if (i.state !== "OPEN") return no("The pull request is not open.");
   const behind = i.viewerCanUpdateBranch ?? i.mergeStateStatus === "BEHIND";
   if (!behind) return no(i.viewerCanUpdateBranch === false ? "The branch is up to date, or you cannot update it." : "The branch is up to date with the base branch.");
-  const push = (p: string | null) => p === "WRITE" || p === "MAINTAIN" || p === "ADMIN";
-  const pushable = !i.isCrossRepository || push(i.headRepositoryViewerPermission) || (i.maintainerCanModify && push(i.viewerPermission));
+  const pushable = canPushHead(i);
   return {
     offered: true,
     methods: [
@@ -69,6 +68,12 @@ export function updateBranchOptions(i: UpdateBranchInput): UpdateBranchOptions {
       { method: "REBASE", label: "Update branch (rebase)", disabled: !pushable, ...(pushable ? {} : { reason: "The head branch is in a fork you cannot push to." }) },
     ],
   };
+}
+
+/** The viewer may push to (and so rebase) the head branch: a same-repository head, a fork they can write to, or a fork with maintainer edits on when they can write to the base. */
+export function canPushHead(i: Pick<UpdateBranchInput, "isCrossRepository" | "maintainerCanModify" | "headRepositoryViewerPermission" | "viewerPermission">): boolean {
+  const push = (p: string | null) => p === "WRITE" || p === "MAINTAIN" || p === "ADMIN";
+  return !i.isCrossRepository || push(i.headRepositoryViewerPermission) || (i.maintainerCanModify && push(i.viewerPermission));
 }
 
 /** A policy row that may carry an action button. */

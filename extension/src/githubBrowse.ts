@@ -71,12 +71,12 @@ async function bodyMessage(res: Response): Promise<string | undefined> {
   }
 }
 
-async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
+async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET", fresh = false): Promise<Response> {
   let res: Response;
   try {
     // The raw and html representations of a file share one ETag (the blob sha). Through the HTTP cache, an html request after a
     // raw one revalidated, got 304 and was handed the cached raw text, so "Rendered" markdown showed source (seen live in 0.28.0).
-    const cache: RequestCache = /\.(raw|html)\b/.test(accept) ? "no-store" : "default";
+    const cache: RequestCache = fresh || /\.(raw|html)\b/.test(accept) ? "no-store" : "default";
     res = await fetch(url.startsWith("http") ? url : API + url, { method, body, cache, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
   } catch (e) {
     if (e instanceof GhError) throw e;
@@ -84,7 +84,7 @@ async function request(url: string, accept: string, retry = true, body?: string,
   }
   if (res.ok) return res;
   if (res.status === 401) {
-    if (retry) return request(url, accept, false, body, method); // token may have been revoked or just expired: refresh once
+    if (retry) return request(url, accept, false, body, method, fresh); // token may have been revoked or just expired: refresh once
     cached = null;
     throw new GhError("auth", 401);
   }
@@ -940,3 +940,23 @@ export const deleteRelease = async (repo: string, releaseId: number) => {
   await rest(deleteReleaseRequest(repo, releaseId));
   invalidateReleases();
 };
+
+// ---------- Batch H: semi-linear merge, branch rules (rulesets) and forks ----------
+import { branchRulesRequest, toBranchRules, type BranchRule } from "./lib/branchRules";
+
+/** A GET that skips the HTTP cache (GitHub's REST answers carry max-age=60): for polling a pull request while it is rebased. */
+export async function restJsonFresh<T = any>(r: RestRequest): Promise<T> {
+  return (await request(r.path, "application/vnd.github+json", true, undefined, r.method, true)).json();
+}
+
+const branchRuleSets = new Map<string, { at: number; p: Promise<BranchRule[] | null> }>();
+/** The rulesets' rules on `branch` (lib/branchRules.ts); null when GitHub wouldn't say (no access, an old GitHub Enterprise). Cached like the PR page. */
+export const getBranchRules = (repo: string, branch: string): Promise<BranchRule[] | null> =>
+  ttl(branchRuleSets, `${repo}|${branch}`, async () => {
+    try {
+      return toBranchRules((await restJson(branchRulesRequest(repo, branch))).body);
+    } catch (e) {
+      if (e instanceof GhError && e.kind === "auth") throw e;
+      return null;
+    }
+  });

@@ -5,7 +5,9 @@ import { copilotAvailability, type CopilotAvailability } from "./copilotReview";
 import { mergeQueueDecision, type QueueDecision } from "./mergeQueue";
 import { dedupeChecks, policyRows, type CheckContext } from "./policies";
 import { checkRerun, type CheckRerun, type RerunCheck } from "./reruns";
-import { updateBranchOptions, withUpdateBranchAction, type ActionablePolicyRow, type UpdateBranchOptions } from "./updateBranch";
+import { canPushHead, updateBranchOptions, withUpdateBranchAction, type ActionablePolicyRow, type UpdateBranchOptions } from "./updateBranch";
+import { semiLinearChoice, type SemiLinearChoice } from "./semiLinear";
+import type { BranchRule } from "./branchRules";
 import { stateActions, type StateAction } from "./stateActions";
 import { voteOptions, type VoteOption } from "./votes";
 
@@ -36,9 +38,12 @@ export interface ActionsView {
   main: CompleteMain;
   /** The viewer's current decision, in the Approve button's words; undefined when they have none. */
   voteLabel?: string;
+  /** "Semi-linear merge" in the Complete panel (lib/semiLinear.ts). */
+  semiLinear: SemiLinearChoice;
 }
 
-export function deriveActions(repo: ActionsRepo, opts: { copilotFailure?: string | null } = {}): ActionsView {
+/** headRules: the rulesets on the head branch (branchRules.ts), undefined until read and null when they couldn't be. */
+export function deriveActions(repo: ActionsRepo, opts: { copilotFailure?: string | null; headRules?: BranchRule[] | null } = {}): ActionsView {
   const pr = repo.pullRequest!;
   const settings: RepoMergeSettings = { mergeCommitAllowed: repo.mergeCommitAllowed, squashMergeAllowed: repo.squashMergeAllowed, rebaseMergeAllowed: repo.rebaseMergeAllowed };
   const policyInput = {
@@ -84,14 +89,19 @@ export function deriveActions(repo: ActionsRepo, opts: { copilotFailure?: string
   const deduped = dedupeChecks(policyInput.checks);
   const rerunInput = deduped.map(({ c }): RerunCheck => (c.__typename === "CheckRun" ? { __typename: "CheckRun", name: c.name, status: c.status, conclusion: c.conclusion, checkSuite: c.runSuite?.workflowRun?.databaseId ? { workflowRun: { databaseId: c.runSuite.workflowRun.databaseId, workflow: c.checkSuite?.workflowRun?.workflow ?? null } } : { workflowRun: null } } : { __typename: "StatusContext", context: c.context }));
   const checkInfo = new Map(deduped.map(({ c, title }, i) => [title, { rerun: checkRerun(rerunInput[i], rerunInput), annotations: c.__typename === "CheckRun" ? c.annotations?.totalCount ?? 0 : 0 }]));
-  const updateBranch = updateBranchOptions({
-    state: pr.state,
-    mergeStateStatus: pr.mergeStateStatus,
-    viewerCanUpdateBranch: pr.viewerCanUpdateBranch,
+  const headAccess = {
     isCrossRepository: pr.isCrossRepository,
     maintainerCanModify: !!pr.maintainerCanModify,
     headRepositoryViewerPermission: pr.headRepository?.viewerPermission ?? null,
     viewerPermission: repo.viewerPermission,
+  };
+  const updateBranch = updateBranchOptions({ state: pr.state, mergeStateStatus: pr.mergeStateStatus, viewerCanUpdateBranch: pr.viewerCanUpdateBranch, ...headAccess });
+  const semiLinear = semiLinearChoice({
+    mergeCommitAllowed: repo.mergeCommitAllowed,
+    isCrossRepository: pr.isCrossRepository,
+    headPushable: canPushHead(headAccess),
+    classicRule: pr.headRef ? pr.headRef.branchProtectionRule : undefined,
+    headRules: opts.headRules,
   });
   return {
     repo,
@@ -110,5 +120,6 @@ export function deriveActions(repo: ActionsRepo, opts: { copilotFailure?: string
     defaults: defaultCompleteOptions(settings, deleteCtx),
     main,
     voteLabel: latest === "APPROVED" ? "Approved" : latest === "CHANGES_REQUESTED" ? "Changes requested" : undefined,
+    semiLinear,
   };
 }

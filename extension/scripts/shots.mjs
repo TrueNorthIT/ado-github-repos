@@ -29,6 +29,11 @@ const MOCK_PAGES = {
   prs: `?hub=prs${REPO}&view=prs`,
   "pr-200": `?hub=prs${REPO}&view=prs&pr=200`,
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
+  // ?click= (src/dev/main.tsx) opens the Complete panel and picks Semi-linear merge.
+  "pr-317-semilinear": `?hub=prs&click=${encodeURIComponent("text:Complete|.gh-complete input[aria-label=\"Merge type\"]|text:Semi-linear merge")}${REPO}&view=prs&pr=317`,
+  "pr-317-semilinear-run": `?hub=prs&scenario=rebaseStuck&click=${encodeURIComponent("text:Complete|.gh-complete input[aria-label=\"Merge type\"]|text:Semi-linear merge|text:Complete merge")}${REPO}&view=prs&pr=317`,
+  "pr-317-semilinear-fail": `?hub=prs&scenario=mergeBlocked&click=${encodeURIComponent("text:Complete|.gh-complete input[aria-label=\"Merge type\"]|text:Semi-linear merge|text:Complete merge")}${REPO}&view=prs&pr=317`,
+  "pr-318-protected": `?hub=prs&click=${encodeURIComponent("text:Complete")}${REPO}&view=prs&pr=318`,
   actions: `?hub=actions${REPO}&view=actions`,
   "run-9001": `?hub=actions${REPO}&view=actions&actRun=9001`,
   "log-900151": `?hub=actions${REPO}&view=actions&actRun=9001&actJob=900151`,
