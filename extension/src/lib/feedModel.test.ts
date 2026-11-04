@@ -429,9 +429,33 @@ describe("AF-1: filter and counts", () => {
   });
 });
 
-describe("threads carry where they were written", () => {
+describe("threads carry where they were written, and Copilot's findings", () => {
+  const BOT = "copilot-pull-request-reviewer";
+  const overview = (id: number, title: string, sev: string) => `- <picture><img alt="${sev} severity"></picture> [${title}](https://github.com/acme/web/pull/42#discussion_r${id}) · New`;
+
   it("keeps originalLine, originalStartLine and the start side", () => {
     const [t] = only<ThreadItem>(feed([], [thread("t", [tComment("a", "ann", at("10:00"))], { line: null, isOutdated: true, originalLine: 30, originalStartLine: 28, startDiffSide: "LEFT" } as Partial<ReviewThreadNode>)]), "thread");
     expect([t.originalLine, t.originalStartLine, t.startSide, t.outdated]).toEqual([30, 28, "LEFT", true]);
+  });
+
+  it("gives a Copilot comment the title and severity its review lists for its databaseId", () => {
+    const c = { ...tComment("cc", BOT, at("10:00")), databaseId: 77 };
+    const items = feed([review("r", BOT, "COMMENTED", at("09:59"), [overview(76, "Other", "High"), overview(77, "Quote the variable", "Medium")].join("\n"))], [thread("t", [c])]);
+    expect(only<ThreadItem>(items, "thread")[0].comments[0].copilot).toEqual({ title: "Quote the variable", severity: "Medium" });
+  });
+
+  it("marks a Copilot comment the overview does not list, and leaves other people's comments alone", () => {
+    const c = { ...tComment("cc", BOT, at("10:00")), databaseId: 99 };
+    const p = { ...tComment("pp", "ann", at("10:01")), databaseId: 77 };
+    const items = feed([review("r", BOT, "COMMENTED", at("09:59"), overview(77, "Quote", "High"))], [thread("t", [c, p])]);
+    const [first, second] = only<ThreadItem>(items, "thread")[0].comments;
+    expect(first.copilot).toEqual({});
+    expect(second.copilot).toBeUndefined();
+  });
+
+  it("ignores an overview written by someone other than Copilot", () => {
+    const c = { ...tComment("cc", BOT, at("10:00")), databaseId: 77 };
+    const items = feed([review("r", "mallory", "COMMENTED", at("09:59"), overview(77, "Fake", "High"))], [thread("t", [c])]);
+    expect(only<ThreadItem>(items, "thread")[0].comments[0].copilot).toEqual({});
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { copilotReviewMutation, copilotAvailability, copilotResult, reviewerName, type CopilotAvailabilityInput } from "./copilotReview";
+import { copilotReviewMutation, copilotAvailability, copilotFindings, copilotResult, reviewerName, type CopilotAvailabilityInput } from "./copilotReview";
+import { COPILOT_OVERVIEW_BODY } from "./copilotOverview.fixture";
 import { expectMutation, expectNotInQuery, NASTY, norm } from "./ciTestHelpers";
 
 // Module under test: src/lib/copilotReview.ts (copilotReviewMutation, copilotAvailability, copilotResult).
@@ -148,4 +149,29 @@ describe("CI-7: copilotResult surfaces GitHub's answer", () => {
 describe("reviewerName", () => {
   it("labels the Copilot bot as Copilot, as GitHub does", () => expect(reviewerName("copilot-pull-request-reviewer")).toBe("Copilot"));
   it("leaves people and teams alone", () => expect(reviewerName("octocat")).toBe("octocat"));
+});
+
+describe("copilotFindings: titles and severities from Copilot's review overview", () => {
+  it("reads every item of a real overview, keyed by the comment's databaseId", () => {
+    const f = copilotFindings(COPILOT_OVERVIEW_BODY);
+    expect([...f.keys()]).toEqual([4465220965, 4465221016, 4465221138, 4465221234]);
+    expect(f.get(4465221234)).toEqual({ title: "Expand and JSON-quote the default reasoning effort", severity: "Medium" });
+    expect(f.get(4465220965)).toEqual({ title: "Reject symlinks before reading agent-written output", severity: "High" });
+  });
+
+  it("takes the severity from before the link, not from a later badge", () => {
+    const body = '- [Plain title](https://github.com/o/r/pull/1#discussion_r7) <img alt="High severity">';
+    expect(copilotFindings(body).get(7)).toEqual({ title: "Plain title" });
+  });
+
+  it("normalises the severity's case and unescapes brackets in the title", () => {
+    const body = '* <img alt="low severity"> [Use \\[\\] not Array()](https://github.com/o/r/pull/1#discussion_r9) · New';
+    expect(copilotFindings(body).get(9)).toEqual({ title: "Use [] not Array()", severity: "Low" });
+  });
+
+  it("ignores links that are not list items or not discussion links", () => {
+    const body = ["See [this](https://github.com/o/r/pull/1#discussion_r1).", "- [Docs](https://example.com/docs)", "- not a link"].join("\n");
+    expect(copilotFindings(body).size).toBe(0);
+    expect(copilotFindings(null).size).toBe(0);
+  });
 });

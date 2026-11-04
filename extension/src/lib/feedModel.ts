@@ -1,6 +1,6 @@
 // Maps GitHub PR timeline items and review threads to the activity feed (AF-1, AF-3, AF-4, AF-5).
 import type { GhActor, PrListNode } from "./prModel";
-import { reviewerName } from "./copilotReview";
+import { COPILOT_LOGIN, copilotFindings, reviewerName, type CopilotFinding } from "./copilotReview";
 
 /** A timeline node as returned by feedQuery; `__typename` is the GraphQL type name. Unknown types are ignored; null nodes are tolerated. */
 export interface TimelineNode {
@@ -52,6 +52,8 @@ export interface FeedComment {
   url: string;
   /** Review-thread comments only: the diff hunk it was written on. */
   diffHunk?: string;
+  /** Set on Copilot's review comments: the finding's title and severity from its review's overview, when the overview lists it (else empty). */
+  copilot?: Partial<CopilotFinding>;
 }
 
 export interface CommentItem extends FeedComment {
@@ -214,9 +216,16 @@ export function toFeed(timeline: (TimelineNode | null)[], threads: (ReviewThread
     }
   }
   flush();
+  // Copilot names and rates each finding only in its review's body; later reviews win.
+  const findings = new Map<number, CopilotFinding>();
+  for (const n of nodes) if (n.__typename === "PullRequestReview" && n.author?.login === COPILOT_LOGIN) copilotFindings(n.body).forEach((f, id) => findings.set(id, f));
+  const fromThread = (n: ReviewThreadCommentNode): FeedComment => {
+    const c = toComment(n);
+    return n.author?.login === COPILOT_LOGIN ? { ...c, copilot: (n.databaseId != null && findings.get(n.databaseId)) || {} } : c;
+  };
   for (const t of threads) {
     if (!t) continue;
-    const comments = t.comments.nodes.filter((c): c is ReviewThreadCommentNode => !!c).map(toComment).sort((a, b) => ms(a.date) - ms(b.date));
+    const comments = t.comments.nodes.filter((c): c is ReviewThreadCommentNode => !!c).map(fromThread).sort((a, b) => ms(a.date) - ms(b.date));
     if (!comments.length) continue;
     items.push({
       kind: "thread", id: t.id, status: t.isResolved ? "resolved" : "active", outdated: t.isOutdated || (t.line == null && t.subjectType !== "FILE"), ...(t.subjectType === "FILE" ? { subjectType: "FILE" as const } : {}),

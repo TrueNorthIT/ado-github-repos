@@ -76,3 +76,34 @@ export function copilotResult(payload: { success?: boolean | null; failureReason
 
 /** How a reviewer is labelled: GitHub shows the Copilot bot as "Copilot", not its GraphQL login. */
 export const reviewerName = (login: string): string => (login === "copilot-pull-request-reviewer" ? "Copilot" : login);
+
+/** The bot's GraphQL login, on its reviews and on its review comments. */
+export const COPILOT_LOGIN = "copilot-pull-request-reviewer";
+
+export interface CopilotFinding {
+  title: string;
+  /** "High", "Medium", "Low"… as GitHub writes it in the badge's alt text; absent when the item has no badge. */
+  severity?: string;
+}
+
+const SEVERITY = /alt="([A-Za-z]+) severity"/i;
+// [Title](https://github.com/o/r/pull/n#discussion_r123): the title may hold escaped brackets.
+const FINDING_LINK = /\[((?:\\.|[^\]\\])+)\]\(\s*https?:\/\/[^)\s]*#discussion_r(\d+)\s*\)/;
+
+/**
+ * Copilot's review body (`<!-- ccr-overview-v2 -->`) lists each finding as `- <picture>…<img alt="High severity">…</picture> [Title](…#discussion_r<id>) · New`.
+ * The comment itself carries only the finding's paragraph, so this is the one place its title and severity can be read. Keyed by the comment's databaseId.
+ * Lines that are not such list items are ignored; a body with none gives an empty map.
+ */
+export function copilotFindings(body: string | null | undefined): Map<number, CopilotFinding> {
+  const out = new Map<number, CopilotFinding>();
+  for (const line of (body ?? "").split(/\r?\n/)) {
+    if (!/^\s*[-*]\s/.test(line)) continue;
+    const link = FINDING_LINK.exec(line);
+    if (!link) continue;
+    const sev = SEVERITY.exec(line.slice(0, link.index))?.[1];
+    const title = link[1].replace(/\\(.)/g, "$1").trim();
+    out.set(Number(link[2]), { title, ...(sev ? { severity: sev.charAt(0).toUpperCase() + sev.slice(1).toLowerCase() } : {}) });
+  }
+  return out;
+}

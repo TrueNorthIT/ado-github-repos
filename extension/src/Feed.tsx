@@ -23,6 +23,8 @@ import { EditBox, EditedLabel, CommentMenu, Failure, HiddenGate, PendingPill, Re
 import { SuggestionBar, people } from "./ReviewUi";
 import { openRepoHub } from "./hostNav";
 import { ErrorView, Markdown, hubClick } from "./Browser";
+import { SeverityPill } from "./Security";
+import type { Severity } from "./lib/securityTypes";
 
 const Avatar = ({ url, name, size }: { url: string; name: string; size: "small" }) => (
   <VssPersona imageUrl={url} displayName={name} size={size} suppressPersonaCard showInitialsOnImageError />
@@ -98,12 +100,28 @@ function CommentHead({ c, store, children }: { c: FeedComment; store: FeedStore;
   );
 }
 
+const RATED: Severity[] = ["Critical", "High", "Medium", "Low"];
+
+/** A Copilot finding's title and severity, which GitHub keeps in the review's overview rather than the comment. The pill is the Advanced Security hub's. */
+function CopilotFindingHead({ c }: { c: FeedComment }) {
+  const f = c.copilot;
+  if (!f?.title && !f?.severity) return null;
+  const rated = RATED.find((s) => s === f.severity);
+  return (
+    <div className="gh-feed-finding flex-row flex-center">
+      {rated ? <SeverityPill severity={rated} /> : f.severity && <Pill className="gh-sec-pill" size={PillSize.compact} variant={PillVariant.outlined}>{f.severity}</Pill>}
+      {f.title && <span className="font-weight-semibold">{f.title}</span>}
+    </div>
+  );
+}
+
 /** A comment's text and what hangs off it: hidden behind a toggle, an edit box, the suggested changes and the reactions. */
 function CommentContent({ store, c, t, repo, baseRef }: { store: FeedStore; c: FeedComment; t?: ThreadItem; repo: string; baseRef: string }) {
   const who = React.useMemo(() => people(store), [store.items]); // eslint-disable-line react-hooks/exhaustive-deps
   if (store.editing.has(c.id)) return <EditBox store={store} c={c} repo={repo} participants={who} />;
   return (
     <HiddenGate store={store} c={c}>
+      <CopilotFindingHead c={c} />
       <Body html={c.html} repo={repo} baseRef={baseRef} />
       <Suggestions store={store} c={c} t={t} />
       {!isPending(c) && <ReactionBar store={store} id={c.id} />}

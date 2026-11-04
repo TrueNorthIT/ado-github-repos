@@ -43,6 +43,39 @@ const T1 = [
   tComment(200, "RC_3", "carol", 23, "<p>Thanks. Something like this would do:</p><pre><code>const who = name || &quot;there&quot;;</code></pre>", "RC_1"),
   tComment(200, "RC_4", ME, 22, "<p>Done in the next push.</p>", "RC_1"),
 ];
+// A Copilot review in GitHub's current shape (`<!-- ccr-overview-v2 -->`): the overview names and rates each finding and links it by the comment's databaseId;
+// the comments carry only the finding's paragraph. bodyHTML is GitHub's rendering of it (themed-picture, picture with sources, details open), as the feed receives it.
+const COPILOT = "copilot-pull-request-reviewer";
+const COPILOT_AVATAR = "https://avatars.githubusercontent.com/in/946600?v=4";
+const BADGE = "https://github.githubassets.com/static/images/icons/copilot-code-review";
+const FINDINGS = [
+  { id: 5001, sev: "high", title: "Reject a non-positive attempts count" },
+  { id: 5002, sev: "medium", title: "Cap the backoff delay" },
+];
+const pictureMd = (sev: string) => `<picture><source media="(prefers-color-scheme: dark)" srcset="${BADGE}/${sev}-v2-dark.svg"><source media="(prefers-color-scheme: light)" srcset="${BADGE}/${sev}-v2-light.svg"><img src="${BADGE}/${sev}-v2-light.png" alt="${sev[0].toUpperCase()}${sev.slice(1)} severity" width="62" height="18" align="texttop"></picture>`;
+const COPILOT_MD = `<!-- ccr-overview-v2 -->
+
+### 🟡 Changes recommended
+
+The retry helper accepts a zero attempt count and its delay grows without bound.
+
+<details open>
+<summary><strong>2 open issues</strong></summary>
+
+${FINDINGS.map((f) => `- ${pictureMd(f.sev)} [${f.title}](${url(200, `discussion_r${f.id}`)}) · New`).join("\n")}
+</details>
+
+<sub>Review effort: Balanced</sub>`;
+const COPILOT_HTML = `<h3 dir="auto">🟡 Changes recommended</h3>
+<p dir="auto">The retry helper accepts a zero attempt count and its delay grows without bound.</p>
+<details open="">
+<summary><strong>2 open issues</strong></summary>
+<ul dir="auto">
+${FINDINGS.map((f) => `<li><themed-picture data-catalyst-inline="true">${pictureMd(f.sev)}</themed-picture> <a href="${url(200, `discussion_r${f.id}`)}">${f.title}</a> · New</li>`).join("\n")}
+</ul>
+</details>
+<p dir="auto"><sub>Review effort: Balanced</sub></p>`;
+const copilotComment = (id: string, databaseId: number, hours: number, html: string): Node => ({ ...tComment(200, id, COPILOT, hours, html), databaseId, author: { login: COPILOT, avatarUrl: COPILOT_AVATAR }, url: url(200, `discussion_r${databaseId}`) });
 const FEED_200: FixtureFeed = {
   prId: "PR_node_200",
   timeline: [
@@ -73,6 +106,7 @@ await sleep(wait);</code></pre>
 <p>Consider a jitter. <sub>Review effort 2/5</sub></p>
 <hr>
 <p><sub>Tip: <a href="https://example.com">Customize your pull request review experience</a></sub></p>`), author: { login: "copilot-pull-request-reviewer", avatarUrl: "https://avatars.githubusercontent.com/in/946600?v=4" } },
+    { ...review(200, "RV_C2", COPILOT, "COMMENTED", 2.5, COPILOT_HTML), body: COPILOT_MD, author: { login: COPILOT, avatarUrl: COPILOT_AVATAR } },
     event("ReviewRequestedEvent", "EV_R4", "ann", 3.6, { requestedReviewer: { __typename: "Bot", login: "copilot-pull-request-reviewer", avatarUrl: "" } }),
     event("HeadRefForcePushedEvent", "EV_F1", "ann", 2, { beforeCommit: { oid: sha(5) }, afterCommit: { oid: sha(6) } }),
     issueComment(200, "IC_3", "bob-dev", 1, '<p>Looks good to me now. See the <a href="https://example.com/guide">guide</a>.</p>'),
@@ -92,6 +126,15 @@ await sleep(wait);</code></pre>
     {
       id: "PRRT_4", isResolved: false, isOutdated: false, path: "src/lib/names.ts", line: 15, originalLine: 15, startLine: 13, diffSide: "RIGHT",
       comments: { nodes: [tComment(200, "RC_8", "dave", 19, "<p>These three exports belong together: could they move into one <code>names</code> object?</p>")] },
+    },
+    // Copilot's findings: titled and rated from RV_C2's overview, with the code they sit on.
+    {
+      id: "PRRT_C1", isResolved: false, isOutdated: false, path: "src/retry.ts", line: 2, originalLine: 2, startLine: null, diffSide: "RIGHT",
+      comments: { nodes: [copilotComment("RC_C1", 5001, 2.5, "<p dir=\"auto\">With <code class=\"notranslate\">attempts</code> of 0 the loop never runs and <code class=\"notranslate\">retry</code> throws <code class=\"notranslate\">undefined</code>. Reject a count below 1 up front.</p>")] },
+    },
+    {
+      id: "PRRT_C2", isResolved: false, isOutdated: false, path: "src/retry.ts", line: 9, originalLine: 9, startLine: 8, diffSide: "RIGHT",
+      comments: { nodes: [copilotComment("RC_C2", 5002, 2.49, "<p dir=\"auto\">The delay doubles on every attempt with no ceiling, so a long run waits minutes between calls. Cap it.</p>")] },
     },
   ],
 };
