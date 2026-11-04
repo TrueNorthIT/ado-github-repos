@@ -8,7 +8,7 @@
 // Rules:
 //  - parseActions is null unless the hash has view=actions AND a valid repo ("owner/name", browseState's rule). It never throws.
 //    browseState.parse keeps the repo and drops the rest, so the app reads parseActions(hash) before routing (as for Security).
-//  - Pages: no actWorkflow/actRun -> the landing page (tab: recent | all | runs; absent means recent).
+//  - Pages: no actWorkflow/actRun -> the landing page (tab: recent | all | runs | environments | library; absent means recent).
 //    actWorkflow (a workflow's numeric id) -> that workflow's runs, with the filters.
 //    actRun (a run's numeric id) -> the run page; actAttempt (positive integer) picks an attempt, absent means the latest.
 //    actJob (numeric id) with actRun -> the log view of that job; actLine (positive integer) only with actJob.
@@ -23,7 +23,7 @@
 //  - applyActions(hash, s) keeps the hash's other segments verbatim and in order, drops every earlier `view` and every key of this
 //    module, and appends `view=actions` then the module's keys in the order above.
 
-export type ActTab = "recent" | "all" | "runs" | "environments";
+export type ActTab = "recent" | "all" | "runs" | "environments" | "library";
 
 /** GitHub's run `status` filter values that the UI offers. */
 export const RUN_STATUS_FILTERS = ["queued", "in_progress", "waiting", "completed", "success", "failure", "cancelled", "skipped"] as const;
@@ -53,7 +53,7 @@ const RUN_TABS: RunTab[] = ["tests", "artifacts"];
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const KEYS = ["view", "actTab", "actWorkflow", "actRun", "actAttempt", "actJob", "actLine", "actBranch", "actStatus", "actActor", "actEvent", "actEnv", "actRunTab"];
-const TABS: ActTab[] = ["recent", "all", "runs", "environments"];
+const TABS: ActTab[] = ["recent", "all", "runs", "environments", "library"];
 
 const id = (v: string | null): number | undefined => (v && /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
 

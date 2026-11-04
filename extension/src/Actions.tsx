@@ -30,6 +30,7 @@ import { RelDate } from "./RelDate";
 import { DeleteRunDialog, RunStatusIcon, StatusBadgeDialog, writeError, type DeleteTarget } from "./ActionsUi";
 import { RunPage } from "./ActionsRun";
 import { EnvironmentsTab, isEnvironmentPage } from "./ActionsEnvironments";
+import { LibraryTab } from "./ActionsLibrary";
 import { gotoHash, openHub, patchHash, useHashExtras } from "./hostNav";
 import { applyEditFlag } from "./lib/editHash";
 import { serialize } from "./lib/browseState";
@@ -61,6 +62,7 @@ const TABS: { id: ActTab; name: string }[] = [
   { id: "all", name: "All" },
   { id: "runs", name: "Runs" },
   { id: "environments", name: "Environments" },
+  { id: "library", name: "Library" },
 ];
 const DEBOUNCE_MS = 300;
 const POLL_MS = 10_000;
@@ -739,6 +741,8 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
               </>
             ) : tab === "environments" ? (
               <EnvironmentsTab repo={repo} go={goto} props={props} />
+            ) : tab === "library" ? (
+              <LibraryTab key={repo} repo={repo} props={props} />
             ) : (
               <Landing key={`${repo}/${tab}`} repo={repo} tab={tab} goto={goto} props={props} />
             )}
