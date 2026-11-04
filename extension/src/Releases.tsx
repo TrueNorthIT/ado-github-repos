@@ -292,7 +292,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
 
   return (
     <>
-      <Header className="gh-hub-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={form || detailTag ? draftButton : [...draftButton, searchItem]}>
+      <Header className="gh-hub-header gh-act-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={form || detailTag ? draftButton : [...draftButton, searchItem]}>
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r, tagTab: "releases" }))}
       </Header>
       <TagTabs repo={repo} tab="releases" go={go} />

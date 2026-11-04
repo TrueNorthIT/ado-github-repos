@@ -397,7 +397,7 @@ export function PullRequestsHub({ state, go, openSwitch, signedIn, signIn, busy,
     const p: TabProps = { repo, open, signedIn, signIn: doSignIn, busy, filterOpen, closeFilter: () => setFilterOpen(false) };
     body = (
       <>
-        <Header className="gh-hub-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[newPrItem(repo), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]}>
+        <Header className="gh-hub-header gh-act-header" title="Pull requests" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={[newPrItem(repo), openOnGitHub(`https://github.com/${repo}/pulls`), ...extra]}>
           {switcher((r) => ({ repo: r, prTab: tab }))}
         </Header>
         <TabBar

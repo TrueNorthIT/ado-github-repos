@@ -106,7 +106,7 @@ export function BranchCompare({ repo, cmp, props }: { repo: string; cmp: Compare
   return (
     <>
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header"
         title="Compare"
         titleSize={TitleSize.Large}
         titleAriaLevel={1}

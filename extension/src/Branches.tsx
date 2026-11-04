@@ -255,7 +255,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   return (
     <>
       <Header
-        className="gh-hub-header"
+        className="gh-hub-header gh-act-header"
         title="Branches"
         titleSize={TitleSize.Large}
         titleAriaLevel={1}
