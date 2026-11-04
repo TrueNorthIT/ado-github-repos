@@ -617,6 +617,7 @@
 .gh-sec-facts { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 32px; padding: 4px 0; }
 .gh-sec-fact { gap: 4px; min-width: 0; align-items: flex-start; } /* a pill keeps its own width */
 .gh-sec-fact-wide { grid-column: 1 / -1; }
+.gh-sec-fact-value > .bolt-pill { display: inline-flex; } /* the Pill is a block flex box: inside the value span it filled the column */
 .gh-sec-fact-value { min-width: 0; max-width: 100%; overflow-wrap: normal; word-break: normal; }
 .gh-sec-fact-wide .gh-sec-fact-value { white-space: pre-wrap; }
 .gh-sec-nowrap { white-space: nowrap; }
