@@ -181,9 +181,13 @@ const HUB_SUFFIX = /github-repos(?:-[a-z]+)?-hub$/;
 export const currentHub = (contributionId: string = SDK.getContributionId()): HubId =>
   (/github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub$/.exec(contributionId)?.[1] as HubId | undefined) ?? "files";
 
+/** A hub's full contribution id from the current one: its hub suffix swapped, or, from a frame that is not a hub (a dashboard widget), its relative id. */
+export const hubContributionId = (hub: HubId, current: string = SDK.getContributionId()) =>
+  HUB_SUFFIX.test(current) ? current.replace(HUB_SUFFIX, HUB_CONTRIBUTION[hub]) : current.replace(/[^.]+$/, HUB_CONTRIBUTION[hub]);
+
 /** Another hub's URL for a state: the current contribution id with its hub suffix swapped. */
 export const hubHref = (ctx: { org: string; project: string }, hub: HubId, s: BrowseState | string) =>
-  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${SDK.getContributionId().replace(HUB_SUFFIX, HUB_CONTRIBUTION[hub])}${typeof s === "string" ? s : serialize(s)}`;
+  `https://dev.azure.com/${encodeURIComponent(ctx.org)}/${encodeURIComponent(ctx.project)}/_apps/hub/${hubContributionId(hub)}${typeof s === "string" ? s : serialize(s)}`;
 
 /** `s` may be a ready-made hash (the New pull request page's, which BrowseState cannot carry). */
 export async function openHub(hub: HubId, s: BrowseState | string): Promise<void> {
