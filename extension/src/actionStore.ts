@@ -299,7 +299,7 @@ export class ActionStore {
         await runSemiLinear(
           {
             behindBy: async () => Number((await restJsonFresh<{ behind_by?: number }>(headCompareRequest(this.repo, pr.baseRefName, pr.headRefOid))).behind_by ?? 0),
-            rebase: async () => void (await mutate(updateBranchMutation({ pullRequestId: pr.id, expectedHeadOid: pr.headRefOid, updateMethod: "REBASE" }))),
+            rebase: async () => (await mutate(updateBranchMutation({ pullRequestId: pr.id, expectedHeadOid: pr.headRefOid, updateMethod: "REBASE" })))?.updatePullRequestBranch?.pullRequest?.headRefOid as string | undefined,
             getPull: () => restJsonFresh<RestPull>(pullRequestRequest(this.repo, this.number)),
             merge: (sha) => rest(semiLinearMergeRequest(this.repo, this.number, { sha, commitTitle: r.commitHeadline, commitMessage: r.commitBody })),
             sleep: (ms) => new Promise((ok) => setTimeout(ok, ms)),

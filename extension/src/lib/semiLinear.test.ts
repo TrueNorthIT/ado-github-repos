@@ -81,7 +81,7 @@ describe("rebaseStatus", () => {
 });
 
 /** Fake deps: `pulls` are answered in turn (the last repeats); the clock advances by each sleep. */
-function deps(o: { behind?: number; pulls?: RestPull[]; rebase?: () => Promise<void>; merge?: (sha: string) => Promise<void> } = {}) {
+function deps(o: { behind?: number; pulls?: RestPull[]; rebase?: () => Promise<string | void>; merge?: (sha: string) => Promise<void> } = {}) {
   let t = 0;
   const calls: string[] = [];
   const steps: SemiLinearStep[] = [];
@@ -126,6 +126,17 @@ describe("runSemiLinear", () => {
     await expect(runSemiLinear(f.d, "old")).rejects.toBeInstanceOf(SemiLinearError);
     expect(f.calls.some((c) => c.startsWith("merge"))).toBe(false);
     expect(f.elapsed()).toBeGreaterThanOrEqual(SEMI_LINEAR_TIMEOUT_MS);
+  });
+
+  it("merges only the head the rebase produced, never a commit someone pushed on top of it", async () => {
+    const f = deps({ behind: 1, rebase: async () => "rebased", pulls: [pull({ head: { sha: "pushed-after" } })] });
+    await expect(runSemiLinear(f.d, "old")).rejects.toThrow(/changed after it was rebased/);
+    expect(f.calls.some((c) => c.startsWith("merge"))).toBe(false);
+  });
+
+  it("merges the rebase's own head once GitHub reports it", async () => {
+    const f = deps({ behind: 1, rebase: async () => "rebased", pulls: [pull({ head: { sha: "old" } }), pull({ head: { sha: "rebased" } })] });
+    await expect(runSemiLinear(f.d, "old")).resolves.toEqual({ rebased: true, mergedSha: "rebased" });
   });
 
   it("stops with a clear message on conflicts or a closed pull request", async () => {

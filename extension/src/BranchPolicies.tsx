@@ -8,6 +8,7 @@ import * as React from "react";
 import { Button } from "azure-devops-ui/Button";
 import { Card } from "azure-devops-ui/Card";
 import { Checkbox } from "azure-devops-ui/Checkbox";
+import { Dialog } from "azure-devops-ui/Dialog";
 import { FormItem } from "azure-devops-ui/FormItem";
 import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Link } from "azure-devops-ui/Link";
@@ -24,6 +25,7 @@ import {
   rulesFromForm, savePlan, setPrPolicy, setReviewersOn, type PolicyForm, type Ruleset,
 } from "./lib/policyEdit";
 import { ErrorView } from "./Browser";
+import { setEditGuard } from "./hostNav";
 import { HubProps, Loading, titleSwitcher } from "./RepoHub";
 import { applyRulesetPlan, getBranchPolicies, getIsRepoAdmin, getOwnedRuleset, GhError, invalidateRefs, type BranchPoliciesData } from "./githubBrowse";
 import "./browser.css";
@@ -314,6 +316,21 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
   };
   const discard = () => { setForm(saved); setError(null); };
 
+  // Unsaved edits: any navigation away (Back, the branch or repo switcher, back/forward) asks first through hostNav's guard, as the
+  // Files editor and the release form do; a closing tab warns. The page's address isn't in BrowseState, so the guard asks on every navigation.
+  const dirty = changes.length > 0 && !busy;
+  const [leave, setLeave] = React.useState<(() => void) | null>(null);
+  React.useEffect(() => {
+    setEditGuard({ dirty, anyNav: true, path: "policies", ask: (proceed) => setLeave(() => proceed), discard: () => setEditGuard(null) });
+    return () => setEditGuard(null);
+  }, [dirty]);
+  React.useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   const others = React.useMemo(() => {
     if (data.t !== "ready" || !editing) return null;
     const d = data.v;
@@ -371,6 +388,15 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
           </>
         )}
       </div>
+      {leave && (
+        <Dialog
+          titleProps={{ text: "Discard your changes?" }}
+          onDismiss={() => setLeave(null)}
+          footerButtonProps={[{ text: "Keep editing", onClick: () => setLeave(null) }, { text: "Discard changes", primary: true, onClick: () => { const run = leave; setLeave(null); run(); } }]}
+        >
+          Your changes to the policies for {branch} have not been saved and will be lost.
+        </Dialog>
+      )}
     </>
   );
 }

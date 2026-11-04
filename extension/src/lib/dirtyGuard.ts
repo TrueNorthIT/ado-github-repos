@@ -7,5 +7,7 @@ const same = (a: NavWhere, b: NavWhere) =>
   (a.tagTab ?? "") === (b.tagTab ?? "") && (a.release ?? "") === (b.release ?? "") && (a.releaseForm ?? "") === (b.releaseForm ?? "");
 
 /** "ask" when navigating from `cur` to `next` would throw away unsaved edits. */
-export const decideNav = (dirty: boolean, cur: NavWhere, next: NavWhere): "allow" | "ask" =>
-  dirty && !same(cur, next) ? "ask" : "allow";
+export const decideNav = (dirty: boolean, cur: NavWhere, next: NavWhere, anyNav = false): "allow" | "ask" =>
+  dirty && (anyNav || !same(cur, next)) ? "ask" : "allow";
+// `anyNav`: for a page whose own address is not in NavWhere (Branch policies lives in raw hash keys browseState drops, so its
+// address parses to just { repo }), every navigation leaves it, so it asks whenever there are unsaved edits.

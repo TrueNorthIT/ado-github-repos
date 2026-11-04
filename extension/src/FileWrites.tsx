@@ -29,6 +29,8 @@ import { isWorkflowPermissionError, WORKFLOW_PERMISSION_TEXT } from "./lib/workf
 // ---------- the write ----------
 
 export const STALE_TEXT = "The branch has changed since you opened this file, so GitHub refused the commit.";
+/** Delete folder's stale-branch refusal: nothing was edited, so there is nothing to copy before refreshing. */
+export const FOLDER_STALE_TEXT = "The branch has changed since you opened this folder, so GitHub refused the commit. Refresh the page and try again, or commit to a new branch instead.";
 
 /** A new branch first when asked, then the commit. Drops the cached trees and PR lists afterwards. Throws RefWriteError with a sentence when GitHub's reason is worth saying in words. */
 export async function runCommit(p: { repo: string; repoId: string; plan: CommitPlan; message: { headline: string; body?: string }; changes: FileChanges }): Promise<void> {
@@ -64,7 +66,7 @@ export async function runFolderDelete(p: { repo: string; tree: GitTree; folder: 
     const commit = await restSend<{ sha: string }>(commitRequest(p.repo, { message: p.message, tree: tree.sha, parent: head }));
     await restSend(p.plan.createFrom ? createRefRequest(p.repo, p.plan.branch, commit.sha) : updateRefRequest(p.repo, p.plan.branch, commit.sha));
   } catch (e) {
-    if (e instanceof GhError && e.status === 422 && isNotFastForward(e.apiMessage)) throw new RefWriteError(STALE_TEXT);
+    if (e instanceof GhError && e.status === 422 && isNotFastForward(e.apiMessage)) throw new RefWriteError(FOLDER_STALE_TEXT);
     if (e instanceof GhError && isWorkflowPermissionError({ status: e.status, message: e.apiMessage ?? e.detail }, entries.map((x) => x.path))) throw new RefWriteError(WORKFLOW_PERMISSION_TEXT);
     if (e instanceof GhError && e.status === 422 && p.plan.createFrom) throw new RefWriteError(`Could not create the branch ${p.plan.branch}: ${e.apiMessage ?? "GitHub refused it"}.`);
     throw e;

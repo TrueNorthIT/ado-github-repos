@@ -66,12 +66,12 @@ export const gotoHash = (hash: string) => hasher?.(hash);
  * An open editor with unsaved text (or a New file draft) registers itself here; every in-app navigation and every external
  * hash change then asks it first. `ask` shows the Discard dialog and calls `proceed` on Discard; `discard` closes the editor.
  */
-export interface EditGuard { dirty: boolean; path: string; ask: (proceed: () => void) => void; discard: () => void }
+export interface EditGuard { dirty: boolean; path: string; ask: (proceed: () => void) => void; discard: () => void; /** Ask on every navigation (lib/dirtyGuard.ts decideNav). */ anyNav?: boolean }
 let editGuard: EditGuard | null = null;
 export const setEditGuard = (g: EditGuard | null) => { editGuard = g; };
 const guarded = (cur: BrowseState, next: BrowseState, proceed: () => void): boolean => {
   const g = editGuard;
-  if (!g || decideNav(g.dirty, cur, next) === "allow") return false;
+  if (!g || decideNav(g.dirty, cur, next, g.anyNav) === "allow") return false;
   g.ask(() => { g.discard(); proceed(); });
   return true;
 };

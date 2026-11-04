@@ -279,7 +279,7 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
         l.rebaseLeft = 2;
         l.behind = 0;
       }
-      return { data: { updatePullRequestBranch: { pullRequest: { id: `PR_${n}`, headRefOid: headSha(n), mergeStateStatus: "UNKNOWN", viewerCanUpdateBranch: false } } } };
+      return { data: { updatePullRequestBranch: { pullRequest: { id: `PR_${n}`, headRefOid: curHead(n), mergeStateStatus: "UNKNOWN", viewerCanUpdateBranch: false } } } };
     case "enqueuePullRequest":
       if (!specOf(n).queue) return fail("Pull request is not eligible for the merge queue");
       l.queue = { ticks: 0 };

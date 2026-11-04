@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  PickError, createCommitRequest, defaultTopicBranch, deleteTempRefRequest, pickErrorFor, pickMessage, pickRange, prLanding, prPickMessage, randomSuffix,
+  PickError, pullCommitsRequest, createCommitRequest, defaultTopicBranch, deleteTempRefRequest, pickErrorFor, pickMessage, pickRange, prLanding, prPickMessage, randomSuffix,
   runPick, tempBranchName, toGitCommit, type PickRun, type PickStep,
 } from "./cherryPick";
 import type { RestRequest } from "./restRequest";
@@ -157,5 +157,14 @@ describe("pickErrorFor", () => {
     expect((pickErrorFor(err(403), "other", ctx) as PickError).code).toBe("access");
     const e = new Error("network");
     expect(pickErrorFor(e, "other", ctx)).toBe(e);
+  });
+});
+
+describe("pullCommitsRequest", () => {
+  it("asks for the page holding the pull request's last commit, so a long rebase merge isn't read as a squash", () => {
+    expect(pullCommitsRequest("o/r", 7, 3).path).toBe("/repos/o/r/pulls/7/commits?per_page=100&page=1");
+    expect(pullCommitsRequest("o/r", 7, 100).path).toBe("/repos/o/r/pulls/7/commits?per_page=100&page=1");
+    expect(pullCommitsRequest("o/r", 7, 101).path).toBe("/repos/o/r/pulls/7/commits?per_page=100&page=2");
+    expect(pullCommitsRequest("o/r", 7, 250).path).toBe("/repos/o/r/pulls/7/commits?per_page=100&page=3");
   });
 });
