@@ -33,6 +33,7 @@ const MOCK_PAGES = {
   files: `?hub=files${REPO}`,
   "files-clone": `?hub=files&click=${encodeURIComponent('button[aria-label="Clone repository"]')}${REPO}`,
   "file-lines": `?hub=files${REPO}&path=src%2Findex.ts&line=3&lineEnd=5`,
+  "file-readme": `?hub=files${REPO}&path=README.md`,
   "file-edit-workflow": `?hub=files${REPO}&ref=main&path=.github%2Fworkflows%2Fci.yml&edit=true`,
   commits: `?hub=commits${REPO}`,
   pushes: `?hub=pushes${REPO}`,

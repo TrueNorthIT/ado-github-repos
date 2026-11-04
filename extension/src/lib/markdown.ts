@@ -139,5 +139,54 @@ export function prepareMarkdownHtml(html: string, ctx: MarkdownContext): Prepare
     }
   });
 
+  dressAlerts(body);
   return { html: body.innerHTML, images };
+}
+
+/**
+ * GitHub's alert types and the azure-devops-ui MessageBar severity and icon each one borrows. MessageBar has no purple, so IMPORTANT
+ * is info-blue and tells itself apart from NOTE by its icon (a speech bubble with "!", as GitHub's octicon-report).
+ */
+export const ALERTS = {
+  note: { severity: "info", iconName: "Info" },
+  tip: { severity: "success", iconName: "Lightbulb" },
+  important: { severity: "info", iconName: "ChatWarning" },
+  warning: { severity: "warning", iconName: "Warning" },
+  caution: { severity: "error", iconName: "ErrorBadge" },
+} as const;
+export type AlertType = keyof typeof ALERTS;
+
+/**
+ * Restyles GitHub's alerts (`<div class="markdown-alert markdown-alert-note"><p class="markdown-alert-title">Note</p>…</div>`; the octicon
+ * <svg> is already gone) as azure-devops-ui MessageBar markup: the HTML is a string, so no React MessageBar can go in, but its own classes
+ * (bolt-messagebar severity-*, bolt-messagebar-icon, the Fluent icon span) give the same colours from the library's palette variables.
+ * Runs after the class filter, so these library classes are only ever ones put here.
+ */
+function dressAlerts(body: HTMLElement) {
+  body.querySelectorAll("div.markdown-alert").forEach((alert) => {
+    const type = (Object.keys(ALERTS) as AlertType[]).find((t) => alert.classList.contains(`markdown-alert-${t}`));
+    if (!type) return;
+    const { severity, iconName } = ALERTS[type];
+    const doc = alert.ownerDocument;
+    const el = (tag: string, cls: string) => {
+      const e = doc.createElement(tag);
+      e.className = cls;
+      return e;
+    };
+    const content = el("div", "bolt-messagebar-content flex-row");
+    const icons = el("div", "bolt-messagebar-icons flex-row");
+    const wrap = el("span", "fluent-icons-enabled");
+    const icon = el("span", `fabric-icon ms-Icon--${iconName} bolt-messagebar-icon medium flex-noshrink`);
+    icon.setAttribute("aria-hidden", "true");
+    wrap.appendChild(icon);
+    icons.appendChild(wrap);
+    const msg = el("div", "markdown-alert-body flex-column flex-grow flex-shrink");
+    while (alert.firstChild) msg.appendChild(alert.firstChild);
+    const title = msg.querySelector(":scope > .markdown-alert-title");
+    if (title) title.classList.add("font-weight-semibold");
+    content.append(icons, msg);
+    alert.appendChild(content);
+    alert.classList.add("bolt-messagebar", `severity-${severity}`);
+    alert.setAttribute("role", "note");
+  });
 }

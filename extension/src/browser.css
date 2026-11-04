@@ -83,6 +83,14 @@
 .gh-markdown details[open] > summary { list-style-type: disclosure-open; margin-bottom: 8px; }
 .gh-markdown summary:focus-visible { outline: 2px solid var(--communication-foreground, #0078d4); outline-offset: 2px; }
 .gh-markdown sub, .gh-markdown sup { font-size: .85em; }
+/* GitHub alerts, dressed as azure-devops-ui MessageBars by lib/markdown.ts (dressAlerts): the library supplies the severity background and icon colour;
+   these lines give it MessageCard's rounded corners and content padding and let the message hold several blocks under a title. */
+.gh-markdown .markdown-alert.bolt-messagebar { padding: 0; margin: 0 0 12px; border-radius: 4px; }
+.gh-markdown .markdown-alert .bolt-messagebar-content { padding: 12px 20px 12px 12px; border-radius: 4px; }
+.gh-markdown .markdown-alert .bolt-messagebar-icons { max-height: none; align-self: flex-start; padding-top: 2px; }
+.gh-markdown .markdown-alert-body { min-width: 0; }
+.gh-markdown .markdown-alert-body > .markdown-alert-title { margin-bottom: 4px; }
+.gh-markdown .markdown-alert-body > :last-child { margin-bottom: 0; }
 .gh-markdown sub { vertical-align: baseline; } /* Copilot's "Review effort" line is a whole <sub> paragraph: keep it on the baseline at 85% */
 .gh-markdown .anchor { display: none; }
 
