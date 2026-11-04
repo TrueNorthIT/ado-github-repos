@@ -21,6 +21,8 @@ export interface Prefs {
   compareBase?: Record<string, string>;
   /** VW-9: when this user last opened each pull request, `${owner}/${name}#${number}` to an ISO time. */
   lastViewed: LastViewedMap;
+  /** How a modified image is compared ("2-up", "swipe" or "onion"; lib/imageDiff.storedImageDiffMode reads it); unset means 2-up. */
+  imageDiffMode?: string;
 }
 const DEFAULTS: Prefs = { graph: true, sideBySide: true, favourites: {}, lastViewed: {} };
 

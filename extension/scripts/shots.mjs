@@ -61,6 +61,10 @@ const MOCK_PAGES = {
   prs: `?hub=prs${REPO}&view=prs`,
   "pr-200": `?hub=prs${REPO}&view=prs&pr=200`,
   "pr-200-files": `?hub=prs${REPO}&view=prs&pr=200&prPage=files`,
+  // Image diff modes on a modified PNG (size change, transparency) and SVG; ?click= picks a mode, which then applies to every image on the page.
+  "pr-image-2up": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
+  "pr-image-onion": `?hub=prs&click=${encodeURIComponent('[aria-label="Onion skin comparison of logo.png"]')}${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
+  "pr-image-swipe": `?hub=prs&click=${encodeURIComponent('[aria-label="Swipe comparison of logo.png"]|text:diagram.svg')}${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
   // ?click= (src/dev/main.tsx) opens the Complete panel and picks Semi-linear merge.
   "pr-317-semilinear": `?hub=prs&click=${encodeURIComponent("text:Complete|.gh-complete input[aria-label=\"Merge type\"]|text:Semi-linear merge")}${REPO}&view=prs&pr=317`,
   "pr-317-semilinear-run": `?hub=prs&scenario=rebaseStuck&click=${encodeURIComponent("text:Complete|.gh-complete input[aria-label=\"Merge type\"]|text:Semi-linear merge|text:Complete merge")}${REPO}&view=prs&pr=317`,

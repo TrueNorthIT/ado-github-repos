@@ -5,13 +5,16 @@ import { PR_FILES, baseSha, commitOid, headSha, restFiles } from "./prDetail";
 
 export const PNG2_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAARUlEQVR4nGM4FSCAhv7vZEBD9FRDV8tGHTTqILo4aGCtx1Qz6qBRBw0/Bw2s9ZhqRh006qDh56CBtR5TzaiDRh007BwEALl8fNsNnfoGAAAAAElFTkSuQmCC";
 export const PNG_BEFORE = PNG_BASE64;
+// The PR's logo.png: a 160 × 96 opaque base and a 200 × 120 head with a transparent background, so the image diff modes have a size change and transparency to show.
+const LOGO_BASE = "iVBORw0KGgoAAAANSUhEUgAAAKAAAABgCAIAAAAVRe7OAAAAz0lEQVR42u3RQQ0AMAwDscAe0PFpEexfdY4OQZycq825ALAAC7AAC7AACzBgARZgARZgARZgwAIswAIswAIswAIMeEw1bIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwL8BC7AAAxZgARZgARZgAQbsBcACLMACLMACLMCABViABViABViPGuXTDnQ3Qiq5AAAAAElFTkSuQmCC";
+const LOGO_HEAD = "iVBORw0KGgoAAAANSUhEUgAAAMgAAAB4CAYAAAC3kr3rAAAB7klEQVR42u3b0W0CMRBF0S2B0ijJ9dHUUMJi5LXH43Ol+U4U9ugBUq5LkiRJkiRJkiTd9Xm/2ujzVxUQwAgKWAQFLALj5mLggaLtYcTEA0XpYUSiA0VggKLMOGKjg0RggKKVOKLQQaJhOKLwQSKrYU0EByTylspbLsEBieCARHBAIjggUV0gEPyBxNMEh4MEDgcJHHBAIkAAERyQCA5INB+Ih/phJJ466+GsiPVwVsR6OCsCCBxWRNbDish6WBFZDysi62FFBAgggMDhIAHEAQKIA8S3V863WYB4SK2IAAFEgAAinz98DpH1sCICxAFyEpCTAgQQQAABBBBABAggAgQQAQKIAAHE0woIIIAAAggggAACCCCAAAIIIIAAAgggAgQQAQKItgHiAAHEAXIQEEj8T7qsiPUQIIAIEEDkc4jPH7IiznoA4gABxAECiYMDEAeIfJvl2ytZEeshK2I9ZEWsh6yI9ZAVcXBYEWc9rIizHlbEA209BAkcggQOAQKIIIFDkMAhSOBQQSCQdOIABBIHBySQwCFI4BAkcGg2kgYGHIIEDnnL5S2VrInVUAIkrSoMOHQyFDC0BEnbGQYcOhUKGEoLZQWYn38vr6KyQXkCTPfP96ppFyhTz6skWKAQLFAIGCAkSZIkSZIkdfQFWyXoQVywBDoAAAAASUVORK5CYII=";
 
 const HOUR = 3600e3;
 const iso = (hoursAgo: number) => new Date(Date.now() - hoursAgo * HOUR).toISOString();
 const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 /** The PNG at a fixture sha: the base has one picture, the head another, so the before/after view shows a change. */
-export const logoBytes = (sha: string) => bytes(sha.startsWith("ba5e") ? PNG_BEFORE : PNG2_BASE64);
+export const logoBytes = (sha: string) => bytes(sha.startsWith("ba5e") ? LOGO_BASE : LOGO_HEAD);
 
 // ---------- list filters (VW-8): the facts the search fixtures know beyond the PR node ----------
 export const ASSIGNEES: Record<number, string[]> = { 199: [ME], 197: ["bob-dev"], 195: ["ann", "carol"], 190: ["dave"] };

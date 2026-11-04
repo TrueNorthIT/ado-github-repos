@@ -524,11 +524,28 @@
 .gh-viewed { flex: none; margin-left: 4px; }
 .gh-view-toggle { flex: none; }
 .gh-changed-since, .gh-ws-only { flex: none; margin-left: 8px; }
-/* Rich diffs (VW-11) */
+/* Rich diffs (VW-11). The checkerboard uses neutral-100 (black in light, white in dark): neutral-8 is near the page colour in both real themes, so it hid transparency. */
 .gh-img-diff { gap: 16px; padding: 16px; align-items: flex-start; flex-wrap: wrap; }
 .gh-img-side { margin: 0; flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.gh-img-pic { max-width: 100%; max-height: 480px; object-fit: contain; align-self: flex-start; border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); background: repeating-conic-gradient(rgba(var(--palette-neutral-8, 0, 0, 0), .06) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+.gh-img-pic { max-width: 100%; max-height: 480px; object-fit: contain; align-self: flex-start; border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); background: repeating-conic-gradient(rgba(var(--palette-neutral-100, 0, 0, 0), .08) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
 .gh-md-rendered { padding: 8px 16px 16px; }
+/* Image diff modes: 2-up, Swipe, Onion skin. The range input is native (azure-devops-ui has no slider), coloured with the theme's primary. */
+.gh-img-compare { gap: 12px; padding: 16px; align-items: flex-start; }
+.gh-img-modes { display: flex; }
+.gh-img-2up { gap: 16px; align-items: flex-start; width: 100%; }
+.gh-img-2up .gh-img-side { flex: 1 1 0; }
+.gh-img-sized { max-width: none; max-height: none; }
+.gh-img-stack { gap: 8px; align-items: flex-start; max-width: 100%; }
+.gh-img-checker { border: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); background: repeating-conic-gradient(rgba(var(--palette-neutral-100, 0, 0, 0), .08) 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+.gh-img-frame { position: relative; overflow: hidden; box-sizing: content-box; }
+.gh-img-layer { position: absolute; inset: 0; }
+.gh-img-frame .gh-img-pic { position: absolute; border: 0; background: none; }
+.gh-img-divider { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(var(--palette-primary, 0, 120, 212), 1); pointer-events: none; }
+.gh-img-slider { gap: 8px; }
+.gh-img-slider input[type="range"] { width: 200px; margin: 0; accent-color: rgba(var(--palette-primary, 0, 120, 212), 1); }
+.gh-img-slider input[type="range"]:focus-visible { outline: 2px solid rgba(var(--palette-primary, 0, 120, 212), 1); outline-offset: 2px; }
+.gh-img-slider output { min-width: 3em; font-variant-numeric: tabular-nums; }
+.gh-img-captions { gap: 32px; }
 /* Updates tab (VW-1) */
 .gh-updates { gap: 16px; }
 .gh-updates-hint { margin: 0 0 8px; }
