@@ -27,6 +27,7 @@
 .gh-page > .repos-files-header { padding: 8px 16px 0 0; }
 .repos-files-header .bolt-header-title-row { padding-left: 20px; }
 .gh-topbar { gap: 8px; padding: 8px 16px 0 16px; min-height: 40px; }
+.gh-topbar .gh-search-box { width: 240px; }
 .gh-find { min-width: 0; gap: 4px; }
 .gh-find-input { position: relative; display: flex; min-width: 0; }
 .gh-find .bolt-textfield-inline { background: transparent; }

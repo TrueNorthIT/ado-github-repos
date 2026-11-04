@@ -14,7 +14,7 @@ Tick each, note anything that doesn't look native, and re-seed the sandbox after
 - [ ] "Download repository as zip" downloads for the private sandbox.
 - [ ] Edit a .md file: Edit / Preview toggle.
 - [ ] Delete a folder (on a throwaway branch): commit lands; stale-branch message names the folder.
-- [ ] Code search: results, preview with hits, "All connected repositories", rate-limit message after ~10 quick searches.
+- [ ] Search code box opens GitHub code search in a new tab.
 
 ## Commits / Pushes
 - [ ] Author and From/To date filters narrow the list; Load more pages within the filter.

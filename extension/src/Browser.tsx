@@ -979,7 +979,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                 {ctx && <FindBox crumbs={crumbs} paths={allPaths} partial={truncated} onPick={nav} />}
                 {!ctx && !err && <Spinner size={SpinnerSize.medium} ariaLabel="Loading repository" />}
                 {!ctx && <div className="flex-grow" />}
-                <CodeSearchBox state={state} />
+                <CodeSearchBox repo={state.repo} />
               </div>
               {err ? (
                 <div className="page-content page-content-top">

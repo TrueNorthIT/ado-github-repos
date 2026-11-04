@@ -109,10 +109,6 @@ const MOCK_PAGES = {
   "actions-library-add": `?hub=actions&click=${encodeURIComponent("text:Add variable|input[aria-label=Name]|.bolt-panel button.primary")}${REPO}&view=actions&actTab=library`,
   "actions-env-staging": `?hub=actions${REPO}&view=actions&actTab=environments&actEnv=staging`,
   security: `?hub=security${REPO}&view=security&secTab=dependencies`,
-  search: `?hub=files${REPO}&search=greet`,
-  "search-all": `?hub=files${REPO}&search=export&searchAll=1&searchExt=ts`,
-  "search-ratelimit": `?scenario=searchRateLimit&hub=files${REPO}&search=greet`,
-  "search-invalid": `?scenario=searchInvalid&hub=files${REPO}&search=greet`,
   ...WIDGET_PAGES,
 };
 
@@ -136,7 +132,6 @@ async function livePages() {
     prs: `?hub=prs${REPO}&view=prs`, "pr-3": `?hub=prs${REPO}&view=prs&pr=3`, "pr-3-files": `?hub=prs${REPO}&view=prs&pr=3&prPage=files`, "pr-4": `?hub=prs${REPO}&view=prs&pr=4`,
     actions: base, "actions-library": `${base}&actTab=library`, [`run-${run.id}`]: `${base}&actRun=${run.id}`, [`run-${run.id}-tests`]: `${base}&actRun=${run.id}&actRunTab=tests`, [`log-${job.id}`]: `${base}&actRun=${run.id}&actJob=${job.id}`,
     security: `?hub=security${REPO}&view=security&secTab=dependencies`,
-    search: `?hub=files${REPO}&search=Hello`,
     "widget-prs": `/widget.html?widget=prs&size=3x2&repo=${encodeURIComponent(SANDBOX)}`, "widget-runs": `/widget.html?widget=runs&size=4x2&repo=${encodeURIComponent(SANDBOX)}`,
   };
 }

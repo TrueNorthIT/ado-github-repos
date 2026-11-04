@@ -17,7 +17,6 @@ import { parsePolicies, type PolicyHashState } from "./lib/policyHash";
 import { applyCommitFilters, parseCommitFilters, type CommitFilters } from "./lib/commitsRest";
 import { applyPushFilters, parsePushFilters, type PushFilters } from "./lib/pushesHash";
 import { parseLines, type LineRange } from "./lib/lineHash";
-import { parseSearch, type SearchHashState } from "./lib/searchHash";
 import { parseEditFlag } from "./lib/editHash";
 import { parseForks, parseSourceRepo, type ForksHashState } from "./lib/forks";
 import * as React from "react";
@@ -49,10 +48,10 @@ const listeners = new Set<() => void>();
 const setRaw = (h: string) => { rawHash = h; listeners.forEach((f) => f()); };
 
 /** The sbs / ws keys and the list filters in the current hash; re-renders when the hash changes. */
-export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; actions: ActionsHashState | null; compare: CompareHashState | null; against: string | undefined; commitFilters: CommitFilters; pushFilters: PushFilters; policies: PolicyHashState | null; lines: LineRange | null; search: SearchHashState | null; edit: boolean; forks: ForksHashState | null; sourceRepo: string | undefined } {
+export function useHashExtras(): { diff: DiffHashState; filters: ListFilters; newPr: NewPrHashState | null; security: SecurityHashState | null; actions: ActionsHashState | null; compare: CompareHashState | null; against: string | undefined; commitFilters: CommitFilters; pushFilters: PushFilters; policies: PolicyHashState | null; lines: LineRange | null; edit: boolean; forks: ForksHashState | null; sourceRepo: string | undefined } {
   const [, tick] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => { listeners.add(tick as () => void); return () => void listeners.delete(tick as () => void); }, []);
-  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), actions: parseActions(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash), commitFilters: parseCommitFilters(rawHash), pushFilters: parsePushFilters(rawHash), policies: parsePolicies(rawHash), lines: parseLines(rawHash), search: parseSearch(rawHash), edit: parseEditFlag(rawHash), forks: parseForks(rawHash), sourceRepo: parseSourceRepo(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => ({ diff: parseDiffHash(rawHash), filters: parseListFilters(rawHash), newPr: parseNewPr(rawHash), security: parseSecurity(rawHash), actions: parseActions(rawHash), compare: parseCompare(rawHash), against: parseAgainst(rawHash), commitFilters: parseCommitFilters(rawHash), pushFilters: parsePushFilters(rawHash), policies: parsePolicies(rawHash), lines: parseLines(rawHash), edit: parseEditFlag(rawHash), forks: parseForks(rawHash), sourceRepo: parseSourceRepo(rawHash) }), [rawHash]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Rewrites the current hash without a history entry, e.g. `patchHash((h) => applyDiffHash(h, {...}))`. */
