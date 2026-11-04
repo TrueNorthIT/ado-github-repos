@@ -77,7 +77,12 @@ const DIAGRAM_BASE = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height
   <text x="100" y="46" font-family="Segoe UI,Arial" font-size="16" fill="#fff" text-anchor="middle">Before</text>
 </svg>
 `;
-const DIAGRAM_HEAD = DIAGRAM_BASE.replace("#0078d4", "#ca5010").replace(">Before<", ">After<");
+// The head is larger, with a transparent margin around a smaller badge, so the image diff modes show different sizes and transparency.
+const DIAGRAM_HEAD = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+  <circle cx="120" cy="60" r="56" fill="#ca5010" fill-opacity="0.85"/>
+  <text x="120" y="66" font-family="Segoe UI,Arial" font-size="16" fill="#fff" text-anchor="middle">After</text>
+</svg>
+`;
 const GUIDE_BASE = `# Guide
 
 Start here.
