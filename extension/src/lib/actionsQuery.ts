@@ -35,7 +35,9 @@ export interface PrActionsNode {
       isInMergeQueue?: boolean;
       mergeQueueEntry?: { position: number | null; state: "QUEUED" | "AWAITING_CHECKS" | "MERGEABLE" | "UNMERGEABLE" | "LOCKED"; estimatedTimeToMerge: number | null } | null;
       reviewRequests?: { nodes: { requestedReviewer: { __typename: string; login?: string } | null }[] };
-      headRef: { id: string; name: string; branchProtectionRule: { allowsDeletions: boolean } | null } | null;
+      headRef: { id: string; name: string; branchProtectionRule: { allowsDeletions: boolean; allowsForcePushes?: boolean } | null } | null;
+      /** The target branch and its classic protection (requiresCodeOwnerReviews: the reviewers section's Required group). */
+      baseRef?: { branchProtectionRule: { requiresCodeOwnerReviews?: boolean } | null } | null;
       viewerSubscription: "SUBSCRIBED" | "UNSUBSCRIBED" | "IGNORED" | null;
       viewerDidAuthor: boolean;
       viewerCanUpdate: boolean;
@@ -71,7 +73,8 @@ export function actionsDetailQuery({ owner, name, number }: { owner: string; nam
       headRepository { nameWithOwner viewerPermission }
       maintainerCanModify viewerCanUpdateBranch isMergeQueueEnabled isInMergeQueue mergeQueueEntry { position state estimatedTimeToMerge }
       reviewRequests(first: 30) { nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } } } }
-      headRef { id name branchProtectionRule { allowsDeletions } }
+      headRef { id name branchProtectionRule { allowsDeletions allowsForcePushes } }
+      baseRef { branchProtectionRule { requiresCodeOwnerReviews } }
       viewerDidAuthor viewerCanUpdate viewerCanClose viewerCanReopen viewerCanDeleteHeadRef viewerCanEnableAutoMerge viewerCanDisableAutoMerge viewerCanMergeAsAdmin viewerSubscription
       viewerLatestReview { id state }
       autoMergeRequest { enabledAt mergeMethod commitHeadline commitBody enabledBy { login } }

@@ -5,7 +5,7 @@ import { ME, PRS, PR_REPO, type FixturePr } from "./fixtures/prs";
 import { contentAt, detailNode, restFiles } from "./fixtures/prDetail";
 import { feedData, feedMutation } from "./fixtures/feed";
 import { commentsGraphql, overlayFeed } from "./fixtures/comments";
-import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, rerunRun } from "./fixtures/actions";
+import { WI_OVERRIDE, WI_STATES, actionsMutation, actionsNode, branchNames, mergeMessages, prActionsRest, rerunRun } from "./fixtures/actions";
 import { WI_CATALOG, editGraphql, removeRequestedReviewers, wiqlResult } from "./fixtures/edit";
 import { annotationContexts, deploymentNodes, signatureNodes } from "./fixtures/ci";
 import { ASSIGNEES, compareFiles, isUpdateOid, logoBytes, passesQualifiers, rangeData, renderMd, searchTerms, setViewed, sideOfOid, updatesData, viewedData } from "./fixtures/b4";
@@ -20,6 +20,7 @@ import { actionsRunRest } from "./actionsRunMock";
 import { writesGraphql, writesRest, writtenFile } from "./writesMock";
 import { codeSearchRest } from "./codeSearchMock";
 import { widgetRest } from "./widgetMock";
+import { forksRest } from "./forksMock";
 import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
@@ -156,7 +157,7 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   const rest = m[3] ?? "";
   const polAnswer = policiesRest(repo.fullName, rest, init, sc); // Branches: policies, rename, set as default, tag names
   if (polAnswer) return polAnswer;
-  if (!rest) return json({ default_branch: defaultBranchOf(repo.fullName), private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly", admin: isAdmin(sc) }, clone_url: `https://github.com/${repo.fullName}.git`, ssh_url: `git@github.com:${repo.fullName}.git` });
+  if (!rest) return json({ node_id: `R_${repo.fullName}`, default_branch: defaultBranchOf(repo.fullName), private: repo.private, description: repo.description, language: repo.language, pushed_at: new Date(Date.now() - 3 * 86400e3).toISOString(), permissions: { push: sc !== "readOnly", admin: isAdmin(sc) }, clone_url: `https://github.com/${repo.fullName}.git`, ssh_url: `git@github.com:${repo.fullName}.git` });
   if (rest === "/branches") {
     const page = Number(u.searchParams.get("page") || 1);
     const names = repo.branches.slice((page - 1) * BRANCH_PAGE, page * BRANCH_PAGE);
@@ -167,7 +168,9 @@ function github(u: URL, accept: string, sc: string, init?: RequestInit): Respons
   if (wrRest) return wrRest;
   const t = /^\/git\/trees\/(.+)$/.exec(rest);
   if (t) return json(treeFor(repo, decodeURIComponent(t[1]), u.searchParams.get("recursive") === "1"));
-  const cmp = /^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
+  const prAct = prActionsRest(repo.fullName, rest + u.search, init, sc); // batch H: semi-linear merge (compare, poll, merge) and branch rules (before the generic compare)
+  if (prAct) return prAct.text !== undefined ? new Response(prAct.text, { headers: { "Content-Type": "application/octet-stream" } }) : json(prAct.body, prAct.status);
+  const cmp =/^\/compare\/([^.]+)\.\.\.(.+)$/.exec(rest);
   if (cmp && repo.fullName.toLowerCase() === PR_REPO && !isRefsCompare(repo.fullName, decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2]))) return Number(u.searchParams.get("page") || 1) > 1 ? json({ files: [] }) : json({ merge_base_commit: { sha: MERGE_BASE }, files: compareFiles(decodeURIComponent(cmp[1]), decodeURIComponent(cmp[2])) });
   const secAnswer = securityRest(rest, u, init, sc); // R2: Advanced Security alerts
   if (secAnswer) return secAnswer;
@@ -225,6 +228,8 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "api.github.com" && sc !== "rateLimit") {
     const w = widgetRest(u, init, sc); // dashboard widgets: GET /user and the open pull request list
     if (w) return w;
+    const fk = forksRest(u, init, sc); // batch H: forks, their compares and branches, creating one, the viewer's organisations
+    if (fk) return fk;
   }
   if (u.hostname === "api.github.com") return github(u, accept, sc, init);
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitemtypes$/.test(u.pathname)) return json({ value: WI_TYPES });

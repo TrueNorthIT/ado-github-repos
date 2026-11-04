@@ -60,6 +60,29 @@ function toolbar() {
 
 SCENARIOS.push("releaseSaveFails", "releaseNoAccess");
 SCENARIOS.push("noEnvironments"); // Actions > Environments with none
+SCENARIOS.push("rebaseConflict", "rebaseStuck", "mergeBlocked", "noCodeOwners", "forkDenied", "noForks"); // batch H: the semi-linear merge's failures, a branch without CODEOWNERS
+
+// `?click=a|b|…`: once the page is up, click each target in turn (a CSS selector, or `text:Label` for the innermost element showing
+// exactly that text), waiting up to 8 s for each. For screenshots of panels and menus that only open on a click (npm run shots).
+const clicks = new URLSearchParams(location.search).get("click");
+if (clicks) {
+  const find = (t: string): HTMLElement | null => {
+    if (!t.startsWith("text:")) return document.querySelector<HTMLElement>(t);
+    const want = t.slice(5);
+    const all = Array.from(document.querySelectorAll<HTMLElement>("button, [role=option], [role=menuitem], [role=tab], a, span, div")).filter((e) => e.textContent?.trim() === want);
+    const hit = all.find((e) => !Array.from(e.children).some((c) => c.textContent?.trim() === want)) ?? null;
+    return hit && (hit.closest("button") as HTMLButtonElement | null)?.disabled !== true && !hit.closest("[aria-disabled=true]") ? hit : null; // wait until it is enabled
+  };
+  (async () => {
+    for (const t of clicks.split("|")) {
+      let el: HTMLElement | null = null;
+      for (let i = 0; i < 80 && !(el = find(t)); i++) await new Promise((r) => setTimeout(r, 100));
+      if (!el) return console.warn(`[mock click] not found: ${t}`);
+      el.click();
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  })();
+}
 toolbar();
 import("./fakeHeader").then((m) => m.fakeHeader());
 import("../index");

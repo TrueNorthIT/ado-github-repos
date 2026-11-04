@@ -149,6 +149,7 @@
 .gh-pr-aside { gap: 24px; }
 .gh-pr-section .bolt-header { padding: 4px 0; }
 .gh-pr-sublabel { margin-bottom: 8px; }
+.gh-pr-list + .gh-pr-sublabel { margin-top: 16px; } /* Optional under Required */
 .gh-pr-well { box-sizing: border-box; min-height: 43px; padding: 12px; border-radius: 4px; background: var(--palette-black-alpha-2, rgba(0, 0, 0, .02)); color: var(--text-secondary-color, rgba(0, 0, 0, .55)); text-align: center; margin-top: 8px; }
 @media (min-width: 880px) { .gh-pr-overview { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 28px; } } /* the hub frame's width, not the window's: native shows the column at a 1198px window, about a 938px frame */
 
@@ -262,6 +263,10 @@
 .gh-complete { gap: 16px; }
 .gh-complete-option { display: flex; flex-direction: column; gap: 2px; }
 .gh-complete-why { margin-left: 28px; } /* under the label, past the checkbox */
+.gh-complete-step { gap: 8px; } /* the semi-linear merge's spinner and its step */
+.gh-complete-note { margin-top: -8px; } /* why Semi-linear merge is disabled, tucked under the merge type */
+.gh-fork-dialog { gap: 12px; } /* the Fork dialog's explanation, owner and checkbox */
+.gh-fork-name { gap: 8px; } /* owner avatar, fork name, Private pill */
 .gh-diagram { width: 100%; max-width: 280px; height: auto; color: var(--text-secondary-color, rgba(0,0,0,.55)); }
 .gh-diagram-line { fill: none; stroke: currentColor; stroke-width: 2; }
 .gh-diagram-dashed { stroke-dasharray: 3 3; }

@@ -32,6 +32,7 @@ import { serializeActions } from "./lib/actionsHash";
 import { openInHub, useHubHref } from "./repoHref";
 import { getBranchNames, getMergeMessages } from "./githubBrowse";
 import { mergeMethodLabel, supportsCustomMessage, type MergeMethod } from "./lib/mergeOptions";
+import { SEMI_LINEAR_LABEL, SEMI_LINEAR_STEP_TEXT } from "./lib/semiLinear";
 import { groupChecks, reconcileOpen, type CheckGroup } from "./lib/checkGroups";
 import type { PolicyState } from "./lib/policies";
 import type { ActionablePolicyRow } from "./lib/updateBranch";
@@ -235,10 +236,24 @@ function RevertDialog({ store, prTitle, close, opened }: { store: ActionStore; p
 // ---------- Complete panel ----------
 
 /** Small hand-drawn picture of what each merge type does to the history (native draws the same idea). */
-function MergeDiagram({ method }: { method: MergeMethod }) {
+function MergeDiagram({ method }: { method: Choice }) {
   const commit = (x: number, y: number, kind: "base" | "new" | "old") => <circle key={`${x},${y}`} cx={x} cy={y} r={6} className={`gh-diagram-${kind}`} />;
   const line = (d: string, dashed?: boolean) => <path key={d} d={d} className={dashed ? "gh-diagram-line gh-diagram-dashed" : "gh-diagram-line"} />;
-  const alt = { MERGE: "A merge commit joins the source branch back into the target.", SQUASH: "The source branch's commits become one commit on the target.", REBASE: "The source branch's commits are replayed one by one on the target." }[method];
+  const alt = {
+    MERGE: "A merge commit joins the source branch back into the target.",
+    SQUASH: "The source branch's commits become one commit on the target.",
+    REBASE: "The source branch's commits are replayed one by one on the target.",
+    SEMILINEAR: "The source branch is rebased onto the target, then a merge commit joins it in.",
+  }[method];
+  if (method === "SEMILINEAR") {
+    // The old commits (dashed) are replayed after the target's tip, then joined back by a merge commit.
+    return (
+      <svg className="gh-diagram" viewBox="0 0 240 56" role="img" aria-label={alt}>
+        {line("M20 14H215")}{line("M50 14L70 42H95", true)}{line("M115 14L140 42H165L190 14")}
+        {[20, 50, 115].map((x) => commit(x, 14, "base"))}{commit(70, 42, "old")}{commit(95, 42, "old")}{commit(140, 42, "new")}{commit(165, 42, "new")}{commit(190, 14, "new")}
+      </svg>
+    );
+  }
   return (
     <svg className="gh-diagram" viewBox="0 0 240 56" role="img" aria-label={alt}>
       {method === "MERGE" && <>{line("M20 14H200")}{line("M70 14L100 42H130L160 14")}{[20, 70, 160, 200].map((x) => commit(x, 14, x === 160 ? "new" : "base"))}{commit(100, 42, "old")}{commit(130, 42, "old")}</>}
@@ -249,11 +264,17 @@ function MergeDiagram({ method }: { method: MergeMethod }) {
 }
 
 type Wi = { t: "none" } | { t: "loading" } | { t: "error" } | { t: "ready"; items: WorkItemRef[] };
+/** A merge type in the panel: GitHub's three, plus Semi-linear merge (rebase, then a merge commit: lib/semiLinear.ts). */
+type Choice = MergeMethod | "SEMILINEAR";
 
 function CompletePanel({ store, repo, number, mode, workItemIds, close }: { store: ActionStore; repo: string; number: number; mode: "complete" | "autoComplete"; workItemIds: number[]; close: () => void }) {
   const v = store.view!;
   const auto = mode === "autoComplete";
-  const [method, setMethod] = React.useState<MergeMethod | null>(v.defaults.mergeMethod);
+  const [method, setMethod] = React.useState<Choice | null>(v.defaults.mergeMethod);
+  // Semi-linear merge waits for the rebase, so it can only run now (not as auto-complete); it is listed, disabled with a reason, when the head can't be rewritten.
+  const semi = !auto && v.semiLinear.offered ? v.semiLinear : undefined;
+  const [running, setRunning] = React.useState(false);
+  const [failed, setFailed] = React.useState<string>();
   const repoDeletes = v.repo.deleteBranchOnMerge;
   const [del, setDel] = React.useState(repoDeletes || (!auto && v.defaults.deleteSourceBranch));
   const [wiOn, setWiOn] = React.useState(false);
@@ -264,8 +285,11 @@ function CompletePanel({ store, repo, number, mode, workItemIds, close }: { stor
   const [msgs, setMsgs] = React.useState<Awaited<ReturnType<typeof getMergeMessages>> | undefined>();
   const [wi, setWi] = React.useState<Wi>(workItemIds.length ? { t: "loading" } : { t: "none" });
   const selection = React.useRef(new DropdownSelection());
-  const methodItems = v.methods.map((m) => ({ id: m, text: mergeMethodLabel(m) }));
-  React.useEffect(() => { if (method) selection.current.select(v.methods.indexOf(method)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const methodItems: { id: Choice; text: string; disabled?: boolean }[] = [
+    ...v.methods.map((m) => ({ id: m, text: mergeMethodLabel(m) })),
+    ...(semi ? [{ id: "SEMILINEAR" as const, text: SEMI_LINEAR_LABEL, disabled: semi.disabled }] : []),
+  ];
+  React.useEffect(() => { if (method) selection.current.select(methodItems.findIndex((i) => i.id === method)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (!workItemIds.length) return;
@@ -277,12 +301,13 @@ function CompletePanel({ store, repo, number, mode, workItemIds, close }: { stor
     return () => { dead = true; };
   }, [workItemIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canCustom = !!method && supportsCustomMessage(method);
+  const canCustom = !!method && (method === "SEMILINEAR" || supportsCustomMessage(method));
   React.useEffect(() => {
     if (custom && canCustom && msgs === undefined) getMergeMessages(repo, number).then((m) => setMsgs(m ?? null));
   }, [custom, canCustom]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => {
-    if (!touched && msgs && method && method !== "REBASE") (setHeadline(msgs[method].headline), setBody(msgs[method].body));
+    const m = method === "SEMILINEAR" ? "MERGE" : method; // a semi-linear merge ends in an ordinary merge commit
+    if (!touched && msgs && m && m !== "REBASE") (setHeadline(msgs[m].headline), setBody(msgs[m].body));
   }, [msgs, method, touched]);
 
   const found = wi.t === "ready" ? wi.items.filter((i) => i.found) : [];
@@ -298,15 +323,27 @@ function CompletePanel({ store, repo, number, mode, workItemIds, close }: { stor
 
   const confirm = () => {
     if (!method) return;
-    close();
-    void store.complete({
-      mode,
-      mergeMethod: method,
+    const common = {
       commitHeadline: custom && canCustom ? headline : undefined,
       commitBody: custom && canCustom ? body : undefined,
       deleteSourceBranch: del && !delDisabled,
       workItems: wiOn && !wiWhy ? found : undefined,
-    });
+    };
+    if (method === "SEMILINEAR") {
+      // The panel stays open through the rebase and the merge, showing each step, and keeps the error if it can't finish.
+      setRunning(true);
+      setFailed(undefined);
+      void store.completeSemiLinear(common).then((ok) => {
+        setRunning(false);
+        if (ok) return close();
+        setFailed(store.error);
+        store.dismiss();
+        void store.refresh(); // the head may have moved (rebased): a second try must expect the new one
+      });
+      return;
+    }
+    close();
+    void store.complete({ mode, mergeMethod: method, ...common });
   };
   const title = auto ? "Set auto-complete" : "Complete pull request";
   const note = (id: string, why?: string) => (why ? <div id={id} className="gh-complete-why secondary-text body-s">{why}</div> : null);
@@ -315,19 +352,29 @@ function CompletePanel({ store, repo, number, mode, workItemIds, close }: { stor
     <Panel
       titleProps={{ text: title }}
       size={ContentSize.Medium}
-      onDismiss={close}
+      onDismiss={() => !running && close()}
       showSeparator
       footerButtonProps={[
-        { text: "Cancel", onClick: close },
-        { text: auto ? "Set auto-complete" : "Complete merge", primary: true, onClick: confirm, disabled: !method || store.busy },
+        { text: "Cancel", onClick: close, disabled: running },
+        { text: auto ? "Set auto-complete" : "Complete merge", primary: true, onClick: confirm, disabled: !method || store.busy || running },
       ]}
     >
       <div className="gh-complete flex-column">
         {auto && <div className="secondary-text body-m">GitHub will merge this pull request when its required checks and reviews pass.</div>}
         <FormItem label="Merge type">
-          <Dropdown ariaLabel="Merge type" items={methodItems} selection={selection.current} placeholder={method ? undefined : "No merge type is allowed"} onSelect={(_e, i) => (setMethod(i.id as MergeMethod), setTouched(false))} />
+          <Dropdown ariaLabel="Merge type" items={methodItems} selection={selection.current} disabled={running} placeholder={method ? undefined : "No merge type is allowed"} onSelect={(_e, i) => (setMethod(i.id as Choice), setTouched(false), setFailed(undefined))} />
         </FormItem>
+        {semi?.disabled && <div className="gh-complete-note secondary-text body-s">{SEMI_LINEAR_LABEL} isn&apos;t available. {semi.reason}</div>}
         {method && <MergeDiagram method={method} />}
+        {method === "SEMILINEAR" && !running && !failed && (
+          <div className="secondary-text body-s">GitHub has no semi-linear merge of its own, so this rebases {v.pr.headRefName} onto {v.pr.baseRefName} (if it is behind), waits for GitHub to finish, then merges it with a merge commit. Nothing is merged if the branch changes in between.</div>
+        )}
+        {running && store.semiLinearStep && (
+          <MessageCard severity={MessageCardSeverity.Info} className="gh-complete-progress">
+            <span className="flex-row flex-center gh-complete-step" role="status"><Spinner size={SpinnerSize.small} />{SEMI_LINEAR_STEP_TEXT[store.semiLinearStep]}</span>
+          </MessageCard>
+        )}
+        {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}
         <div className="font-weight-semibold">Post-completion options</div>
         <div className="gh-complete-option">
           <Checkbox label="Complete associated work items after merging" checked={wiOn && !wiWhy} disabled={!!wiWhy} onChange={(_e, c) => setWiOn(c)} ariaDescribedBy="gh-wi-why" />

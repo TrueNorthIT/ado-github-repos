@@ -25,8 +25,9 @@ import { LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButto
 import { Section, Well, WorkItemRow, useWorkItems } from "./PrPage";
 import { BranchBar, useDefaultBranch } from "./RepoHub";
 import { actionErrorText, actionStore } from "./actionStore";
-import { getCompareFiles, getNewPrCompare, getPrTemplates, getViewerLogin, invalidatePrs, mutate } from "./githubBrowse";
-import { patchHash } from "./hostNav";
+import { getCompareFiles, getForkNewPrCompare, getNewPrCompare, getPrTemplates, getViewerLogin, invalidatePrs, listForks, mutate } from "./githubBrowse";
+import { applySourceRepo, type Fork } from "./lib/forks";
+import { patchHash, useHashExtras } from "./hostNav";
 import { newPrWorkItemIds, prefillWorkItems } from "./lib/branchWorkItems";
 import type { BrowseState } from "./lib/browseState";
 import { executeCreatePlan, planCreatePr } from "./lib/createPrPlan";
@@ -132,15 +133,23 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   const def = useDefaultBranch(repo);
   const [source, setSource] = React.useState<string | null>(entry.source ?? null);
   const [target, setTarget] = React.useState<string | null>(entry.target ?? null);
+  // Batch H: the source branch may live in a fork of this repository (`sourceRepo` in the hash); null is this repository.
+  const { sourceRepo: hashSourceRepo } = useHashExtras();
+  const [headRepo, setHeadRepo] = React.useState<string | null>(hashSourceRepo && hashSourceRepo.toLowerCase() !== repo.toLowerCase() ? hashSourceRepo : null);
+  const forksLoad = useLoad(signedIn ? `forks|${repo}` : null, () => listForks(repo).catch(() => [] as Fork[]));
+  const forks = forksLoad.t === "ready" ? forksLoad.v : [];
+  const fork = headRepo ? forks.find((f) => f.fullName.toLowerCase() === headRepo.toLowerCase()) : undefined;
   React.useEffect(() => {
     if (target === null && def.defaultBranch) setTarget(defaultBranches({ defaultBranch: def.defaultBranch, entrySource: source }).target);
   }, [def.defaultBranch]); // eslint-disable-line react-hooks/exhaustive-deps -- only fills the default in
   // Keep the pair in the address (no history entry), so a reload or a copied link opens the same comparison.
-  React.useEffect(() => { patchHash((h) => applyNewPr(h, { source: source ?? undefined, target: target ?? undefined })); }, [source, target]);
+  React.useEffect(() => { patchHash((h) => applySourceRepo(applyNewPr(h, { source: source ?? undefined, target: target ?? undefined }), headRepo ?? undefined)); }, [source, target, headRepo]);
 
   const [reload, setReload] = React.useState(0);
-  const pair = source?.trim() && target?.trim() && source !== target ? { head: source, base: target } : null;
-  const cmpLoad = useLoad(pair ? `${repo}|${pair.base}|${pair.head}|${signedIn}` : null, () => getNewPrCompare(repo, pair!.base, pair!.head), reload);
+  // A fork's branch may share its name with the target (contributor:main into main); the compare then names the fork's owner.
+  const headOwner = headRepo?.split("/")[0];
+  const pair = source?.trim() && target?.trim() && (headRepo || source !== target) ? { head: source, base: target } : null;
+  const cmpLoad = useLoad(pair ? `${repo}|${pair.base}|${headRepo ?? ""}|${pair.head}|${signedIn}` : null, () => (headRepo ? getForkNewPrCompare(repo, pair!.base, headRepo, pair!.head) : getNewPrCompare(repo, pair!.base, pair!.head)), reload);
   const compare = cmpLoad.t === "ready" ? cmpLoad.v : null;
   // The template belongs to the target branch. A failure just means "no template".
   const tplLoad = useLoad(target ? `${repo}|${target}|${signedIn}` : null, () => getPrTemplates(repo, target!).catch(() => []));
@@ -178,7 +187,8 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   const wi = useWorkItems(workItemIds);
   const setBody = (v: string) => { touched.current.desc = true; setDesc(v); };
 
-  const blockers = createBlockers({ title, source, target, compare });
+  const forkMissing = headRepo && forksLoad.t === "ready" && !fork ? `You can't see the fork ${headRepo}, so a pull request can't be created from it.` : null;
+  const blockers = [...createBlockers({ title, source: source && headOwner ? `${headOwner}:${source}` : source, target, compare }), ...(forkMissing ? [forkMissing] : headRepo && !fork ? [CHECKING_MESSAGE] : [])];
   const [running, setRunning] = React.useState(false);
   const [failed, setFailed] = React.useState<string>();
   const send = async (req: Parameters<typeof mutate>[0]) => {
@@ -190,7 +200,7 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
     setFailed(undefined);
     try {
       const plan = planCreatePr({
-        repositoryId: compare.repoId, baseRefName: pair.base, headRefName: pair.head, title, body: desc, draft,
+        repositoryId: compare.repoId, baseRefName: pair.base, headRefName: pair.head, title, body: desc, draft, headRepositoryId: fork?.nodeId || undefined,
         reviewerUserIds: reviewers.filter((r) => r.kind === "user").map((r) => r.id),
         reviewerTeamIds: reviewers.filter((r) => r.kind === "team").map((r) => r.id),
         labelIds: labels.map((l) => l.id),
@@ -245,10 +255,25 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
         backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: back }}
       />
       <div className="gh-np-branches flex-row flex-center flex-wrap">
-        <BranchBar repo={repo} current={source ?? ""} defaultBranch={def.defaultBranch} onPick={setSource} />
+        {(forks.length > 0 || headRepo) && (
+          <Dropdown
+            className="gh-np-source-repo"
+            ariaLabel={`Source repository: ${headRepo ?? repo}`}
+            placeholder={headRepo ?? repo}
+            items={[{ id: repo, text: repo }, ...forks.map((f) => ({ id: f.fullName, text: f.fullName }))]}
+            onSelect={(_e, item) => {
+              const next = item.id.toLowerCase() === repo.toLowerCase() ? null : item.id;
+              if (next === headRepo) return;
+              setHeadRepo(next);
+              setSource(next ? forks.find((f) => f.fullName === next)?.defaultBranch ?? null : null); // a branch name means nothing in the other repository
+            }}
+            renderExpandable={(p) => <DropdownExpandableButton {...p} subtle iconProps={{ iconName: headRepo ? "GitFork" : "Repo" }} />}
+          />
+        )}
+        <BranchBar repo={headRepo ?? repo} current={source ?? ""} defaultBranch={fork?.defaultBranch ?? def.defaultBranch} onPick={setSource} />
         <span className="secondary-text">into</span>
         <BranchBar repo={repo} current={target ?? ""} defaultBranch={def.defaultBranch} onPick={setTarget} />
-        <Button subtle iconProps={{ iconName: "Switch" }} ariaLabel="Swap source and target" tooltipProps={{ text: "Swap source and target" }} disabled={!source && !target} onClick={swap} />
+        <Button subtle iconProps={{ iconName: "Switch" }} ariaLabel="Swap source and target" tooltipProps={{ text: headRepo ? "The source is in a fork, so it can't become the target" : "Swap source and target" }} disabled={(!source && !target) || !!headRepo} onClick={swap} />
       </div>
       <div className="page-content page-content-top gh-np-body">
         {existing && pair && (
@@ -387,7 +412,7 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
               <Tab id="files" name="Files" />
               <Tab id="commits" name="Commits" badgeCount={compare.commitCount} />
             </TabBar>
-            {tab === "files" ? <FilesPreview repo={repo} base={pair.base} head={pair.head} headOid={compare.headOid ?? pair.head} signIn={signIn} busy={busy} /> : <CommitsPreview repo={repo} compare={compare} />}
+            {tab === "files" ? <FilesPreview repo={repo} base={pair.base} head={headOwner ? `${headOwner}:${pair.head}` : pair.head} headOid={compare.headOid ?? pair.head} signIn={signIn} busy={busy} /> : <CommitsPreview repo={repo} compare={compare} />}
           </div>
         )}
       </div>

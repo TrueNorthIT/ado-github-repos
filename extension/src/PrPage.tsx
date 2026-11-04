@@ -21,7 +21,9 @@ import { reviewerName } from "./lib/copilotReview";
 import { prepareMarkdownHtml } from "./lib/markdown";
 import type { WorkItemRef } from "./lib/workItems";
 import { PermissionError } from "./connections";
-import { getCommitSignatures, getDeployments, getPr, invalidatePr } from "./githubBrowse";
+import { getBranchRules, getCodeOwnerSet, getCommitSignatures, getDeployments, getPr, invalidatePr } from "./githubBrowse";
+import type { BranchRule } from "./lib/branchRules";
+import { codeOwnerRequirement, reviewerGroups, type CodeOwnerSet, type ReviewerGroups } from "./lib/codeOwners";
 import { fetchWorkItems, type WorkItemsResult } from "./workItemsApi";
 import { openRepoHub } from "./hostNav";
 import { openInRepos, useRepoHref } from "./repoHref";
@@ -151,8 +153,41 @@ const REVIEW: Record<ReviewState, { text: string; icon: React.ReactNode }> = {
   PENDING: { text: "Waiting", icon: <Icon iconName="Clock" ariaLabel="Waiting for review" /> },
 };
 
-function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: ActionStore; edit?: EditData; repo: string }) {
+/**
+ * Required / Optional (lib/codeOwners.ts): the target branch's code owner requirement (classic protection from the actions query, rulesets over
+ * REST), then the CODEOWNERS file matched against the changed files. { kind: "single" } until all of it is known, and whenever any of it can't be.
+ */
+function useReviewerGroups(repo: string, number: number, baseRef: string, store: ActionStore, edit: EditData | undefined, list: PrReviewer[]): ReviewerGroups {
+  const [rules, setRules] = React.useState<{ key: string; v: BranchRule[] | null }>();
+  const [owners, setOwners] = React.useState<{ key: string; v: CodeOwnerSet | null | undefined }>();
+  const key = `${repo}|${baseRef}|${number}`;
+  React.useEffect(() => {
+    let dead = false;
+    getBranchRules(repo, baseRef).then((v) => !dead && setRules({ key, v }), () => !dead && setRules({ key, v: null }));
+    return () => { dead = true; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pr = store.status === "ready" ? store.view?.pr : undefined;
+  const classic = pr === undefined || pr.baseRef === undefined ? undefined : pr.baseRef?.branchProtectionRule ?? null;
+  const requirement = codeOwnerRequirement(classic, rules?.key === key ? rules.v : undefined);
+  React.useEffect(() => {
+    if (requirement !== true) return;
+    let dead = false;
+    getCodeOwnerSet(repo, baseRef, number).then((v) => !dead && setOwners({ key, v }), () => !dead && setOwners({ key, v: undefined }));
+    return () => { dead = true; };
+  }, [requirement, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  return React.useMemo(() => {
+    if (requirement === true && !edit) return { kind: "single" }; // the review requests (asCodeOwner, team slugs) aren't in yet
+    const people = list.map((r) => {
+      const q = edit?.reviewers.find((x) => sameReviewer(x, r.login));
+      return { login: r.login, request: q && { kind: q.kind, login: q.login, codeOwner: q.codeOwner } };
+    });
+    return reviewerGroups(people, requirement, owners?.key === key ? owners.v : undefined, repo.split("/")[0]);
+  }, [requirement, edit, list, owners, key, repo]);
+}
+
+function Reviewers({ list, store, edit, repo, number, baseRef }: { list: PrReviewer[]; store: ActionStore; edit?: EditData; repo: string; number: number; baseRef: string }) {
   const [adding, setAdding] = React.useState(false);
+  const groups = useReviewerGroups(repo, number, baseRef, store, edit, list);
   const canEdit = !!edit?.perms.reviewers;
   // CI-7: GitHub has no field that says whether Copilot code review is on, so it is offered and GitHub's own reason is shown if refused.
   const copilot = store.view?.copilot;
@@ -160,6 +195,27 @@ function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: Act
     ...(canEdit ? addItem(() => (store.dismissEditError(), setAdding(true)), store.busy, "Add", true) : []),
     ...(copilot?.offered ? [{ id: "copilot", important: false, text: "Request Copilot review", iconProps: { iconName: "Contact" }, disabled: store.busy, onActivate: () => void store.requestCopilotReview() }] : []),
   ];
+  const row = (r: PrReviewer) => {
+    const requested = edit?.reviewers.find((q) => sameReviewer(q, r.login));
+    return (
+      <li key={r.login} className="gh-pr-row flex-row flex-center">
+        <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
+        <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
+        {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
+        <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
+        {REVIEW[r.state].icon}
+        {canEdit && (requested ? <RemoveButton label={`Remove reviewer ${reviewerName(r.login)}`} disabled={store.busy} onClick={() => void store.removeReviewer(requested)} /> : <span className="gh-pr-remove-spacer" aria-hidden="true" />)}
+      </li>
+    );
+  };
+  // Native's sub-headings: "Required" and "Optional" (or "Requested" when the split isn't known). An empty group is left out.
+  const group = (label: string, people: PrReviewer[], title?: string) =>
+    people.length ? (
+      <React.Fragment key={label}>
+        <div className="gh-pr-sublabel body-s secondary-text font-weight-semibold" title={title}>{label}</div>
+        <ul className="gh-pr-list" aria-label={`${label} reviewers`}>{people.map(row)}</ul>
+      </React.Fragment>
+    ) : null;
   return (
     <Section title="Reviewers" commandBarItems={items.length ? items : undefined}>
       <EditError store={store} field="reviewers" />
@@ -168,24 +224,12 @@ function Reviewers({ list, store, edit, repo }: { list: PrReviewer[]; store: Act
       )}
       {store.copilotMessage && <MessageCard className="gh-pr-copilot-msg" severity={MessageCardSeverity.Warning} onDismiss={() => store.dismissCopilot()}>{store.copilotMessage}</MessageCard>}
       {list.length ? (
-        <>
-        <div className="gh-pr-sublabel body-s secondary-text font-weight-semibold">Requested</div>
-        <ul className="gh-pr-list">
-          {list.map((r) => {
-            const requested = edit?.reviewers.find((q) => sameReviewer(q, r.login));
-            return (
-              <li key={r.login} className="gh-pr-row flex-row flex-center">
-                <VssPersona imageUrl={r.avatarUrl} displayName={reviewerName(r.login)} size="small" suppressPersonaCard showInitialsOnImageError />
-                <span className="gh-pr-grow text-ellipsis">{reviewerName(r.login)}</span>
-                {requested?.badge && <Pill size={PillSize.compact} variant={PillVariant.outlined}>{requested.badge}</Pill>}
-                <span className="secondary-text body-s">{REVIEW[r.state].text}</span>
-                {REVIEW[r.state].icon}
-                {canEdit && (requested ? <RemoveButton label={`Remove reviewer ${reviewerName(r.login)}`} disabled={store.busy} onClick={() => void store.removeReviewer(requested)} /> : <span className="gh-pr-remove-spacer" aria-hidden="true" />)}
-              </li>
-            );
-          })}
-        </ul>
-        </>
+        groups.kind === "single" ? group("Requested", list) : (
+          <>
+            {group("Required", list.filter((r) => groups.required.includes(r.login)), "Code owners of the changed files: the target branch requires one of them to approve.")}
+            {group("Optional", list.filter((r) => groups.optional.includes(r.login)))}
+          </>
+        )
       ) : (
         <Well>No reviewers</Well>
       )}
@@ -417,7 +461,7 @@ function Overview({ pr, repo, prTab, openFile, signIn, busy, actions, edit }: { 
       </div>
       <div className="gh-pr-aside">
         <Deployments repo={repo} number={pr.number} version={actions.version} />
-        <Reviewers list={pr.reviewers} store={actions} edit={edit} repo={repo} />
+        <Reviewers list={pr.reviewers} store={actions} edit={edit} repo={repo} number={pr.number} baseRef={pr.baseRef} />
         <Labels pr={pr} store={actions} edit={edit} repo={repo} />
         <WorkItems ids={pr.workItemIds} pinned={pr.workItemIdsOutsideBody} version={actions.version} store={actions} edit={edit} />
         {edit && <Assignees store={actions} edit={edit} repo={repo} />}

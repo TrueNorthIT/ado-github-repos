@@ -75,12 +75,12 @@ async function bodyMessage(res: Response): Promise<string | undefined> {
   }
 }
 
-async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET"): Promise<Response> {
+async function request(url: string, accept: string, retry = true, body?: string, method = body ? "POST" : "GET", fresh = false): Promise<Response> {
   let res: Response;
   try {
     // The raw and html representations of a file share one ETag (the blob sha). Through the HTTP cache, an html request after a
     // raw one revalidated, got 304 and was handed the cached raw text, so "Rendered" markdown showed source (seen live in 0.28.0).
-    const cache: RequestCache = /\.(raw|html)\b/.test(accept) ? "no-store" : "default";
+    const cache: RequestCache = fresh || /\.(raw|html)\b/.test(accept) ? "no-store" : "default";
     res = await fetch(url.startsWith("http") ? url : API + url, { method, body, cache, headers: { Authorization: `Bearer ${await token(!retry)}`, Accept: accept, ...(body && { "Content-Type": "application/json" }) } });
   } catch (e) {
     if (e instanceof GhError) throw e;
@@ -88,7 +88,7 @@ async function request(url: string, accept: string, retry = true, body?: string,
   }
   if (res.ok) return res;
   if (res.status === 401) {
-    if (retry) return request(url, accept, false, body, method); // token may have been revoked or just expired: refresh once
+    if (retry) return request(url, accept, false, body, method, fresh); // token may have been revoked or just expired: refresh once
     cached = null;
     throw new GhError("auth", 401);
   }
@@ -1057,3 +1057,98 @@ export const getCommitTree = async (repo: string, sha: string): Promise<string> 
 export async function searchCode(q: string, page = 1, perPage = 50): Promise<RawSearch> {
   return (await request(`/search/code?q=${encodeURIComponent(q)}&per_page=${perPage}&page=${page}`, "application/vnd.github.text-match+json")).json();
 }
+
+// ---------- Batch H: semi-linear merge, branch rules (rulesets) and forks ----------
+import { branchRulesRequest, toBranchRules, type BranchRule } from "./lib/branchRules";
+import { CODEOWNERS_PATHS, codeOwnerSet, parseCodeOwners, type CodeOwnerSet } from "./lib/codeOwners";
+import { createForkRequest, forkCompareRequest, forksRequest, mapForkCompare, openPullsFromRequest, toFork, toForks, type Fork } from "./lib/forks";
+import { MAX_COMPARE_COMMITS as NEW_PR_COMMITS } from "./lib/newPr";
+
+/** A GET that skips the HTTP cache (GitHub's REST answers carry max-age=60): for polling a pull request while it is rebased. */
+export async function restJsonFresh<T = any>(r: RestRequest): Promise<T> {
+  return (await request(r.path, "application/vnd.github+json", true, undefined, r.method, true)).json();
+}
+
+const branchRuleSets = new Map<string, { at: number; p: Promise<BranchRule[] | null> }>();
+/** The rulesets' rules on `branch` (lib/branchRules.ts); null when GitHub wouldn't say (no access, an old GitHub Enterprise). Cached like the PR page. */
+export const getBranchRules = (repo: string, branch: string): Promise<BranchRule[] | null> =>
+  ttl(branchRuleSets, `${repo}|${branch}`, async () => {
+    try {
+      return toBranchRules((await restJson(branchRulesRequest(repo, branch))).body);
+    } catch (e) {
+      if (e instanceof GhError && e.kind === "auth") throw e;
+      return null;
+    }
+  });
+
+const codeOwnerSets = new Map<string, { at: number; p: Promise<CodeOwnerSet | null> }>();
+/**
+ * The code owners of a pull request's changed files, from the CODEOWNERS file on its target branch (lib/codeOwners.ts); null when the
+ * branch has none. Throws when it can't be worked out (a read failed, or the pull request has more files than GitHub lists).
+ */
+export const getCodeOwnerSet = (repo: string, base: string, number: number): Promise<CodeOwnerSet | null> =>
+  ttl(codeOwnerSets, `${repo}|${base}|${number}`, async () => {
+    let text: string | null = null;
+    for (const path of CODEOWNERS_PATHS) {
+      try {
+        text = new TextDecoder().decode(await getRaw(repo, base, path));
+        break;
+      } catch (e) {
+        if (e instanceof GhError && e.kind === "access" && e.status === 404) continue;
+        throw e;
+      }
+    }
+    if (text === null) return null;
+    const files = await getPrFiles(repo, number);
+    if (files.length >= MAX_PR_FILES) throw new Error("Too many changed files to match against CODEOWNERS");
+    return codeOwnerSet(parseCodeOwners(text), files.map((f) => f.path));
+  });
+
+const forkLists = new Map<string, { at: number; p: Promise<Fork[]> }>();
+const MAX_FORKS = 300;
+/** The forks of `repo` the viewer can see, newest first, up to 300 (lib/forks.ts). Cached like the PR page. */
+export const listForks = (repo: string): Promise<Fork[]> =>
+  ttl(forkLists, repo, async () => {
+    const out: Fork[] = [];
+    for (let page = 1; out.length < MAX_FORKS; page++) {
+      const { body, link } = await restJson(forksRequest(repo, page));
+      out.push(...toForks(body));
+      if (!link?.includes('rel="next"')) break;
+    }
+    return out.slice(0, MAX_FORKS);
+  });
+export const invalidateForks = () => forkLists.clear();
+
+/** Behind / ahead of a fork's default branch against the parent's `base`, from the cross-repository compare. */
+export const getForkAheadBehind = (repo: string, base: string, fork: Fork): Promise<AheadBehind> =>
+  refTtl(`forkcompare|${repo}|${base}|${fork.fullName}|${fork.defaultBranch}`, async () => mapCompare((await restJson(forkCompareRequest(repo, base, fork.owner, fork.defaultBranch))).body));
+
+/** Creates a fork (POST /repos/{repo}/forks): under the viewer's account, or `organization`. Resolves with the new repository as GitHub reports it. */
+export async function createFork(repo: string, p: { organization?: string; defaultBranchOnly?: boolean }): Promise<Fork | null> {
+  const made = toFork(await restSend(createForkRequest(repo, p)));
+  invalidateForks();
+  return made;
+}
+
+/** The organisations the viewer belongs to (logins), for "Fork into". [] when GitHub won't say. */
+export async function getViewerOrgs(): Promise<string[]> {
+  try {
+    const { body } = await restJson<{ login?: string }[]>({ method: "GET", path: "/user/orgs?per_page=100" });
+    return Array.isArray(body) ? body.map((o) => o.login).filter((l): l is string => typeof l === "string") : [];
+  } catch (e) {
+    if (e instanceof GhError && e.kind === "auth") throw e;
+    return [];
+  }
+}
+
+/** The New pull request comparison for `forkOwner:head` into `base` (lib/forks.ts mapForkCompare). Shares the page's compare cache. */
+export const getForkNewPrCompare = (repo: string, base: string, forkRepo: string, head: string) =>
+  ttl(newPrCompares, JSON.stringify([repo, base, forkRepo, head]), async () => {
+    const owner = forkRepo.split("/")[0];
+    const [info, cmp, pulls] = await Promise.all([
+      json<any>(repoPath(repo)),
+      restJson(forkCompareRequest(repo, base, owner, head, NEW_PR_COMMITS)).then((r) => r.body, (e) => { if (e instanceof GhError && e.status === 404) return null; throw e; }),
+      restJson(openPullsFromRequest(repo, base, owner, head)).then((r) => r.body, () => []),
+    ]);
+    return mapForkCompare(info, cmp, pulls);
+  });

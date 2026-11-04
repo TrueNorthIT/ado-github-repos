@@ -41,6 +41,10 @@ interface Spec {
   /** The head is in a fork the viewer can't push to (Rebase is disabled). */
   fork?: boolean;
   settings?: { merge?: boolean; squash?: boolean; rebase?: boolean; autoMerge?: boolean; deleteOnMerge?: boolean };
+  /** The target has moved on (3 commits) but the branch rules don't require an up-to-date branch: Semi-linear merge rebases first. */
+  baseMoved?: boolean;
+  /** The head branch is protected against force pushes (classic rule): Semi-linear merge is disabled. */
+  protectedHead?: boolean;
 }
 const WI = "Relates to AB#1000 and AB#1001.";
 export const RERUN_RUN = 9001;
@@ -62,6 +66,8 @@ const SPECS: Record<number, Spec> = {
   313: { title: "Queue: the base branch requires a merge queue", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, queue: {} },
   314: { title: "Queued: already waiting in the merge queue", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, queue: { queued: true } },
   315: { title: "Fork behind: the head is in a fork you can't push to", mergeStateStatus: "BEHIND", reviewDecision: "APPROVED", checks: GREEN, body: WI, fork: true },
+  317: { title: "Semi-linear: the target has moved on, so Semi-linear merge rebases first", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, baseMoved: true },
+  318: { title: "Protected head: the source branch refuses force pushes", mergeStateStatus: "CLEAN", reviewDecision: "APPROVED", checks: GREEN, body: WI, protectedHead: true },
   311: {
     title: "Duplicates: re-runs and other workflow events", mergeStateStatus: "CLEAN", reviewDecision: null, body: WI,
     checks: [
@@ -99,8 +105,16 @@ interface Live {
   /** Set while queued: fetches since it was added, which move it up the queue and finally merge it. */
   queue: { ticks: number } | null;
   copilotPending: boolean;
+  /** The head after a rebase (else headSha(n)). */
+  head?: string;
+  /** REST pull request polls left that still report the old head after a rebase. */
+  rebaseLeft?: number;
+  /** Commits the head is behind the target (REST compare). */
+  behind?: number;
 }
 const live = new Map<number, Live>();
+/** The current head of fixture PR `n`: moved by a rebase. */
+const curHead = (n: number) => live.get(n)?.head ?? headSha(n);
 const specOf = (n: number) => SPECS[n];
 
 // Register the fixtures as ordinary open and closed pull requests, newest first, so they head the Active list.
@@ -118,7 +132,7 @@ function register(n: number, s: Spec, i: number) {
     },
   };
   PRS.unshift(pr);
-  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0, checks: s.checks.map((c) => ({ ...c })), rerunLeft: 0, queue: s.queue?.queued || (n === 313 && scenario() === "queued") ? { ticks: 0 } : null, copilotPending: false });
+  live.set(n, { mergeStateStatus: s.mergeStateStatus, reviewDecision: s.reviewDecision, latestReview: null, autoMergeRequest: null, headRefDeleted: false, subscription: (s.author ?? "ann") === ME ? "SUBSCRIBED" : "UNSUBSCRIBED", unknownLeft: s.unknownFetches ?? 0, checks: s.checks.map((c) => ({ ...c })), rerunLeft: 0, queue: s.queue?.queued || (n === 313 && scenario() === "queued") ? { ticks: 0 } : null, copilotPending: false, behind: s.baseMoved ? 3 : 0 });
 }
 Object.keys(SPECS).map(Number).sort((a, b) => b - a).forEach((n, i) => register(n, SPECS[n], i));
 let nextRevert = 900;
@@ -166,12 +180,13 @@ export function actionsNode(n: number) {
     defaultBranchRef: { name: "main" },
     pullRequest: {
       id: `PR_${n}`, state: p.node.state, isDraft: p.node.isDraft, merged: p.node.state === "MERGED", mergeStateStatus, reviewDecision: l.reviewDecision,
-      baseRefName: p.node.baseRefName, headRefName: p.node.headRefName, headRefOid: headSha(n), isCrossRepository: !!s.fork, headRepository: { nameWithOwner: s.fork ? "contributor/github-repos" : PR_REPO, viewerPermission: s.fork ? "READ" : "ADMIN" },
-      maintainerCanModify: false, viewerCanUpdateBranch: open && mergeStateStatus === "BEHIND",
+      baseRefName: p.node.baseRefName, headRefName: p.node.headRefName, headRefOid: curHead(n), isCrossRepository: !!s.fork, headRepository: { nameWithOwner: s.fork ? "contributor/github-repos" : PR_REPO, viewerPermission: s.fork ? "READ" : "ADMIN" },
+      maintainerCanModify: false, viewerCanUpdateBranch: open && (mergeStateStatus === "BEHIND" || !!l.behind),
       isMergeQueueEnabled: !!s.queue, isInMergeQueue: !!l.queue, mergeQueueEntry: entry,
       reviewRequests: { nodes: l.copilotPending ? [{ requestedReviewer: { __typename: "Bot", login: "copilot-pull-request-reviewer" } }] : [] },
       // GitHub reports false here for every open PR; the app asks about push permission instead (lib/prActions.ts).
-      headRef: l.headRefDeleted ? null : { id: `REF_${n}`, name: p.node.headRefName, branchProtectionRule: null },
+      headRef: l.headRefDeleted ? null : { id: `REF_${n}`, name: p.node.headRefName, branchProtectionRule: s.protectedHead ? { allowsDeletions: false, allowsForcePushes: false } : null },
+      baseRef: { branchProtectionRule: null },
       viewerDidAuthor: p.node.author?.login === ME, viewerSubscription: l.subscription,
       viewerCanUpdate: open, viewerCanClose: open, viewerCanReopen: p.node.state === "CLOSED", viewerCanDeleteHeadRef: false,
       viewerCanEnableAutoMerge: open && !!st.autoMerge && !l.autoMergeRequest, viewerCanDisableAutoMerge: open && !!l.autoMergeRequest, viewerCanMergeAsAdmin: false,
@@ -218,7 +233,7 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
       return { data: { dismissPullRequestReview: { pullRequestReview: { id: `PRR_${n}`, state: "DISMISSED" } } } };
     case "mergePullRequest":
     case "enablePullRequestAutoMerge": {
-      if (scenario === "headMoved" || input.expectedHeadOid !== headSha(n)) return fail("Head branch was modified. Review and try the merge again.");
+      if (scenario === "headMoved" || input.expectedHeadOid !== curHead(n)) return fail("Head branch was modified. Review and try the merge again.");
       const s = specOf(n).settings ?? {};
       const allowed = { MERGE: s.merge ?? true, SQUASH: s.squash ?? true, REBASE: s.rebase ?? true }[input.mergeMethod as "MERGE"];
       if (!allowed) return fail(`${input.mergeMethod} merges are not allowed on this repository.`);
@@ -255,9 +270,15 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
       l.subscription = input.state;
       return { data: { updateSubscription: { subscribable: { viewerSubscription: l.subscription } } } };
     case "updatePullRequestBranch":
-      if (input.expectedHeadOid !== headSha(n)) return fail("Head branch was modified. Review and try the update again.");
+      if (input.expectedHeadOid !== curHead(n)) return fail("Head branch was modified. Review and try the update again.");
       l.mergeStateStatus = "CLEAN";
       l.unknownLeft = 2; // GitHub works out mergeability again after the push
+      if (input.updateMethod === "REBASE" && specOf(n).baseMoved) {
+        // A rebase rewrites the head: the new sha shows up on REST a couple of polls later (the semi-linear merge waits for it).
+        l.head = "5eb1" + curHead(n).slice(4);
+        l.rebaseLeft = 2;
+        l.behind = 0;
+      }
       return { data: { updatePullRequestBranch: { pullRequest: { id: `PR_${n}`, headRefOid: headSha(n), mergeStateStatus: "UNKNOWN", viewerCanUpdateBranch: false } } } };
     case "enqueuePullRequest":
       if (!specOf(n).queue) return fail("Pull request is not eligible for the merge queue");
@@ -282,6 +303,71 @@ export function actionsMutation(query: string, variables: Record<string, any>, s
       p.node.baseRefName = input.baseRefName;
       return { data: { updatePullRequest: { pullRequest: { id: `PR_${n}`, baseRefName: p.node.baseRefName } } } };
   }
+}
+
+// ---------- REST: the semi-linear merge's compare, poll and merge, the branch rules and CODEOWNERS (batch H) ----------
+
+const CODEOWNERS = `# Code owners of the mock repository
+*        @ann @bob-dev
+*.md     @carol
+/docs/   @carol
+`;
+
+/**
+ * REST answers for the fixture PRs, `rest` being the path after /repos/{owner}/{repo}. undefined when not ours.
+ * Scenarios: "rebaseConflict" (GitHub reports conflicts after the rebase), "rebaseStuck" (the new head never shows up: the wait times out),
+ * "mergeBlocked" (405: a required check must pass on the rebased commits).
+ */
+export function prActionsRest(repo: string, rest: string, init: RequestInit | undefined, sc: string): { status: number; body?: unknown; text?: string } | undefined {
+  if (repo.toLowerCase() !== PR_REPO) return undefined;
+  const method = init?.method ?? "GET";
+  // The target branch's CODEOWNERS: with main's code-owner rule below, #200's reviewers split into Required (ann, bob-dev, carol) and Optional.
+  if (/^\/contents\/\.github\/CODEOWNERS(\?|$)/.test(rest)) return sc === "noCodeOwners" ? { status: 404, body: { message: "Not Found" } } : { status: 200, text: CODEOWNERS };
+  const rules = /^\/rules\/branches\/(.+)$/.exec(rest);
+  if (rules && method === "GET") {
+    const branch = rules[1].split("/").map(decodeURIComponent).join("/");
+    // main requires a code owner's review through a ruleset; the reviewers section then groups Required and Optional.
+    if (branch === "main") return { status: 200, body: [{ type: "pull_request", ruleset_source_type: "Repository", ruleset_source: PR_REPO, ruleset_id: 7, parameters: { require_code_owner_review: true, required_approving_review_count: 1, dismiss_stale_reviews_on_push: false, require_last_push_approval: false, required_review_thread_resolution: false } }] };
+    return { status: 200, body: [] };
+  }
+  const cmp = /^\/compare\/([^.]+)\.\.\.([0-9a-f]{40})$/.exec(rest.split("?")[0]);
+  if (cmp && method === "GET") {
+    const n = [...live.keys()].find((k) => curHead(k) === cmp[2]);
+    if (n === undefined) return undefined;
+    const behind = live.get(n)!.behind ?? 0;
+    return { status: 200, body: { status: behind ? "diverged" : "ahead", ahead_by: 1, behind_by: behind, total_commits: 1, commits: [], files: [] } };
+  }
+  const pull = /^\/pulls\/(\d+)(\/merge)?$/.exec(rest);
+  if (!pull) return undefined;
+  const n = Number(pull[1]);
+  const p = prOf(n), l = live.get(n);
+  if (!p || !l) return undefined;
+  if (!pull[2] && method === "GET") {
+    const stale = sc === "rebaseStuck" || (l.rebaseLeft ?? 0) > 0;
+    if ((l.rebaseLeft ?? 0) > 0) l.rebaseLeft!--;
+    const sha = stale && l.head ? headSha(n) : curHead(n);
+    const conflict = sc === "rebaseConflict" && !!l.head;
+    return {
+      status: 200,
+      body: {
+        number: n, state: p.node.state === "OPEN" ? "open" : "closed", merged: p.node.state === "MERGED", head: { sha, ref: p.node.headRefName },
+        mergeable: stale ? null : !conflict, mergeable_state: stale ? "unknown" : conflict ? "dirty" : l.mergeStateStatus.toLowerCase(),
+      },
+    };
+  }
+  if (pull[2] && method === "PUT") {
+    const b = JSON.parse(String(init?.body ?? "{}"));
+    if (b.sha !== curHead(n)) return { status: 409, body: { message: "Head branch was modified. Review and try the merge again." } };
+    const s = specOf(n).settings ?? {};
+    const allowed = { merge: s.merge ?? true, squash: s.squash ?? true, rebase: s.rebase ?? true }[b.merge_method as "merge"] ?? false;
+    if (!allowed) return { status: 405, body: { message: `${b.merge_method} merges are not allowed on this repository.` } };
+    if (sc === "mergeBlocked") return { status: 405, body: { message: "Required status check \"build\" is expected." } };
+    if (p.node.isDraft || !["CLEAN", "HAS_HOOKS", "UNSTABLE"].includes(l.mergeStateStatus)) return { status: 405, body: { message: "Pull Request is not mergeable" } };
+    Object.assign(p.node, { state: "MERGED", mergedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    if (s.deleteOnMerge) l.headRefDeleted = true;
+    return { status: 200, body: { sha: "3e6e" + curHead(n).slice(4), merged: true, message: "Pull Request successfully merged" } };
+  }
+  return undefined;
 }
 
 // ---------- Azure DevOps work items ----------
