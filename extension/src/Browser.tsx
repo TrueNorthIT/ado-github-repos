@@ -54,6 +54,7 @@ import { CloneButton } from "./CloneButton";
 import { archiveUrl, cloneUrls, type CloneUrls } from "./lib/cloneUrls";
 import { copyLinkText, selectionLines, withLines, type LineRange } from "./lib/lineHash";
 import "./browser.css";
+import { PrLinkHovers } from "./HoverCard";
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf("/")));
 const baseOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
@@ -147,7 +148,12 @@ export function Markdown({ prepared, repo, refName, go }: { prepared: PreparedMa
   };
 
   // prepared.html has been through prepareMarkdownHtml (DOMPurify + link/image rewriting); nothing else goes in here.
-  return <div ref={box} className="gh-markdown" onClick={onClick} dangerouslySetInnerHTML={{ __html: prepared.html }} />;
+  return (
+    <>
+      <div ref={box} className="gh-markdown" onClick={onClick} dangerouslySetInnerHTML={{ __html: prepared.html }} />
+      <PrLinkHovers box={box} repo={repo} />
+    </>
+  );
 }
 
 // ---------- code (B-5) ----------

@@ -8,6 +8,7 @@ import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon } from "azure-devops-ui/Icon";
 import { Tab, TabBar } from "azure-devops-ui/Tabs";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { PersonHover } from "./HoverCard";
 import { Link } from "azure-devops-ui/Link";
 import { MenuButton, MenuItemType, MoreButton } from "azure-devops-ui/Menu";
 import { ITableColumn, SimpleTableCell, Table, TwoLineTableCell } from "azure-devops-ui/Table";
@@ -263,7 +264,7 @@ function Summary({ repo, state, go, data, canWrite, now }: RunPageProps & { data
           <div className="gh-act-sum-top flex-row flex-center">
             <h2 className="gh-act-sum-title flex-row flex-center flex-grow">
               <span>{triggerText(run.event)}</span>
-              {run.actor && <><span className="gh-act-sum-by">by</span><VssPersona imageUrl={run.actor.avatarUrl} displayName={run.actor.name} size="small" suppressPersonaCard showInitialsOnImageError /><span className="text-ellipsis">{run.actor.name}</span></>}
+              {run.actor && <><span className="gh-act-sum-by">by</span><PersonHover repo={repo} login={run.actor.login} name={run.actor.name} avatarUrl={run.actor.avatarUrl}><VssPersona imageUrl={run.actor.avatarUrl} displayName={run.actor.name} size="small" suppressPersonaCard showInitialsOnImageError /><span className="text-ellipsis">{run.actor.name}</span></PersonHover></>}
             </h2>
             {data.latestAttempt > 1 && (
               <MenuButton

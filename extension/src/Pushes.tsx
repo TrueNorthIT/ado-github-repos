@@ -13,6 +13,7 @@ import { SimpleTableCell, Table, TableColumnLayout, type ITableColumn } from "az
 import { ExpandableTreeCell, ITreeColumn, Tree } from "azure-devops-ui/TreeEx";
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { PersonHover } from "./HoverCard";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { groupPushesByDate, pushTitle, type PushHead, type PushRow } from "./lib/pushes";
 import { applyPushFilters, isPushPeriod, noPushesText, PUSH_PERIODS, type PushPeriod } from "./lib/pushesHash";
@@ -83,7 +84,7 @@ function PushDay({ repo, branch, pushes, heads, open, expanded, toggle, keyOf, d
         const title = head ? pushTitle(push, head) : `Updated to ${push.shortAfter}`;
         return (
           <ExpandableTreeCell key="push" columnIndex={columnIndex} treeColumn={treeColumn} treeItem={treeItem}>
-            <VssPersona imageUrl={push.actor.avatarUrl} displayName={push.actor.name} size="medium" suppressPersonaCard showInitialsOnImageError />
+            <PersonHover login={push.actor.login} name={push.actor.name} avatarUrl={push.actor.avatarUrl}><VssPersona imageUrl={push.actor.avatarUrl} displayName={push.actor.name} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
             <div className="gh-push-text flex-column flex-grow">
               <div className="gh-push-line1 flex-row flex-center">
                 <Link className="gh-push-title commit-title font-weight-semibold text-ellipsis" subtle removeUnderline href={href("commits", { repo, ref: branch, commit: push.after })} onClick={hubClick(() => open(push.after))}>

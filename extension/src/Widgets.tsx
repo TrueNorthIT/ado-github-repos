@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, TwoLineTableCell } from "azure-devops-ui/Table";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { PersonHover } from "./HoverCard";
 import { Link } from "azure-devops-ui/Link";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
@@ -130,7 +131,7 @@ function prColumns(ctx: ProjectCtx, repo: string, wide: boolean): ITableColumn<W
       columnLayout: TableColumnLayout.none,
       renderCell: (_r, columnIndex, tableColumn, pr) => (
         <SimpleTableCell key="avatar" columnIndex={columnIndex} tableColumn={tableColumn}>
-          <VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError />
+          <PersonHover repo={repo} login={pr.authorLogin} avatarUrl={pr.avatarUrl}><VssPersona imageUrl={pr.avatarUrl} displayName={pr.authorLogin} size="medium" suppressPersonaCard showInitialsOnImageError /></PersonHover>
         </SimpleTableCell>
       ),
     },

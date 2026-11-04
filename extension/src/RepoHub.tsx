@@ -8,6 +8,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Icon, IconSize } from "azure-devops-ui/Icon";
 import { Status, Statuses, StatusSize } from "azure-devops-ui/Status";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { HoverRepoContext, PersonHover, PrHover } from "./HoverCard";
 import { ObservableValue, type IReadonlyObservableValue } from "azure-devops-ui/Core/Observable";
 import { ArrayItemProvider, type IItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { BrowseState } from "./lib/browseState";
@@ -74,7 +75,7 @@ export function RepoHubPage({ state, go, children }: { state: BrowseState; go: H
   const repo = state.repo;
   React.useEffect(() => { if (!state.repo && fallback.repo) go({ repo: fallback.repo }, "ifEmpty"); }, [state.repo, fallback.repo]); // eslint-disable-line react-hooks/exhaustive-deps
   let body: React.ReactNode;
-  if (repo) body = children(repo);
+  if (repo) body = <HoverRepoContext.Provider value={repo}>{children(repo)}</HoverRepoContext.Provider>;
   else if (fallback.none) body = <ZeroData iconProps={{ iconName: "PlugConnected" }} imageAltText="No GitHub connections" primaryText="No GitHub repositories" secondaryText="Connect GitHub repositories to this project in Project settings." />;
   else body = <Loading />;
   return (
@@ -132,10 +133,12 @@ export function BranchBar({ repo, current, defaultBranch, onPick, inTitle }: { r
 
 /** A 16px avatar (azure-devops-ui VssPersona) with the person's name, as in native's commit rows. */
 export const PersonLine = ({ person, size = "extra-extra-small", className = "" }: { person: Person; size?: "extra-extra-small" | "small"; className?: string }) => (
-  <span className={`gh-person flex-row flex-center ${className}`}>
-    <VssPersona imageUrl={person.avatarUrl} displayName={person.name} size={size} suppressPersonaCard showInitialsOnImageError />
-    <span className="gh-person-name text-ellipsis">{person.name}</span>
-  </span>
+  <PersonHover login={person.login} name={person.name} avatarUrl={person.avatarUrl}>
+    <span className={`gh-person flex-row flex-center ${className}`}>
+      <VssPersona imageUrl={person.avatarUrl} displayName={person.name} size={size} suppressPersonaCard showInitialsOnImageError />
+      <span className="gh-person-name text-ellipsis">{person.name}</span>
+    </span>
+  </PersonHover>
 );
 
 /** "Today at 14:18", "6 Nov 2025 at 13:43": native's commit date (a time.bolt-time-item). */
@@ -163,8 +166,8 @@ export function CheckStatusCell({ status }: { status: CheckStatus | null }) {
 
 export const PrCell = ({ number, onOpen, href }: { number: number | null; onOpen: (n: number) => void; href?: string }) =>
   number === null ? null : (
-    <a className="gh-pr-ref bolt-table-link font-weight-semibold font-size-mm flex-row flex-center" href={href} onClick={(e) => { if (!(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) { e.preventDefault(); onOpen(number); } }}>
+    <PrHover number={number}><a className="gh-pr-ref bolt-table-link font-weight-semibold font-size-mm flex-row flex-center" href={href} onClick={(e) => { if (!(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) { e.preventDefault(); onOpen(number); } }}>
       <Icon iconName="BranchPullRequest" size={IconSize.small} className="gh-pr-ref-icon" />
       <span>{number}</span>
-    </a>
+    </a></PrHover>
   );

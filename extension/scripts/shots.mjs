@@ -31,6 +31,14 @@ const WIDGET_PAGES = {
 /** name -> query and hash after hub.html. */
 const MOCK_PAGES = {
   files: `?hub=files${REPO}`,
+  // Hover cards (src/HoverCard.tsx): ?click=hover:… (src/dev/main.tsx) rests the pointer on a person, a PR number or an AB# pill.
+  "hover-person": `?hub=commits&click=${encodeURIComponent("hover:.gh-hover-anchor > .gh-person")}${REPO}`,
+  "hover-pr": `?hub=branches&click=${encodeURIComponent("hover:.gh-hover-anchor > .gh-pr-ref")}${REPO}&branchTab=all`,
+  "hover-workitem": `?hub=commits&click=${encodeURIComponent("hover:.gh-wi-pills .gh-hover-anchor")}${REPO}`,
+  "hover-pr-author": `?hub=prs&click=${encodeURIComponent("hover:.gh-hover-anchor .vss-Persona")}${REPO}&view=prs`,
+  "hover-pr-merged": `?hub=commits&click=${encodeURIComponent("hover:.gh-hover-anchor > .gh-pr-ref")}${REPO}`,
+  "hover-reviewer": `?hub=prs&click=${encodeURIComponent("hover:.gh-pr-row .gh-hover-anchor")}${REPO}&view=prs&pr=200`,
+  "hover-fails": `?hub=prs&scenario=hoverFails&click=${encodeURIComponent("hover:.gh-hover-anchor .vss-Persona")}${REPO}&view=prs`,
   "files-clone": `?hub=files&click=${encodeURIComponent('button[aria-label="Clone repository"]')}${REPO}`,
   "file-lines": `?hub=files${REPO}&path=src%2Findex.ts&line=3&lineEnd=5`,
   "file-edit-workflow": `?hub=files${REPO}&ref=main&path=.github%2Fworkflows%2Fci.yml&edit=true`,
