@@ -10,11 +10,12 @@ import { CommentBox } from "./CommentBox";
 import { Failure } from "./CommentParts";
 import { BATCH_KEY, REVIEW_KEY, useFeed, type FeedStore } from "./feedStore";
 import type { ThreadTarget } from "./lib/newThread";
+import { linesLabel } from "./lib/inlineThreads";
 import { canSubmitReview, type SubmitEvent } from "./lib/pendingReview";
 
 export const people = (store: FeedStore) => [...new Set([store.viewer.login, ...store.items.flatMap((i) => (i.kind === "event" ? [i.actor] : i.kind === "comment" ? [i.author] : i.comments.map((c) => c.author)))].filter(Boolean))];
 
-const where = (t: ThreadTarget) => (t.subjectType === "FILE" ? t.path : t.startLine !== undefined && t.startLine !== t.line ? `${t.path}, lines ${t.startLine} to ${t.line}` : `${t.path}, line ${t.line}`);
+const where = (t: ThreadTarget) => (t.subjectType === "FILE" ? t.path : `${t.path}, ${linesLabel(t)}`);
 
 /**
  * A new comment on a line, a range or a whole file. "Add single comment" posts it at once; "Start a review" keeps it pending with the viewer's other

@@ -80,6 +80,8 @@ if (clicks) {
   const onScreen = (e: Element) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
   const busy = () => inFlight > 0 || Array.from(document.querySelectorAll(".shimmer, .bolt-spinner")).some(onScreen);
   const find = (t: string): HTMLElement | null => {
+    const at = /^(.*)@([^@]+)$/.exec(t);
+    if (at && !t.startsWith("text:")) return Array.from(document.querySelectorAll<HTMLElement>(at[1])).find((e) => e.textContent?.trim() === at[2]) ?? null;
     if (!t.startsWith("text:")) return document.querySelector<HTMLElement>(t);
     const want = t.slice(5);
     const all = Array.from(document.querySelectorAll<HTMLElement>("button, [role=option], [role=menuitem], [role=tab], a, span, div")).filter((e) => e.textContent?.trim() === want);
@@ -90,7 +92,10 @@ if (clicks) {
     for (const step of clicks.split("|")) {
       // `scroll:<target>` scrolls the target to the middle of the page instead of clicking it (for content below the fold).
       const scroll = step.startsWith("scroll:");
-      const t = scroll ? step.slice(7) : step;
+      // `pointer:<selector>@<text>` (or `shiftpointer:`) presses the pointer on the element matching both, for Monaco's gutter: a plain
+      // press on one line number and a Shift press on another select a range of lines to comment on.
+      const ptr = /^(shift)?pointer:/.exec(step);
+      const t = scroll ? step.slice(7) : ptr ? step.slice(ptr[0].length) : step;
       let el: HTMLElement | null = null;
       let quiet = 0;
       for (let i = 0; i < 80; i++) {
@@ -101,7 +106,14 @@ if (clicks) {
       }
       if (!el) return console.warn(`[mock click] not found: ${t}`);
       if (quiet < 3) console.warn(`[mock click] page still busy, clicking anyway: ${t}`);
-      if (scroll) {
+      if (ptr) {
+        const r = el.getBoundingClientRect();
+        const init = { bubbles: true, cancelable: true, composed: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, shiftKey: !!ptr[1], button: 0, buttons: 1, pointerId: 1, pointerType: "mouse", isPrimary: true };
+        el.dispatchEvent(new PointerEvent("pointerdown", init));
+        el.dispatchEvent(new MouseEvent("mousedown", init));
+        el.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
+        el.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
+      } else if (scroll) {
         // Not scrollIntoView: inside a Monaco view zone that scrolls Monaco's own overflow-hidden layers, which Monaco then puts back.
         let box = el.parentElement;
         while (box && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight)) box = box.parentElement;

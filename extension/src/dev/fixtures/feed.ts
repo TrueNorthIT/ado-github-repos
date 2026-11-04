@@ -87,6 +87,11 @@ await sleep(wait);</code></pre>
       id: "PRRT_3", isResolved: false, isOutdated: true, path: "src/util/greet.ts", line: null, originalLine: 40, startLine: null, diffSide: "RIGHT",
       comments: { nodes: [tComment(200, "RC_7", "carol", 25, "<p>This helper has since moved, but is it still needed at all?</p>")] },
     },
+    // CM-6: a thread on a range of lines (13-15 of the renamed names.ts), shown with the range marked and "Lines 13–15".
+    {
+      id: "PRRT_4", isResolved: false, isOutdated: false, path: "src/lib/names.ts", line: 15, originalLine: 15, startLine: 13, diffSide: "RIGHT",
+      comments: { nodes: [tComment(200, "RC_8", "dave", 19, "<p>These three exports belong together: could they move into one <code>names</code> object?</p>")] },
+    },
   ],
 };
 

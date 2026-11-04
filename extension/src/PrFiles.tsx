@@ -42,7 +42,7 @@ import { AnnotationZone } from "./AnnotationZone";
 import { ContextRow } from "./ContextRow";
 import { mapAnnotations, type AnnotationAnchor } from "./lib/annotations";
 import { useFeed } from "./feedStore";
-import { threadsByFile, type InlineAnchor } from "./lib/inlineThreads";
+import { threadRanges, threadsByFile, type InlineAnchor, type ThreadRange } from "./lib/inlineThreads";
 import type { ThreadItem } from "./lib/feedModel";
 import type { LineSpan, ZoneTarget } from "./monacoChunk";
 import "./browser.css";
@@ -54,6 +54,8 @@ const NO_IDS: string[] = [];
 const NO_FILE_THREADS = new Map<string, string[]>();
 const NO_COUNTS = new Map<string, number>();
 const NO_THREADS = new Map<string, InlineAnchor[]>();
+const NO_RANGES: ThreadRange[] = [];
+const NO_RANGE_MAP = new Map<string, ThreadRange[]>();
 
 /** CI-1: the head commit's check annotations placed on the PR's files. `urls` maps a check name to its details page. */
 export interface AnnotationsInfo {
@@ -122,7 +124,7 @@ export interface ContextCtl {
 
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
-export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false, onContext }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean; onContext?: (c: ContextCtl | null) => void }) {
+export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false, onContext, ranges = NO_RANGES }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; /** CM-6: lines covered by multi-line threads. */ ranges?: ThreadRange[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean; onContext?: (c: ContextCtl | null) => void }) {
   const { baseSha, headSha } = pr;
   const root = React.useRef<HTMLDivElement>(null);
   const box = React.useRef<HTMLDivElement>(null);
@@ -224,6 +226,16 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     return () => { dead = true; undo?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- anchorKey and annotationKey stand for anchors and annotations
   }, [target, anchorKey, annotationKey, repo, pr.number, pr.baseRef]);
+  // CM-6: the lines each multi-line thread covers, marked in the gutter (the thread sits under the last of them).
+  const threadRangeKey = JSON.stringify(ranges);
+  React.useEffect(() => {
+    if (!target || !ranges.length) return;
+    let dead = false;
+    let undo: (() => void) | undefined;
+    void loadMonaco().then((m) => { if (!dead) undo = m.markThreadRanges(target, ranges.map((r) => ({ side: r.side, startLine: r.startLine, endLine: r.endLine }))); });
+    return () => { dead = true; undo?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- threadRangeKey stands for ranges
+  }, [target, threadRangeKey]);
   // The gutter "+": plain click, drag or Shift-click pick lines the patch allows, and open a composer under them.
   const commentable = commenting && !!file.patch && pr.number !== undefined;
   React.useEffect(() => {
@@ -327,7 +339,7 @@ function ViewToggle({ views, view, setView, name }: { views: DiffView[]; view: D
   );
 }
 
-export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS, viewed, ignoreWhitespace = false }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[]; viewed?: ViewedCtl; ignoreWhitespace?: boolean }) {
+export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls, sideBySide, commenting = false, fileThreadIds = NO_IDS, viewed, ignoreWhitespace = false, ranges }: { file: PrFile; repo: string; pr: DiffCtx; collapsed: boolean; ranges?: ThreadRange[]; toggle: () => void; dark: boolean; anchors: InlineAnchor[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; fileThreadIds?: string[]; viewed?: ViewedCtl; ignoreWhitespace?: boolean }) {
   const href = useRepoHref();
   const [fileComment, setFileComment] = React.useState(false);
   const kind = richKind(file.path);
@@ -390,7 +402,7 @@ export function FileCard({ file, repo, pr, collapsed, toggle, dark, anchors, ann
       )}
       {kind === "image" || (kind === "svg" && view === "rendered") ? <ImageDiff file={file} repo={repo} pr={pr} />
         : kind === "markdown" && view === "rendered" ? <RenderedMarkdown file={file} repo={repo} pr={pr} side={toggleRenderedSide(file.changeType, side)} />
-        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} onContext={setContext} />}
+        : <DiffBody file={file} repo={repo} pr={pr} dark={dark} anchors={anchors} annotations={annotations} annotationUrls={annotationUrls} sideBySide={sideBySide} commenting={commenting} ignoreWhitespace={ignoreWhitespace} onContext={setContext} ranges={ranges} />}
     </Card>
   );
 }
@@ -463,7 +475,7 @@ export interface ViewedFilesCtl {
   onChange: (path: string, viewed: boolean) => void;
 }
 
-export function FilesView({ files: all, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS, viewed, ignoreWhitespace = false, treeFilter = false }: { files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode | ((p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode); treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]>; viewed?: ViewedFilesCtl; ignoreWhitespace?: boolean; /** VW-5: a filter box and menu over the tree. */ treeFilter?: boolean }) {
+export function FilesView({ files: all, repo, ctx, selected, select, dark, sideBySide, anchors = NO_THREADS, threadCounts = NO_COUNTS, annotations, bar, treeHeader, commenting = false, fileThreads = NO_FILE_THREADS, viewed, ignoreWhitespace = false, treeFilter = false, ranges = NO_RANGE_MAP }: { /** CM-6: multi-line thread ranges per path. */ ranges?: Map<string, ThreadRange[]>; files: PrFile[]; repo: string; ctx: DiffCtx; selected?: string; select: (path: string) => void; dark: boolean; sideBySide?: boolean; anchors?: Map<string, InlineAnchor[]>; threadCounts?: Map<string, number>; annotations?: AnnotationsInfo; bar: React.ReactNode | ((p: { shown: number; progress?: ReturnType<typeof viewedProgress> }) => React.ReactNode); treeHeader?: React.ReactNode; commenting?: boolean; fileThreads?: Map<string, string[]>; viewed?: ViewedFilesCtl; ignoreWhitespace?: boolean; /** VW-5: a filter box and menu over the tree. */ treeFilter?: boolean }) {
   const [filter, setFilter] = React.useState<FileFilter>(EMPTY_FILE_FILTER);
   const files = React.useMemo(() => (treeFilter ? filterFiles(all, filter) : all), [all, filter, treeFilter]);
   const nodes = React.useMemo(() => buildFileTree(files), [files]);
@@ -531,6 +543,7 @@ export function FilesView({ files: all, repo, ctx, selected, select, dark, sideB
                     commenting={commenting}
                     fileThreadIds={fileThreads.get(f.path)}
                     anchors={anchors.get(f.path) ?? NO_ANCHORS}
+                    ranges={ranges.get(f.path)}
                     annotations={annotations?.byFile.get(f.path)}
                     annotationUrls={annotations?.urls}
                     ignoreWhitespace={ignoreWhitespace}
@@ -568,6 +581,7 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
   const feed = useFeed(repo, number);
   const threads = React.useMemo(() => (whole ? feed.items.filter((i): i is ThreadItem => i.kind === "thread") : []), [feed.items, whole]);
   const anchors = React.useMemo(() => threadsByFile(threads), [threads]);
+  const ranges = React.useMemo(() => threadRanges(threads), [threads]);
   const threadCounts = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const t of threads) m.set(t.path, (m.get(t.path) ?? 0) + 1);
@@ -593,7 +607,7 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
   }, [contexts, files, whole]);
   return (
     <FilesView
-      files={files} repo={repo} ctx={ctx} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} anchors={anchors} threadCounts={threadCounts} annotations={annotations}
+      files={files} repo={repo} ctx={ctx} selected={selected} select={select} dark={dark} sideBySide={sideBySide} ignoreWhitespace={ignoreWhitespace} anchors={anchors} ranges={ranges} threadCounts={threadCounts} annotations={annotations}
       commenting={whole && feed.status === "ready" && !!feed.viewer.login} fileThreads={fileThreads} viewed={viewed} treeFilter
       bar={({ shown, progress }) => <>{bar({ shown, progress })}{whole && <SuggestionBar store={feed} />}</>}
     />

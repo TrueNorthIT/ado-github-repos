@@ -65,6 +65,9 @@ const MOCK_PAGES = {
   "pr-diff-expand": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts`,
   "pr-diff-expand-sbs": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts&sbs=1`,
   "pr-diff-expand-more": `?hub=prs&click=${encodeURIComponent("text:Show 20 more below|scroll:text:Show all 29 lines")}${REPO}&view=prs&pr=200&prPage=files&file=src%2Futil%2Fgreet.ts`,
+  // CM-6: an existing thread on lines 13-15 (gutter bar, "Lines 13–15"), and lines 16-18 picked in the gutter (press on 16, Shift-press on 18) with the comment box open.
+  "pr-range-thread": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=src%2Flib%2Fnames.ts`,
+  "pr-range-compose": `?hub=prs&click=${encodeURIComponent('pointer:.gh-pr-file:has([aria-label="View src/lib/names.ts"]) .editor.modified .line-numbers@16|shiftpointer:.gh-pr-file:has([aria-label="View src/lib/names.ts"]) .editor.modified .line-numbers@18|scroll:text:src/lib/names.ts, lines 16 to 18')}${REPO}&view=prs&pr=200&prPage=files&file=src%2Flib%2Fnames.ts`,
   // Image diff modes on a modified PNG (size change, transparency) and SVG; ?click= picks a mode, which then applies to every image on the page.
   "pr-image-2up": `?hub=prs${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
   "pr-image-onion": `?hub=prs&click=${encodeURIComponent('[aria-label="Onion skin comparison of logo.png"]')}${REPO}&view=prs&pr=200&prPage=files&file=docs%2Fimg%2Flogo.png`,
