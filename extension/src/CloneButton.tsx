@@ -33,7 +33,7 @@ export function CloneButton({ urls }: { urls: CloneUrls }) {
                   <Button text="HTTPS" primary={proto === "https"} ariaPressed={proto === "https"} onClick={() => setProto("https")} />
                   <Button text="SSH" primary={proto === "ssh"} ariaPressed={proto === "ssh"} onClick={() => setProto("ssh")} />
                 </div>
-                <TextField className="flex-grow" value={url} readOnly ariaLabel={`${label} clone URL`} spellCheck={false} />
+                <TextField containerClassName="flex-grow" className="flex-grow" value={url} readOnly ariaLabel={`${label} clone URL`} spellCheck={false} />
                 <ClipboardButton className="margin-left-4" ariaLabel={`Copy the ${label} clone URL`} getContent={() => url} showCopiedTooltip="Copied" />
               </div>
               <Link className="gh-clone-learn" href={LEARN_MORE[proto]} target="_blank" rel="noopener noreferrer">Learn more about {label}</Link>

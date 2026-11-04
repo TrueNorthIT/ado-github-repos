@@ -203,8 +203,8 @@ export type DeleteCheck = { ok: true } | { ok: false; code: "default" | "protect
 
 /** The default branch (code "default", checked first) and a protected branch (code "protected") cannot be deleted. */
 export function canDeleteBranch(branch: { name: string; protected: boolean }, defaultBranch: string | null): DeleteCheck {
-  if (branch.name === defaultBranch) return { ok: false, code: "default", reason: "The default branch can't be deleted." };
-  if (branch.protected) return { ok: false, code: "protected", reason: "This branch is protected by a branch protection rule." };
+  if (branch.name === defaultBranch) return { ok: false, code: "default", reason: "Default branch" };
+  if (branch.protected) return { ok: false, code: "protected", reason: "Protected" };
   return { ok: true };
 }
 
