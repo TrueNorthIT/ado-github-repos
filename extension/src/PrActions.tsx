@@ -42,6 +42,7 @@ import type { VoteId } from "./lib/votes";
 import type { WorkItemRef } from "./lib/workItems";
 import { fetchWorkItems } from "./workItemsApi";
 import { FinishReview } from "./ReviewUi";
+import { CherryPickDialog } from "./CherryPick";
 
 /** Which panel or dialog is open. */
 export interface Ui {
@@ -49,6 +50,7 @@ export interface Ui {
   vote?: VoteId;
   target?: boolean;
   revert?: boolean;
+  cherryPick?: boolean;
 }
 
 const STATUS_OF: Record<PolicyState, typeof Statuses.Success> = { success: Statuses.Success, failure: Statuses.Failed, pending: Statuses.Waiting, neutral: Statuses.Skipped };
@@ -149,7 +151,10 @@ export function prCommandItems(store: ActionStore, url: string, open: any, rest:
     { id: "githubDev", important: false, text: "Open in github.dev", iconProps: { iconName: "OpenInNewTab" }, onActivate: () => void window.open(githubDevPrUrl(store.repo, store.number), "_blank", "noopener") },
     { id: "target", important: false, text: "Change target branch", iconProps: { iconName: "BranchCompare" }, disabled: !v || store.busy || !v.pr.viewerCanUpdate || v.pr.state !== "OPEN", onActivate: () => setUi({ target: true }) },
     ...(v && canRevert({ state: v.pr.state, viewerPermission: v.repo.viewerPermission })
-      ? [{ id: "revert", important: false, text: "Revert", iconProps: { iconName: "Undo" }, disabled: store.busy, onActivate: () => setUi({ revert: true }) }]
+      ? [
+          { id: "cherryPick", important: false, text: "Cherry-pick", iconProps: { iconName: "BranchCommit" }, disabled: store.busy, onActivate: () => setUi({ cherryPick: true }) },
+          { id: "revert", important: false, text: "Revert", iconProps: { iconName: "Undo" }, disabled: store.busy, onActivate: () => setUi({ revert: true }) },
+        ]
       : []),
     ...rest.map((c) => ({ ...c, important: false })),
   ];
@@ -410,6 +415,7 @@ export function PrActionDialogs({ store, repo, number, workItemIds, ui, setUi, p
       {ui.vote && <VoteDialog store={store} id={ui.vote} close={close} />}
       {ui.target && <TargetDialog store={store} repo={repo} close={close} />}
       {ui.revert && <RevertDialog store={store} prTitle={prTitle} close={close} opened={openPr} />}
+      {ui.cherryPick && <CherryPickDialog repo={repo} kind="cherryPick" source={{ type: "pr", number }} close={close} />}
     </>
   );
 }

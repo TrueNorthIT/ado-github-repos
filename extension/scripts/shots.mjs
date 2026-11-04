@@ -37,6 +37,13 @@ const MOCK_PAGES = {
   pushes: `?hub=pushes${REPO}`,
   "commits-filtered": `?hub=commits${REPO}&cAuthor=ann&cFrom=2026-01-01`,
   "commit-detail": `?hub=commits${REPO}&commit=ed921796ed921796ed921796ed921796ed921796&commitTab=details`,
+  // Batch I: the commit ⋯ menu's Cherry-pick and Revert dialogs (form, done, conflict) and a completed PR's Cherry-pick.
+  "cherry-pick-dialog": `?hub=commits&click=${encodeURIComponent("[aria-label=\"More actions\"]|text:Cherry-pick|text:Topic branch name")}${REPO}&commit=ed921796ed921796ed921796ed921796ed921796`,
+  // The rest open from the list's row ⋯ (the commit page's diff is too slow to load inside the shot's time budget for every step).
+  "cherry-pick-done": `?hub=commits&click=${encodeURIComponent("[aria-label^=\"Actions for commit\"]|text:Cherry-pick|text:Cherry-pick|.gh-pick-done")}${REPO}`,
+  "cherry-pick-conflict": `?hub=commits&scenario=cherryPickConflict&click=${encodeURIComponent("[aria-label^=\"Actions for commit\"]|text:Cherry-pick|text:Cherry-pick|text:Topic branch name")}${REPO}`,
+  "revert-dialog": `?hub=commits&click=${encodeURIComponent("[aria-label^=\"Actions for commit\"]|text:Revert|text:Topic branch name")}${REPO}`,
+  "pr-cherry-pick": `?hub=prs&click=${encodeURIComponent("[aria-label=\"More actions\"]|text:Cherry-pick|text:Topic branch name")}${REPO}&view=prs&pr=316`,
   "pushes-filtered": `?hub=pushes${REPO}&pushPeriod=week`,
   branches: `?hub=branches${REPO}&branchTab=all`,
   "branch-policies": `?hub=branches${REPO}&view=policies&polBranch=main`,
