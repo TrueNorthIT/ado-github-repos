@@ -18,7 +18,8 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: STALE_MS,
-      cacheTime: 24 * 60 * 60_000, // as long as a persisted read may live (queryPersist.ts); memory is freed when the hub's frame goes
+      // Unused reads leave memory after ten minutes. Saved reads outlive that: queryPersist.tsx merges into its record rather than replacing it.
+      cacheTime: 10 * 60_000,
       retry: (n, e) => n < 1 && transient(e),
       // A stale read refreshes when the hub's frame gets focus back (TanStack listens for focus and visibilitychange).
       refetchOnWindowFocus: true,
@@ -42,7 +43,16 @@ export type KeyRoot = "prs" | "pr" | "refs" | "browse" | "actions" | "security" 
 export function dropQueries(queryKey: QueryKey): void {
   queryClient.removeQueries({ queryKey, type: "inactive" });
   void queryClient.invalidateQueries({ queryKey, type: "active" });
+  dropListeners.forEach((f) => f(queryKey));
 }
+
+const dropListeners: ((queryKey: QueryKey) => void)[] = [];
+/** queryPersist.tsx forgets the saved copies of dropped reads too, or the next visit would start from them. */
+export const onDropQueries = (f: (queryKey: QueryKey) => void) => void dropListeners.push(f);
+
+/** Whether `prefix` is the start of `key`, element by element (as TanStack's own filters match). */
+export const keyStartsWith = (key: QueryKey, prefix: QueryKey): boolean =>
+  prefix.length <= key.length && prefix.every((p, i) => JSON.stringify(p) === JSON.stringify(key[i]));
 
 /** A read as the pages render it. `previous`: the value is the last key's, kept while this key loads (keepPrevious). */
 export type GhLoad<T> =
@@ -58,6 +68,8 @@ export interface GhOptions<T> {
   /** Poll while mounted (ms), or a function of the latest value; false to stop. */
   refetchInterval?: number | false | ((v: T | undefined) => number | false);
   staleTime?: number;
+  /** How long an unused read stays in memory (default ten minutes). Shorter for large reads such as file contents. */
+  cacheTime?: number;
   /** Polling and refetches stop while the hub's frame is hidden unless this is set. */
   refetchInBackground?: boolean;
 }
@@ -75,6 +87,7 @@ export function useGh<T>(key: QueryKey | null, fn: () => Promise<T>, opts: GhOpt
     keepPreviousData: !!opts.keepPrevious,
     meta: opts.persist ? { persist: true } : undefined,
     staleTime: opts.staleTime,
+    cacheTime: opts.cacheTime,
     refetchInterval: typeof refetchInterval === "function" ? (v) => refetchInterval(v) : refetchInterval,
     refetchIntervalInBackground: !!opts.refetchInBackground,
   });

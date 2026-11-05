@@ -3,9 +3,11 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, dehydrate } from "@tanstack/react-query";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
-import { clearPersisted, idbPersister, shouldPersist } from "../src/queryPersist";
+import { PERSIST_MAX_AGE, clearPersisted, idbPersister, mergeClients, shouldPersist } from "../src/queryPersist";
 
-const client = (rows: unknown): PersistedClient => ({ timestamp: 1, buster: "1.0.0", clientState: { mutations: [], queries: [{ queryKey: ["prs"], queryHash: '["prs"]', state: { data: rows } as any }] } });
+const q = (key: unknown[], data: unknown, at = Date.now()) => ({ queryKey: key, queryHash: JSON.stringify(key), state: { data, dataUpdatedAt: at } as any });
+const client = (rows: unknown, key: unknown[] = ["prs"], buster = "1.0.0"): PersistedClient => ({ timestamp: 1, buster, clientState: { mutations: [], queries: [q(key, rows)] } });
+const dataOf = (c: PersistedClient | undefined) => Object.fromEntries((c?.clientState.queries ?? []).map((x) => [x.queryHash, x.state.data]));
 const saved = async (id: string) => (await idbPersister(id).restoreClient()) as PersistedClient | undefined;
 
 afterEach(async () => {
@@ -65,5 +67,49 @@ describe("shouldPersist", () => {
     await qc.prefetchQuery({ queryKey: ["browse", "raw"], queryFn: () => "file contents" });
     await qc.prefetchQuery({ queryKey: ["prs", "failed"], queryFn: () => Promise.reject(new Error("no")), meta: { persist: true } });
     expect(dehydrate(qc, { shouldDehydrateQuery: shouldPersist }).queries.map((q) => q.queryKey)).toEqual([["prs", "list"]]);
+  });
+});
+
+describe("mergeClients", () => {
+  const NOW = 1_800_000_000_000;
+  const rec = (queries: ReturnType<typeof q>[], buster = "1.0.0"): PersistedClient => ({ timestamp: 1, buster, clientState: { mutations: [], queries } });
+
+  it("keeps the other frames' reads and takes the newer read of a shared key", () => {
+    const stored = rec([q(["refs", "branches", "a/b"], "branches", NOW - 10), q(["prs", "list"], "old prs", NOW - 10)]);
+    const mine = rec([q(["prs", "list"], "new prs", NOW - 5)]);
+    expect(dataOf(mergeClients(stored, mine, NOW))).toEqual({ '["refs","branches","a/b"]': "branches", '["prs","list"]': "new prs" });
+  });
+
+  it("never lets an older read of this frame replace a newer stored one", () => {
+    const stored = rec([q(["prs", "list"], "newer", NOW - 1)]);
+    expect(dataOf(mergeClients(stored, rec([q(["prs", "list"], "older", NOW - 100)]), NOW))).toEqual({ '["prs","list"]': "newer" });
+  });
+
+  it("drops reads older than a day, and replaces a record from another extension version", () => {
+    const stored = rec([q(["refs", "tags"], "stale", NOW - PERSIST_MAX_AGE - 1), q(["refs", "x"], "fresh", NOW - 1)]);
+    expect(dataOf(mergeClients(stored, rec([]), NOW))).toEqual({ '["refs","x"]': "fresh" });
+    expect(dataOf(mergeClients(rec([q(["refs", "x"], "v1", NOW - 1)], "0.9.0"), rec([q(["prs"], "v2", NOW - 1)]), NOW))).toEqual({ '["prs"]': "v2" });
+  });
+});
+
+describe("one record per project", () => {
+  it("two frames saving at once keep both their reads", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    idbPersister("org|ann|proj").persistClient(client(["branches"], ["refs", "branches"]));
+    idbPersister("org|ann|proj").persistClient(client(["prs"], ["prs", "list"]));
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect(dataOf(await saved("org|ann|proj"))).toEqual({ '["refs","branches"]': ["branches"], '["prs","list"]': ["prs"] }));
+  });
+
+  it("forget drops the saved reads under a key prefix and nothing else", async () => {
+    const p = idbPersister("org|ann|proj");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    p.persistClient({ timestamp: 1, buster: "1.0.0", clientState: { mutations: [], queries: [q(["refs", "branches", "a/b"], 1), q(["refs", "tags", "a/b"], 2), q(["prs", "list", "a/b"], 3), q(["refsx"], 4)] } });
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect(Object.keys(dataOf(await saved("org|ann|proj")))).toHaveLength(4));
+    await p.forget(["refs"]);
+    expect(dataOf(await saved("org|ann|proj"))).toEqual({ '["prs","list","a/b"]': 3, '["refsx"]': 4 });
   });
 });

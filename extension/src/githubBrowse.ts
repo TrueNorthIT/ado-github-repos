@@ -509,7 +509,7 @@ export const getFeed = (repo: string, number: number) =>
   });
 
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
-export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`), editNodes.delete(`${repo}#${number}`), projectNodes.delete(`${repo}#${number}`), dropQueries(["pr", repo, number]));
+export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`), editNodes.delete(`${repo}#${number}`), projectNodes.delete(`${repo}#${number}`), dropQueries(["pr", repo, number, "page"]), dropQueries(["pr", repo, number, "edit"]));
 
 /** Drops just the cached actions node, so the next getActions asks GitHub again. */
 export const invalidateActions = (repo: string, number: number) => void actionNodes.delete(`${repo}#${number}`);
