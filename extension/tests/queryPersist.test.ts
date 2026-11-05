@@ -1,0 +1,69 @@
+// @vitest-environment jsdom
+import "fake-indexeddb/auto";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, dehydrate } from "@tanstack/react-query";
+import type { PersistedClient } from "@tanstack/react-query-persist-client";
+import { clearPersisted, idbPersister, shouldPersist } from "../src/queryPersist";
+
+const client = (rows: unknown): PersistedClient => ({ timestamp: 1, buster: "1.0.0", clientState: { mutations: [], queries: [{ queryKey: ["prs"], queryHash: '["prs"]', state: { data: rows } as any }] } });
+const saved = async (id: string) => (await idbPersister(id).restoreClient()) as PersistedClient | undefined;
+
+afterEach(async () => {
+  vi.useRealTimers();
+  await clearPersisted();
+});
+
+describe("idbPersister", () => {
+  it("saves a second after the last change, as one write, and restores it with Dates intact", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const p = idbPersister("org|user|hub");
+    const when = new Date("2026-11-05T10:00:00Z");
+    p.persistClient(client([{ n: 1 }]));
+    p.persistClient(client([{ n: 2, at: when }]));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(await saved("org|user|hub")).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect(await saved("org|user|hub")).toBeDefined());
+    const rows = (await saved("org|user|hub"))!.clientState.queries[0].state.data as { n: number; at: Date }[];
+    expect(rows).toEqual([{ n: 2, at: when }]);
+    expect(rows[0].at).toBeInstanceOf(Date);
+  });
+
+  it("keeps one record per id, and removeClient drops only its own", async () => {
+    const a = idbPersister("org|ann|prs");
+    const b = idbPersister("org|bob|prs");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    a.persistClient(client(["ann"]));
+    b.persistClient(client(["bob"]));
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect((await saved("org|bob|prs"))?.clientState.queries[0].state.data).toEqual(["bob"]));
+    expect((await saved("org|ann|prs"))?.clientState.queries[0].state.data).toEqual(["ann"]);
+    await a.removeClient();
+    expect(await saved("org|ann|prs")).toBeUndefined();
+    expect(await saved("org|bob|prs")).toBeDefined();
+  });
+
+  it("clearPersisted (Sign out) drops every hub's record", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    idbPersister("org|ann|prs").persistClient(client([1]));
+    idbPersister("org|ann|commits").persistClient(client([2]));
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect(await saved("org|ann|commits")).toBeDefined());
+    await clearPersisted();
+    expect(await saved("org|ann|prs")).toBeUndefined();
+    expect(await saved("org|ann|commits")).toBeUndefined();
+  });
+});
+
+describe("shouldPersist", () => {
+  it("keeps only successful reads that opted in", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await qc.prefetchQuery({ queryKey: ["prs", "list"], queryFn: () => ["row"], meta: { persist: true } });
+    await qc.prefetchQuery({ queryKey: ["browse", "raw"], queryFn: () => "file contents" });
+    await qc.prefetchQuery({ queryKey: ["prs", "failed"], queryFn: () => Promise.reject(new Error("no")), meta: { persist: true } });
+    expect(dehydrate(qc, { shouldDehydrateQuery: shouldPersist }).queries.map((q) => q.queryKey)).toEqual([["prs", "list"]]);
+  });
+});

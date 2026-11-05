@@ -50,6 +50,7 @@ try {
 } catch { /* ignore */ }
 
 export const resetStorage = () => {
+  try { indexedDB.deleteDatabase("gh-repos-query-cache"); } catch { /* ignore */ } // queryPersist.tsx's saved reads
   try { Object.keys(localStorage).filter((k) => k.startsWith(PREFIX) && k !== PREFIX + "theme").forEach((k) => localStorage.removeItem(k)); } catch { /* ignore */ }
 };
 
@@ -157,6 +158,7 @@ export const resize = (_w?: number, _h?: number) => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];
 export const getHost = () => ({ id: "host-1", name: "demo-org", type: 2 });
-export const getUser = () => ({ id: "user-1", name: "mock@example.com", displayName: "Mock User", descriptor: "", imageUrl: "" });
+// The user id carries the scenario, so queryPersist.tsx keeps one record per scenario: a list saved under "ok" would otherwise hide a failure scenario's error.
+export const getUser = () => ({ id: `user-1|${scenario()}${LIVE ? "|live" : ""}`, name: "mock@example.com", displayName: "Mock User", descriptor: "", imageUrl: "" });
 export const getExtensionContext = () => ({ id: "mock-extension", extensionId: "github-repos", publisherId: "TrueNorthIT", version: "0.0.0" });
 export const getWebContext = () => ({ account: { name: "demo-org" }, project: { id: "proj-1", name: "Demo Project" } });

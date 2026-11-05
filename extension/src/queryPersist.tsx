@@ -8,7 +8,7 @@
 // - kept a day at most, dropped by a new extension version (the buster) and on "Sign out of GitHub" (clearPersisted).
 import * as React from "react";
 import * as SDK from "azure-devops-extension-sdk";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type Query } from "@tanstack/react-query";
 import { PersistQueryClientProvider, type PersistedClient, type Persister } from "@tanstack/react-query-persist-client";
 import { queryClient } from "./queryClient";
 
@@ -78,6 +78,9 @@ function version(): string {
   }
 }
 
+/** Only reads that opted in (useGh's `persist`), and only once they have succeeded. */
+export const shouldPersist = (q: Query): boolean => q.state.status === "success" && q.meta?.persist === true;
+
 /** The page's query cache, restored from and saved to IndexedDB when it can be. Call after SDK.init. */
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const id = React.useMemo(recordId, []);
@@ -90,7 +93,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         persister,
         maxAge: PERSIST_MAX_AGE,
         buster: version(),
-        dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.status === "success" && q.meta?.persist === true },
+        dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
       }}
     >
       {children}
