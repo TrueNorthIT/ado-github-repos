@@ -1,6 +1,7 @@
 // Editing a pull request (batch 2, ED-1 to ED-9): the data hook, the title and description editors and the right-column pickers.
 // The logic lives in lib/prEdit.ts and friends; the writes in actionStore.ts. This file only draws and wires them.
 import * as React from "react";
+import { useGh } from "./queryClient";
 import { Button } from "azure-devops-ui/Button";
 import { Icon } from "azure-devops-ui/Icon";
 import { IdentityPicker, IdentityPickerDropdown, IdentityType, type IIdentity, type IPeoplePickerProvider } from "azure-devops-ui/IdentityPicker";
@@ -33,21 +34,21 @@ export interface EditData {
 
 /** The edit node and Projects of a pull request, refetched when the action store's `version` moves. Undefined until loaded, and when GitHub refuses it (the page then stays read-only). */
 export function useEdit(repo: string, number: number, version: number): EditData | undefined {
-  const [d, setD] = React.useState<{ key: string; data: EditData }>();
-  const key = `${repo}#${number}`;
+  const load = useGh<EditData>(["pr", repo, number, "edit"], () =>
+    Promise.all([getEdit(repo, number), getProjectRows(repo, number)]).then(([node, projects]) => {
+      const perms = editPermissions({ state: node.state, viewerCanUpdate: node.viewerCanUpdate, viewerCanLabel: node.viewerCanLabel, viewerCanAssign: node.viewerCanAssign });
+      return { node, perms, reviewers: toRequestedReviewers(node.reviewRequests.nodes), linked: toLinkedIssueRows(node.closingIssuesReferences.nodes, node.body), projects };
+    })
+  );
+  // Refetch after every action; until the new answer arrives the controls keep the last one (the action store disables them while busy).
+  const seen = React.useRef(version);
+  const refetch = load.t === "ready" ? load.refetch : undefined;
   React.useEffect(() => {
-    let dead = false;
-    Promise.all([getEdit(repo, number), getProjectRows(repo, number)]).then(
-      ([node, projects]) => {
-        if (dead) return;
-        const perms = editPermissions({ state: node.state, viewerCanUpdate: node.viewerCanUpdate, viewerCanLabel: node.viewerCanLabel, viewerCanAssign: node.viewerCanAssign });
-        setD({ key, data: { node, perms, reviewers: toRequestedReviewers(node.reviewRequests.nodes), linked: toLinkedIssueRows(node.closingIssuesReferences.nodes, node.body), projects } });
-      },
-      () => !dead && setD(undefined)
-    );
-    return () => { dead = true; };
-  }, [repo, number, version, key]);
-  return d?.key === key ? d.data : undefined;
+    if (seen.current === version) return;
+    seen.current = version;
+    refetch?.();
+  }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
+  return load.t === "ready" ? load.v : undefined;
 }
 
 // ---------- shared pieces ----------

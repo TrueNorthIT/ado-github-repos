@@ -18,6 +18,7 @@ import { ZeroData } from "azure-devops-ui/ZeroData";
 import { ObservableValue, type IReadonlyObservableValue } from "azure-devops-ui/Core/Observable";
 import { ArrayItemProvider, type IItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { RelDate } from "./RelDate";
+import { QueryProvider } from "./queryPersist";
 import { activateRow, hostLinkClick, myPrsHubHref, prHref, titleClick, useMyPrs, useOpener, type Opener } from "./myPrsShared";
 import { actorName } from "./lib/botIdentity";
 import "./myWorkTab.css"; // after the components, so its rules follow theirs (.bolt-link.subtle pads titles otherwise)
@@ -135,6 +136,6 @@ SDK.init({ loaded: false, applyTheme: true }).then(() => {
   // What the flyout hands an extension tab: logged so a live run tells us (contribution id, host, configuration keys, frame size).
   console.info("[GitHub my work] contribution", SDK.getContributionId(), "host", SDK.getHost()?.name, "config", Object.keys(SDK.getConfiguration() ?? {}), "frame", `${innerWidth}x${innerHeight}`);
   fitFrame();
-  ReactDOM.render(<MyWorkTab />, document.getElementById("root"));
+  ReactDOM.render(<QueryProvider><MyWorkTab /></QueryProvider>, document.getElementById("root"));
   void SDK.notifyLoadSucceeded();
 });

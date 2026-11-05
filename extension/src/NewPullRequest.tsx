@@ -48,23 +48,18 @@ import { MAX_TITLE_LENGTH, removeWorkItemFromBody } from "./lib/prEdit";
 import type { Candidate } from "./lib/reviewerSearch";
 import { findWorkItemIds } from "./lib/workItems";
 import { watchTheme } from "./theme";
+import { useGh } from "./queryClient";
 import "./browser.css";
 
 // ---------- a small loader keyed by what it loads, so a stale answer is never shown for the next pair ----------
 
-type Load<T> = { t: "idle" } | { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
+type Load<T> = { t: "idle" } | { t: "loading" } | { t: "error"; err: unknown; retry: () => void } | { t: "ready"; v: T };
 
-function useLoad<T>(key: string | null, run: () => Promise<T>, reload = 0): Load<T> {
-  const [s, setS] = React.useState<{ key: string; r: Load<T> }>();
-  React.useEffect(() => {
-    if (key === null) return;
-    let dead = false;
-    setS({ key, r: { t: "loading" } });
-    run().then((v) => !dead && setS({ key, r: { t: "ready", v } }), (err) => !dead && setS({ key, r: { t: "error", err } }));
-    return () => { dead = true; };
-  }, [key, reload]); // eslint-disable-line react-hooks/exhaustive-deps -- `run` is rebuilt every render; `key` says what it loads
+/** A read through the page's query cache under ["prs", "new", key] (invalidatePrs drops it). Another key starts from loading. */
+function useLoad<T>(key: string | null, run: () => Promise<T>): Load<T> {
+  const l = useGh<T>(key === null ? null : ["prs", "new", key], run);
   if (key === null) return { t: "idle" };
-  return s?.key === key ? s.r : { t: "loading" };
+  return l.t === "ready" ? { t: "ready", v: l.v } : l;
 }
 
 const METHODS: { id: MergeMethod; text: string }[] = [{ id: "SQUASH", text: "Squash commit" }, { id: "MERGE", text: "Merge commit" }, { id: "REBASE", text: "Rebase and fast-forward" }];
@@ -75,13 +70,12 @@ const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 export function FilesPreview({ repo, base, head, headOid, signIn, busy }: { repo: string; base: string; head: string; headOid: string; signIn: () => void; busy: boolean }) {
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
-  const [reload, setReload] = React.useState(0);
   const [selected, setSelected] = React.useState<string>();
   const [sideBySide, setSideBySide] = React.useState(false);
   const [ws, setWs] = React.useState(false);
-  const r = useLoad(`${repo}|${base}|${head}`, () => getCompareFiles(repo, base, head), reload);
+  const r = useLoad(`files|${repo}|${base}|${head}`, () => getCompareFiles(repo, base, head)); // the same key as the form's file count, so they share one read
   if (r.t === "loading" || r.t === "idle") return <div className="gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading changed files" /></div>;
-  if (r.t === "error") return <ErrorView err={r.err} signIn={signIn} busy={busy} retry={() => setReload((n) => n + 1)} subject="compare these branches" permission="Contents" />;
+  if (r.t === "error") return <ErrorView err={r.err} signIn={signIn} busy={busy} retry={r.retry} subject="compare these branches" permission="Contents" />;
   const { files, mergeBase } = r.v;
   const bar = (p: { shown: number }) => <FilesBar count={files.length} shown={p.shown} sideBySide={sideBySide} setSideBySide={setSideBySide} ignoreWhitespace={ws} setIgnoreWhitespace={setWs} />;
   return (
@@ -183,14 +177,13 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   // Keep the pair in the address (no history entry), so a reload or a copied link opens the same comparison.
   React.useEffect(() => { patchHash((h) => applySourceRepo(applyNewPr(h, { source: source ?? undefined, target: target ?? undefined }), headRepo ?? undefined)); }, [source, target, headRepo]);
 
-  const [reload, setReload] = React.useState(0);
   // A fork's branch may share its name with the target (contributor:main into main); the compare then names the fork's owner.
   const headOwner = headRepo?.split("/")[0];
   const pair = source?.trim() && target?.trim() && (headRepo || source !== target) ? { head: source, base: target } : null;
-  const cmpLoad = useLoad(pair ? `${repo}|${pair.base}|${headRepo ?? ""}|${pair.head}|${signedIn}` : null, () => (headRepo ? getForkNewPrCompare(repo, pair!.base, headRepo, pair!.head) : getNewPrCompare(repo, pair!.base, pair!.head)), reload);
+  const cmpLoad = useLoad(pair ? `${repo}|${pair.base}|${headRepo ?? ""}|${pair.head}` : null, () => (headRepo ? getForkNewPrCompare(repo, pair!.base, headRepo, pair!.head) : getNewPrCompare(repo, pair!.base, pair!.head)));
   const compare = cmpLoad.t === "ready" ? cmpLoad.v : null;
   // The template belongs to the target branch. A failure just means "no template".
-  const tplLoad = useLoad(target ? `${repo}|${target}|${signedIn}` : null, () => getPrTemplates(repo, target!).catch(() => []));
+  const tplLoad = useLoad(target ? `templates|${repo}|${target}` : null, () => getPrTemplates(repo, target!).catch(() => []));
   const templates = tplLoad.t === "ready" ? tplLoad.v : null;
 
   const [title, setTitle] = React.useState("");
@@ -273,7 +266,7 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   const changes = !!(compare && pair && compare.ahead > 0);
   const headRef = pair ? (headOwner ? `${headOwner}:${pair.head}` : pair.head) : "";
   // The Files tab's count, as native shows it before the tab is opened. getCompareFiles is cached, so the tab reuses this answer.
-  const filesLoad = useLoad(changes ? `files|${repo}|${pair!.base}|${headRef}|${signedIn}` : null, () => getCompareFiles(repo, pair!.base, headRef));
+  const filesLoad = useLoad(changes ? `files|${repo}|${pair!.base}|${headRef}` : null, () => getCompareFiles(repo, pair!.base, headRef));
   const fileCount = filesLoad.t === "ready" ? filesLoad.v.files.length : undefined;
   // Native's "Add commit messages": the commits' subjects appended to the description as a list.
   const addCommitMessages = () => {
@@ -439,7 +432,7 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
         )}
         {notes.filter((n) => !(existing && n.startsWith("Pull request #"))).map((n) => <MessageCard key={n} severity={MessageCardSeverity.Warning}>{n}</MessageCard>)}
         {cmpLoad.t === "loading" && <div className="gh-np-checking flex-row flex-center secondary-text" role="status"><Spinner size={SpinnerSize.small} label="Checking…" /></div>}
-        {cmpLoad.t === "error" && <ErrorView err={cmpLoad.err} signIn={signIn} busy={busy} retry={() => { invalidatePrs(); setReload((n) => n + 1); }} subject="compare these branches" permission="Pull requests" />}
+        {cmpLoad.t === "error" && <ErrorView err={cmpLoad.err} signIn={signIn} busy={busy} retry={() => { invalidatePrs(); cmpLoad.retry(); }} subject="compare these branches" permission="Pull requests" />}
         {tab === "overview" ? overview
           : !changes ? nothingYet
           : tab === "files" ? <FilesPreview repo={repo} base={pair!.base} head={headRef} headOid={compare!.headOid ?? pair!.head} signIn={signIn} busy={busy} />

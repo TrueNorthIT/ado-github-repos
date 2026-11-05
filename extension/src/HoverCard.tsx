@@ -17,6 +17,7 @@ import { Location } from "azure-devops-ui/Utilities/Position";
 import "azure-devops-ui/Components/IdentityCard/IdentityCard.css";
 import { RelDate } from "./RelDate";
 import { getPullCard, getUserCard, isOrgMember } from "./hoverApi";
+import { queryClient } from "./queryClient";
 import { fetchWorkItemCard } from "./workItemsApi";
 import { PR_STATUS_PILL, hoverStep, isLogin, prLinkNumber, isShown, reviewSummary, type HoverEvent, type HoverPhase, type PullCard, type UserCard, type WorkItemCard } from "./lib/hoverCard";
 import type { WorkItemType } from "./workItemsApi";
@@ -197,15 +198,31 @@ export function PrLinkHovers({ box, repo }: { box: React.RefObject<HTMLElement>;
 
 type Load<T> = { t: "loading" } | { t: "ready"; v: T } | { t: "error" };
 
-function useLoad<T>(load: () => Promise<T>, deps: React.DependencyList): Load<T> {
-  const [s, setS] = React.useState<Load<T>>({ t: "loading" });
+/** Hover answers change slowly: a card shown again within this is shown at once, without asking again. */
+const HOVER_STALE_MS = 10 * 60_000;
+
+/**
+ * A card's read through the page's query cache under ["misc", "hover", …key]. It uses the client directly, not useQuery, because cards
+ * also open inside Monaco view zones and widgets, which are React roots of their own with no QueryClientProvider. A cached answer shows at once.
+ */
+function useLoad<T>(load: () => Promise<T>, key: readonly unknown[]): Load<T> {
+  const queryKey = ["misc", "hover", ...key];
+  const hash = JSON.stringify(queryKey);
+  const cached = () => {
+    const v = queryClient.getQueryData<T>(queryKey);
+    return v === undefined ? ({ t: "loading" } as Load<T>) : ({ t: "ready", v } as Load<T>);
+  };
+  const [s, setS] = React.useState<{ hash: string; r: Load<T> }>(() => ({ hash, r: cached() }));
   React.useEffect(() => {
     let dead = false;
-    setS({ t: "loading" });
-    load().then((v) => !dead && setS({ t: "ready", v }), () => !dead && setS({ t: "error" }));
+    if (s.hash !== hash) setS({ hash, r: cached() });
+    queryClient.fetchQuery({ queryKey, queryFn: load, staleTime: HOVER_STALE_MS, retry: false }).then(
+      (v) => !dead && setS({ hash, r: { t: "ready", v } }),
+      () => !dead && setS({ hash, r: { t: "error" } })
+    );
     return () => { dead = true; };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
-  return s;
+  }, [hash]); // eslint-disable-line react-hooks/exhaustive-deps -- `hash` stands for the key
+  return s.hash === hash ? s.r : cached();
 }
 
 /** Native shimmer (core.css .shimmer) in the card's shape: a 72px circle and two lines, or just lines. */
@@ -233,8 +250,8 @@ const Line = ({ icon, children }: { icon: string; children: React.ReactNode }) =
 // ---------- people ----------
 
 function PersonCard({ login, name, avatarUrl, org }: { login: string; name?: string; avatarUrl?: string; org?: string }) {
-  const u = useLoad(() => getUserCard(login), [login]);
-  const member = useLoad(() => (org && org.toLowerCase() !== login.toLowerCase() ? isOrgMember(org, login) : Promise.resolve(false)), [org, login]);
+  const u = useLoad(() => getUserCard(login), ["user", login]);
+  const member = useLoad(() => (org && org.toLowerCase() !== login.toLowerCase() ? isOrgMember(org, login) : Promise.resolve(false)), ["member", org ?? "", login]);
   if (u.t === "loading") return <Shimmer persona />;
   const card: UserCard = u.t === "ready" ? u.v : { login, name, avatarUrl, htmlUrl: `https://github.com/${encodeURIComponent(login)}` };
   const display = card.name ?? name ?? card.login;
@@ -318,7 +335,7 @@ function AdoIdentityCard({ identity, frame }: { identity: IIdentity; frame: Hove
 /** A commit author with no GitHub account: ADO's card when the email is someone in the organisation, else the name and email. */
 function GitIdentityCard({ name, email, avatarUrl }: { name: string; email?: string; avatarUrl?: string }) {
   const frame = React.useContext(HoverFrameContext)!;
-  const ado = useLoad(() => (email ? findAdoIdentity(email) : Promise.resolve(null)), [email]);
+  const ado = useLoad(() => (email ? findAdoIdentity(email) : Promise.resolve(null)), ["ado-identity", email ?? ""]);
   if (ado.t === "ready" && ado.v) return <AdoIdentityCard identity={ado.v} frame={frame} />;
   return (
     <HoverCallout {...frame}>
@@ -356,7 +373,7 @@ export function PersonHover({ login, name, email, avatarUrl, type, repo: repoPro
 // ---------- pull requests ----------
 
 function PullCardBody({ repo, number }: { repo: string; number: number }) {
-  const p = useLoad(() => getPullCard(repo, number), [repo, number]);
+  const p = useLoad(() => getPullCard(repo, number), ["pull", repo, number]);
   if (p.t === "loading") return <Shimmer />;
   if (p.t === "error") return <Quiet text={`Pull request ${number} could not be loaded.`} />;
   const pr: PullCard = p.v;
@@ -406,7 +423,7 @@ function TypeIcon({ t }: { t?: WorkItemType }) {
 }
 
 function WorkItemCardBody({ id }: { id: number }) {
-  const w = useLoad(() => fetchWorkItemCard(id), [id]);
+  const w = useLoad(() => fetchWorkItemCard(id), ["work-item", id]);
   if (w.t === "loading") return <Shimmer />;
   if (w.t === "error") return <Quiet text={`Work item ${id} could not be loaded.`} />;
   const item: WorkItemCard | null = w.v.item;

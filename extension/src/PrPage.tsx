@@ -45,6 +45,7 @@ import { ClosingIssueAdd, DescriptionEditor, EditableTitle, EditError, IssueRow,
 import { toLabelOption } from "./lib/labels";
 import { latestDeployments, type DeploymentRow, type DeploymentTone } from "./lib/deployments";
 import type { CommitSignature } from "./lib/signatures";
+import { queryClient, useGh } from "./queryClient";
 import "./browser.css";
 
 const PAGES: { id: PrPageId; name: string }[] = [
@@ -161,31 +162,25 @@ const REVIEW: Record<ReviewState, { text: string; icon: React.ReactNode }> = {
  * REST), then the CODEOWNERS file matched against the changed files. { kind: "single" } until all of it is known, and whenever any of it can't be.
  */
 function useReviewerGroups(repo: string, number: number, baseRef: string, store: ActionStore, edit: EditData | undefined, list: PrReviewer[]): ReviewerGroups {
-  const [rules, setRules] = React.useState<{ key: string; v: BranchRule[] | null }>();
-  const [owners, setOwners] = React.useState<{ key: string; v: CodeOwnerSet | null | undefined }>();
-  const key = `${repo}|${baseRef}|${number}`;
-  React.useEffect(() => {
-    let dead = false;
-    getBranchRules(repo, baseRef).then((v) => !dead && setRules({ key, v }), () => !dead && setRules({ key, v: null }));
-    return () => { dead = true; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A failed read is an answer here (null rules: unknown; undefined owners: unknown), so each read resolves rather than rejects.
+  const rulesLoad = useGh<BranchRule[] | null>(["pr", repo, number, "branch-rules", baseRef], () => getBranchRules(repo, baseRef).catch(() => null));
+  const rules = rulesLoad.t === "ready" ? rulesLoad.v : undefined;
   const pr = store.status === "ready" ? store.view?.pr : undefined;
   const classic = pr === undefined || pr.baseRef === undefined ? undefined : pr.baseRef?.branchProtectionRule ?? null;
-  const requirement = codeOwnerRequirement(classic, rules?.key === key ? rules.v : undefined);
-  React.useEffect(() => {
-    if (requirement !== true) return;
-    let dead = false;
-    getCodeOwnerSet(repo, baseRef, number).then((v) => !dead && setOwners({ key, v }), () => !dead && setOwners({ key, v: undefined }));
-    return () => { dead = true; };
-  }, [requirement, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const requirement = codeOwnerRequirement(classic, rules);
+  const ownersLoad = useGh<{ v: CodeOwnerSet | null | undefined }>(
+    requirement === true ? ["pr", repo, number, "code-owners", baseRef] : null,
+    () => getCodeOwnerSet(repo, baseRef, number).then((v) => ({ v }), () => ({ v: undefined })),
+  );
+  const owners = ownersLoad.t === "ready" ? ownersLoad.v.v : undefined;
   return React.useMemo(() => {
     if (requirement === true && !edit) return { kind: "single" }; // the review requests (asCodeOwner, team slugs) aren't in yet
     const people = list.map((r) => {
       const q = edit?.reviewers.find((x) => sameReviewer(x, r.login));
       return { login: r.login, request: q && { kind: q.kind, login: q.login, codeOwner: q.codeOwner } };
     });
-    return reviewerGroups(people, requirement, owners?.key === key ? owners.v : undefined, repo.split("/")[0]);
-  }, [requirement, edit, list, owners, key, repo]);
+    return reviewerGroups(people, requirement, owners, repo.split("/")[0]);
+  }, [requirement, edit, list, owners, repo]);
 }
 
 function Reviewers({ list, store, edit, repo, number, baseRef }: { list: PrReviewer[]; store: ActionStore; edit?: EditData; repo: string; number: number; baseRef: string }) {
@@ -266,20 +261,25 @@ function Labels({ pr, store, edit, repo }: { pr: PrPageData; store: ActionStore;
 
 type Wi = { t: "loading" } | { t: "denied" } | { t: "error" } | { t: "ready"; r: WorkItemsResult };
 
-export function useWorkItems(ids: number[], version = 0): Wi {
-  const [wi, setWi] = React.useState<Wi>({ t: "loading" });
-  const key = ids.join(",");
+/** Refetches `load` whenever `version` changes after the first render (an action store's version: something on the PR changed). */
+export function useRefetchOn(load: { t: string; refetch?: () => void }, version: number): void {
+  const seen = React.useRef(version);
+  const refetch = load.t === "ready" ? (load as { refetch: () => void }).refetch : undefined;
   React.useEffect(() => {
-    if (!ids.length) return;
-    let dead = false;
-    setWi({ t: "loading" });
-    fetchWorkItems(ids).then(
-      (r) => !dead && setWi({ t: "ready", r }),
-      (e) => !dead && setWi({ t: e instanceof PermissionError ? "denied" : "error" })
-    );
-    return () => { dead = true; };
-  }, [key, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  return wi;
+    if (seen.current === version) return;
+    seen.current = version;
+    refetch?.();
+  }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** The ADO work items for `ids`, one call for all of them. `version` refetches them (keeping the rows shown meanwhile). */
+export function useWorkItems(ids: number[], version = 0): Wi {
+  const key = ids.join(",");
+  const load = useGh(ids.length ? ["misc", "work-items", key] : null, () => fetchWorkItems(ids));
+  useRefetchOn(load, version);
+  if (load.t === "ready") return { t: "ready", r: load.v };
+  if (load.t === "error") return { t: load.err instanceof PermissionError ? "denied" : "error" };
+  return { t: "loading" };
 }
 
 export function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
@@ -433,12 +433,9 @@ function hostOf(url: string) {
 
 /** The newest deployment per environment for this pull request. Hidden when GitHub reports none (or the Deployments permission is missing). */
 function Deployments({ repo, number, version }: { repo: string; number: number; version: number }) {
-  const [rows, setRows] = React.useState<DeploymentRow[]>([]);
-  React.useEffect(() => {
-    let dead = false;
-    getDeployments(repo, number).then((n) => !dead && setRows(latestDeployments(n)), () => !dead && setRows([]));
-    return () => { dead = true; };
-  }, [repo, number, version]);
+  const load = useGh<DeploymentRow[]>(["pr", repo, number, "deployments"], () => getDeployments(repo, number).then(latestDeployments, () => []));
+  useRefetchOn(load, version); // the Overview asks again after every action
+  const rows = load.t === "ready" ? load.v : [];
   if (!rows.length) return null;
   return (
     <Section title="Deployments">
@@ -512,15 +509,13 @@ function commitColumns(repo: string): ITableColumn<CommitRow>[] {
   ];
 }
 
+const NO_SIGS = new Map<string, CommitSignature | null>();
+
 function Commits({ pr, repo }: { pr: PrPageData; repo: string }) {
   const cols = React.useMemo(() => commitColumns(repo), [repo]);
   // CI-6: signatures arrive in a second request, so the rows render at once and the badges follow.
-  const [sigs, setSigs] = React.useState<Map<string, CommitSignature | null>>(() => new Map());
-  React.useEffect(() => {
-    let dead = false;
-    getCommitSignatures(repo, pr.number).then((m) => !dead && setSigs(m), () => {});
-    return () => { dead = true; };
-  }, [repo, pr.number]);
+  const sigLoad = useGh(["pr", repo, pr.number, "signatures"], () => getCommitSignatures(repo, pr.number));
+  const sigs = sigLoad.t === "ready" ? sigLoad.v : NO_SIGS;
   const provider = React.useMemo(() => new ArrayItemProvider<CommitRow>(pr.commits.map((c, i) => ({ ...c, avatar: pr.commitAvatars[i] ?? "", signature: sigs.get(c.sha) }))), [pr, sigs]);
   return (
     <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
@@ -530,8 +525,6 @@ function Commits({ pr, repo }: { pr: PrPageData; repo: string }) {
 }
 
 // ---------- the page ----------
-
-type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; pr: PrPageData };
 
 export interface PrPageProps {
   repo: string;
@@ -548,16 +541,10 @@ export interface PrPageProps {
 
 export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, commandBarItems }: PrPageProps) {
   const n = state.pr;
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  // The header and overview: kept between visits, so reopening a PR shows it at once while it refreshes.
+  const load = useGh(["pr", repo, n, "page"], () => getPr(repo, n), { persist: true });
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    getPr(repo, n).then((pr) => !dead && setLoad({ t: "ready", pr }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, n, signedIn, reload]);
 
   // A reply, resolve or comment invalidated the cached page: refetch it quietly so "x/y comments resolved" follows.
   React.useEffect(() => {
@@ -566,7 +553,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
       return store.subscribe(() => {
         if (store.version === seen) return;
         seen = store.version;
-        getPr(repo, n).then((fresh) => setLoad((l) => (l.t === "ready" ? { t: "ready", pr: fresh } : l)), () => {});
+        void queryClient.invalidateQueries({ queryKey: ["pr", repo, n, "page"] });
       });
     });
     return () => offs.forEach((off) => off());
@@ -579,7 +566,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
   const [ui, setUi] = React.useState<Ui>({});
   const page: PrPageId = state.prPage ?? "overview";
   const list: BrowseState = { repo, view: "prs", prTab: listTab };
-  const pr = load.t === "ready" ? load.pr : undefined;
+  const pr = load.t === "ready" ? load.v : undefined;
   const url = pr?.url ?? `https://github.com/${repo}/pull/${n}`;
   const [openItem, ...restItems] = commandBarItems(url);
   const nav = (p: Partial<BrowseState>, replace?: boolean) => go({ repo, view: "prs", prTab: state.prTab ?? listTab, pr: n, prPage: page, ...p }, replace);
@@ -610,7 +597,7 @@ export function PrPage({ repo, state, listTab, go, signedIn, signIn, busy, comma
       {load.t === "loading" && <div className="page-content page-content-top gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading pull request" /></div>}
       {load.t === "error" && (
         <div className="page-content page-content-top">
-          <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request" permission="Pull requests" />
+          <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); load.retry(); }} subject="see this pull request" permission="Pull requests" />
         </div>
       )}
       {pr && page === "overview" && <div className="page-content page-content-top"><Overview pr={pr} repo={repo} prTab={state.prTab ?? listTab} openFile={(file) => nav({ prPage: "files", file })} viewChecks={() => nav({ prPage: "checks", file: undefined })} signIn={signIn} busy={busy} actions={actions} edit={edit} /></div>}

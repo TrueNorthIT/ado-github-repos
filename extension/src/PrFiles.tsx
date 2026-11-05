@@ -1,6 +1,8 @@
 // The Files tab of the PR page (PR-8): a resizable file tree, and one Card per file with Monaco's inline diff editor.
 import * as React from "react";
 import * as ReactDOM from "react-dom";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient, useGh } from "./queryClient";
 import { Button } from "azure-devops-ui/Button";
 import { ButtonGroup } from "azure-devops-ui/ButtonGroup";
 import { Card } from "azure-devops-ui/Card";
@@ -124,6 +126,9 @@ export interface ContextCtl {
   anyRegions: boolean;
 }
 
+/** A view zone is its own React root (ReactDOM.render), so it gets the page's query cache again for anything inside that reads through it. */
+const Zone = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+
 type Body = { t: "wait" } | { t: "cant"; why: string } | { t: "error" } | { t: "diff"; original: string; modified: string; whole?: "added" | "removed" };
 
 export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOTATIONS, annotationUrls = NO_URLS, sideBySide = false, commenting = false, ignoreWhitespace = false, onContext, ranges = NO_RANGES }: { file: PrFile; repo: string; pr: DiffCtx; dark: boolean; anchors: InlineAnchor[]; /** CM-6: lines covered by multi-line threads. */ ranges?: ThreadRange[]; annotations?: AnnotationAnchor[]; annotationUrls?: Map<string, string>; sideBySide?: boolean; commenting?: boolean; ignoreWhitespace?: boolean; onContext?: (c: ContextCtl | null) => void }) {
@@ -208,7 +213,7 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
         .map((a) => {
           const node = document.createElement("div");
           node.className = "gh-zone";
-          ReactDOM.render(<InlineThreads repo={repo} number={pr.number!} baseRef={pr.baseRef!} ids={a.threadIds} />, node);
+          ReactDOM.render(<Zone><InlineThreads repo={repo} number={pr.number!} baseRef={pr.baseRef!} ids={a.threadIds} /></Zone>, node);
           nodes.push(node);
           return { side: a.side, line: a.line, node };
         });
@@ -217,7 +222,7 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
         for (const a of annotations) {
           const node = document.createElement("div");
           node.className = "gh-zone";
-          ReactDOM.render(<AnnotationZone anchor={a} urls={annotationUrls} />, node);
+          ReactDOM.render(<Zone><AnnotationZone anchor={a} urls={annotationUrls} /></Zone>, node);
           nodes.push(node);
           plans.push({ side: "RIGHT", line: a.line, node });
         }
@@ -274,7 +279,7 @@ export function DiffBody({ file, repo, pr, dark, anchors, annotations = NO_ANNOT
     node.className = "gh-zone";
     const text = body.t === "diff" ? body.modified.split(String.fromCharCode(10)) : [];
     const original = composer.side === "RIGHT" && text.length ? text.slice((composer.startLine ?? composer.line) - 1, composer.line) : undefined;
-    ReactDOM.render(<ComposerRoot repo={repo} number={pr.number!} target={composer} originalLines={original?.length ? original : undefined} onClose={() => setComposer(null)} />, node);
+    ReactDOM.render(<Zone><ComposerRoot repo={repo} number={pr.number!} target={composer} originalLines={original?.length ? original : undefined} onClose={() => setComposer(null)} /></Zone>, node);
     void loadMonaco().then((m) => {
       if (dead) return;
       const remove = m.placeZones(target, [{ side: composer.side, line: composer.line, node }]);
@@ -565,6 +570,8 @@ export function FilesView({ files: all, repo, ctx, selected, select, dark, sideB
   );
 }
 
+const NO_CONTEXTS: Awaited<ReturnType<typeof getAnnotations>> = [];
+
 interface LoadedProps {
   files: PrFile[];
   repo: string;
@@ -597,13 +604,8 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
     return m;
   }, [threads]);
   // CI-1: the annotations arrive after the diff; if they can't be read (no Checks permission, say) the diff simply has none.
-  const [contexts, setContexts] = React.useState<Awaited<ReturnType<typeof getAnnotations>>>([]);
-  React.useEffect(() => {
-    if (!whole) return;
-    let dead = false;
-    getAnnotations(repo, number).then((c) => !dead && setContexts(c), () => {});
-    return () => { dead = true; };
-  }, [repo, number, whole]);
+  const contextsLoad = useGh(whole ? ["pr", repo, number, "annotations"] : null, () => getAnnotations(repo, number).catch(() => [] as Awaited<ReturnType<typeof getAnnotations>>));
+  const contexts = contextsLoad.t === "ready" ? contextsLoad.v : NO_CONTEXTS;
   const annotations = React.useMemo<AnnotationsInfo>(() => {
     const urls = new Map<string, string>();
     for (const c of contexts) if (c.__typename === "CheckRun" && c.detailsUrl) urls.set(c.name, c.detailsUrl);
@@ -618,11 +620,9 @@ function Loaded({ files, repo, ctx, whole, selected, select, dark, sideBySide, i
   );
 }
 
-type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; files: PrFile[] };
+type ViewedData = { pullRequestId: string; states: Record<string, ViewedState> };
 
 export function PrFilesTab({ repo, number, pr, selected, select, dark, signedIn, signIn, busy }: { repo: string; number: number; pr: PrPageData; selected?: string; select: (path: string) => void; dark: boolean; signedIn: boolean; signIn: () => void; busy: boolean }) {
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
   const [prefs, setPrefs] = usePrefs();
   const { diff } = useHashExtras();
   // VW-2: the hash override, then the stored per-user default, then inline.
@@ -636,35 +636,25 @@ export function PrFilesTab({ repo, number, pr, selected, select, dark, signedIn,
 
   // VW-6: "Show changes from". The commits arrive on their own; until then the PR's own diff is all there is.
   const [changes, setChanges] = React.useState<ChangesFrom>({ kind: "all" });
-  const [rangeCtx, setRangeCtx] = React.useState<RangeContext | undefined>();
-  React.useEffect(() => {
-    let dead = false;
-    getRangeContext(repo, number).then((c) => !dead && setRangeCtx(c), () => {});
-    return () => { dead = true; };
-  }, [repo, number, signedIn, reload]);
+  const rangeLoad = useGh<RangeContext | null>(["pr", repo, number, "range-context"], () => getRangeContext(repo, number).catch(() => null));
+  const rangeCtx = rangeLoad.t === "ready" ? rangeLoad.v ?? undefined : undefined;
   const range = React.useMemo(() => {
     if (changes.kind === "all" || !rangeCtx) return null;
     try { return resolveRange(repo, changes, rangeCtx); } catch { return null; }
   }, [changes, rangeCtx, repo]);
   const whole = changes.kind === "all" || !range;
   const rangeKey = whole ? "all" : range!.path;
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    (whole ? getPrFiles(repo, number) : getRangeFiles(range!.path)).then((files) => !dead && setLoad({ t: "ready", files }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rangeKey stands for range
-  }, [repo, number, signedIn, reload, rangeKey]);
+  // Another range starts from the spinner: its files are not the last range's. Coming back to the tab shows the files at once.
+  const filesLoad = useGh(["pr", repo, number, "files", rangeKey], () => (whole ? getPrFiles(repo, number) : getRangeFiles(range!.path)));
+  const load = filesLoad.t === "ready" ? { t: "ready" as const, files: filesLoad.v } : filesLoad;
 
   // VW-3: viewed states are the signed-in viewer's, and only mean something for the PR's own diff.
-  const [viewedData, setViewedData] = React.useState<{ pullRequestId: string; states: Record<string, ViewedState> } | undefined>();
+  // A tick changes the cached answer at once (and puts it back if GitHub refuses), so it survives leaving the tab and coming back.
+  const viewedKey = React.useMemo(() => ["pr", repo, number, "viewed"], [repo, number]);
+  const viewedLoad = useGh<ViewedData | null>(signedIn ? viewedKey : null, () => getViewedStates(repo, number).then((d) => (d.pullRequestId ? d : null), () => null));
+  const viewedData = signedIn && viewedLoad.t === "ready" ? viewedLoad.v ?? undefined : undefined;
+  const setViewedData = React.useCallback((f: (d: ViewedData | null | undefined) => ViewedData | null | undefined) => queryClient.setQueryData<ViewedData | null>(viewedKey, (d) => f(d) ?? null), [viewedKey]);
   const [viewedError, setViewedError] = React.useState(false);
-  React.useEffect(() => {
-    if (!signedIn) return setViewedData(undefined);
-    let dead = false;
-    getViewedStates(repo, number).then((d) => !dead && setViewedData(d.pullRequestId ? d : undefined), () => !dead && setViewedData(undefined));
-    return () => { dead = true; };
-  }, [repo, number, signedIn, reload]);
   const viewed = React.useMemo<ViewedFilesCtl | undefined>(() => {
     if (!viewedData || !whole) return undefined;
     return {
@@ -679,7 +669,7 @@ export function PrFilesTab({ repo, number, pr, selected, select, dark, signedIn,
         });
       },
     };
-  }, [viewedData, whole]);
+  }, [viewedData, whole, setViewedData]);
 
   const ctx: DiffCtx = whole ? { baseSha: pr.baseSha, headSha: pr.headSha, number: pr.number, baseRef: pr.baseRef } : { baseSha: range!.base, headSha: range!.head };
   const total = load.t === "ready" ? load.files.length : 0;
@@ -697,7 +687,7 @@ export function PrFilesTab({ repo, number, pr, selected, select, dark, signedIn,
   if (load.t === "error")
     return (
       <div className="page-content page-content-top">
-        <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request's files" permission="Pull requests" />
+        <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); if (load.t === "error") load.retry(); }} subject="see this pull request's files" permission="Pull requests" />
       </div>
     );
   if (!load.files.length)

@@ -9,6 +9,7 @@ import { Location } from "azure-devops-ui/Utilities/Position";
 import { getTokens, signIn } from "./auth";
 import { GhError, restJson } from "./githubBrowse";
 import { hubHref } from "./hostNav";
+import { queryClient, useGh } from "./queryClient";
 import { useProjectIndex, type ProjectsLoad } from "./myWorkProjects";
 import { MY_WORK_SECTIONS, myWorkSearchPath, onlyConnected, toMyWorkRows, type ConnectedRow, type MyWorkRow, type MyWorkSection } from "./lib/myWork";
 
@@ -38,30 +39,40 @@ export interface MyPrs {
   busy: boolean;
 }
 
+/** No GitHub sign-in: an error rather than an answer, so it is never kept between visits (only successful reads are persisted). */
+class SignedOut extends Error {}
+
+type Sections = Record<MyWorkSection, MyWorkRow[]>;
+
+async function searchMine(): Promise<Sections> {
+  if (!(await getTokens())) throw new SignedOut();
+  try {
+    const found = await Promise.all(MY_WORK_SECTIONS.map((s) => restJson({ method: "GET", path: myWorkSearchPath(s.id) })));
+    return Object.fromEntries(MY_WORK_SECTIONS.map((s, i) => [s.id, toMyWorkRows(found[i].body).rows])) as Sections;
+  } catch (e) {
+    if (e instanceof GhError && e.kind === "auth") throw new SignedOut();
+    console.warn("[GitHub my work] search failed", e);
+    throw e;
+  }
+}
+
 export function useMyPrs(): MyPrs {
   const projects = useProjectIndex();
-  const [search, setSearch] = React.useState<Search>({ t: "loading" });
   const [busy, setBusy] = React.useState(false);
-
-  const run = React.useCallback(async () => {
-    setSearch({ t: "loading" });
-    if (!(await getTokens())) return setSearch({ t: "signedOut" });
-    try {
-      const found = await Promise.all(MY_WORK_SECTIONS.map((s) => restJson({ method: "GET", path: myWorkSearchPath(s.id) })));
-      setSearch({ t: "ready", sections: Object.fromEntries(MY_WORK_SECTIONS.map((s, i) => [s.id, toMyWorkRows(found[i].body).rows])) as Record<MyWorkSection, MyWorkRow[]> });
-    } catch (e) {
-      if (e instanceof GhError && e.kind === "auth") return setSearch({ t: "signedOut" });
-      console.warn("[GitHub my work] search failed", e);
-      setSearch({ t: "error", message: e instanceof GhError && e.kind === "rateLimit" ? "GitHub's search rate limit was reached. Try again in a minute." : "Could not load your GitHub pull requests." });
-    }
-  }, []);
-  React.useEffect(() => void run(), [run]);
+  // Kept between visits: the flyout and the page open with the last list while GitHub is asked again.
+  const load = useGh(["prs", "mine-org"], searchMine, { persist: true });
+  const search: Search =
+    load.t === "ready" ? { t: "ready", sections: load.v }
+    : load.t === "loading" ? { t: "loading" }
+    : load.err instanceof SignedOut ? { t: "signedOut" }
+    : { t: "error", message: load.err instanceof GhError && load.err.kind === "rateLimit" ? "GitHub's search rate limit was reached. Try again in a minute." : "Could not load your GitHub pull requests." };
+  const run = React.useCallback(() => void queryClient.refetchQueries({ queryKey: ["prs", "mine-org"] }), []);
 
   const doSignIn = React.useCallback(async () => {
     setBusy(true);
     const r = await signIn();
     setBusy(false);
-    if (r.ok) void run();
+    if (r.ok) run();
   }, [run]);
 
   const index = projects.t === "ready" ? projects.index : undefined;

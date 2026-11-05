@@ -17,6 +17,7 @@ import { RelDate } from "./RelDate";
 import { getRangeFiles, getUpdates, invalidatePr } from "./githubBrowse";
 import { patchHash, useHashExtras } from "./hostNav";
 import { usePrefs } from "./prefs";
+import { useGh } from "./queryClient";
 
 const short = (oid: string) => oid.slice(0, 7);
 const SHOWN_COMMITS = 3;
@@ -50,21 +51,15 @@ function UpdateRow({ u, checked, toggle }: { u: PrUpdate; checked: boolean; togg
 
 type Files = { t: "idle" } | { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; files: PrFile[] };
 
-function Compare({ repo, updates, picked, dark, signedIn, signIn, busy }: { repo: string; updates: PrUpdate[]; picked: number[]; dark: boolean; signedIn: boolean; signIn: () => void; busy: boolean }) {
+function Compare({ repo, number, updates, picked, dark, signIn, busy }: { repo: string; number: number; updates: PrUpdate[]; picked: number[]; dark: boolean; signIn: () => void; busy: boolean }) {
   const [a, b] = picked.length === 1 ? [picked[0] - 1, picked[0]] : [picked[0], picked[1]];
   const cmp = React.useMemo(() => {
     try { return compareUpdates(repo, updates, a, b); } catch (e) { return e as Error; }
   }, [repo, updates, a, b]);
-  const [files, setFiles] = React.useState<Files>({ t: "idle" });
-  const [reload, setReload] = React.useState(0);
   const path = cmp instanceof Error ? undefined : cmp.path;
-  React.useEffect(() => {
-    if (!path) return;
-    let dead = false;
-    setFiles({ t: "loading" });
-    getRangeFiles(path).then((f) => !dead && setFiles({ t: "ready", files: f }), (err) => !dead && setFiles({ t: "error", err }));
-    return () => { dead = true; };
-  }, [path, signedIn, reload]);
+  // Another pair of updates starts from the spinner: its files are not the last pair's.
+  const filesLoad = useGh(path ? ["pr", repo, number, "range-files", path] : null, () => getRangeFiles(path!));
+  const files: Files = !path ? { t: "idle" } : filesLoad.t === "ready" ? { t: "ready", files: filesLoad.v } : filesLoad;
   const [prefs, setPrefs] = usePrefs();
   const { diff } = useHashExtras();
   const sideBySide = resolveSideBySide(diff.sideBySide, storedSideBySide(prefs));
@@ -83,7 +78,7 @@ function Compare({ repo, updates, picked, dark, signedIn, signIn, busy }: { repo
     <section className="gh-update-compare" aria-label={title}>
       <h2 className="gh-update-compare-title body-l font-weight-semibold">{title}</h2>
       {files.t === "loading" && <div className="gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading changed files" /></div>}
-      {files.t === "error" && <ErrorView err={files.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="compare these updates" permission="Contents" />}
+      {files.t === "error" && <ErrorView err={files.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); if (filesLoad.t === "error") filesLoad.retry(); }} subject="compare these updates" permission="Contents" />}
       {files.t === "ready" && !files.files.length && <ZeroData iconProps={{ iconName: "Page" }} imageAltText="" primaryText="No file changes" secondaryText="These two updates have the same contents." />}
       {files.t === "ready" && files.files.length > 0 && (
         <FilesView
@@ -96,24 +91,16 @@ function Compare({ repo, updates, picked, dark, signedIn, signIn, busy }: { repo
   );
 }
 
-type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; updates: PrUpdate[] };
-
-export function PrUpdatesTab({ repo, number, pr: _pr, dark, signedIn, signIn, busy }: { repo: string; number: number; pr: PrPageData; dark: boolean; signedIn: boolean; signIn: () => void; busy: boolean }) {
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+export function PrUpdatesTab({ repo, number, pr: _pr, dark, signedIn: _signedIn, signIn, busy }: { repo: string; number: number; pr: PrPageData; dark: boolean; signedIn: boolean; signIn: () => void; busy: boolean }) {
+  const updatesLoad = useGh(["pr", repo, number, "updates"], () => getUpdates(repo, number));
+  const load = updatesLoad.t === "ready" ? { t: "ready" as const, updates: updatesLoad.v } : updatesLoad;
   const [picked, setPicked] = React.useState<number[]>([]);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    getUpdates(repo, number).then((updates) => !dead && setLoad({ t: "ready", updates }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, number, signedIn, reload]);
   // Two at most: ticking a third replaces the older tick. Sorted, so the pair is always (older, newer).
   const toggle = (index: number, on: boolean) => setPicked((p) => (on ? [...p.filter((i) => i !== index), index].slice(-2) : p.filter((i) => i !== index)).sort((x, y) => x - y));
 
   if (load.t === "loading") return <div className="page-content page-content-top gh-pr-loading flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading updates" /></div>;
   if (load.t === "error")
-    return <div className="page-content page-content-top"><ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); setReload((r) => r + 1); }} subject="see this pull request's updates" permission="Pull requests" /></div>;
+    return <div className="page-content page-content-top"><ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidatePr(); load.retry(); }} subject="see this pull request's updates" permission="Pull requests" /></div>;
   const newest = [...load.updates].reverse();
   if (!newest.length) return <div className="page-content page-content-top"><ZeroData iconProps={{ iconName: "BranchPullRequest" }} imageAltText="" primaryText="No updates" secondaryText="This pull request has no commits yet." /></div>;
   return (
@@ -126,7 +113,7 @@ export function PrUpdatesTab({ repo, number, pr: _pr, dark, signedIn, signIn, bu
         </ul>
         </div>
       </Card>
-      {picked.length > 0 && <Compare repo={repo} updates={load.updates} picked={picked} dark={dark} signedIn={signedIn} signIn={signIn} busy={busy} />}
+      {picked.length > 0 && <Compare repo={repo} number={number} updates={load.updates} picked={picked} dark={dark} signIn={signIn} busy={busy} />}
     </div>
   );
 }
