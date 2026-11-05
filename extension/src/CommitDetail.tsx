@@ -28,22 +28,14 @@ import { usePrefs } from "./prefs";
 import { watchTheme } from "./theme";
 import { MoreButton } from "azure-devops-ui/Menu";
 import { useCommitActions } from "./CommitActions";
+import { useGh, type GhLoad } from "./queryClient";
 import { CommitWorkItemList, MessageWithWorkItems, WorkItemPills, useWorkItemLinks, type WorkItemLinks } from "./CommitWorkItems";
 import { findWorkItemIds } from "./lib/workItems";
 import "./browser.css";
 
-type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
-
-function useLoad<T>(make: () => Promise<T>, deps: unknown[]): [Load<T>, () => void] {
-  const [load, setLoad] = React.useState<Load<T>>({ t: "loading" });
-  const [n, setN] = React.useState(0);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    make().then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [...deps, n]); // eslint-disable-line react-hooks/exhaustive-deps
-  return [load, () => { invalidateRefs(); setN((x) => x + 1); }];
+/** A read through the page's query cache; "Try again" drops the cached refs (invalidateRefs), which refetches what is on screen. */
+function useLoad<T>(key: unknown[], make: () => Promise<T>, persist = false): [GhLoad<T>, () => void] {
+  return [useGh<T>(["refs", ...key], make, { persist }), invalidateRefs];
 }
 
 // ---------- the header's second line ----------
@@ -114,7 +106,7 @@ function FilesTab({ d, repo, parent, setParent, dark, props }: { d: CommitDetail
   const options = React.useMemo(() => parentOptions(d.parents), [d.parents]);
   const option = options[Math.min(Math.max(parent, 1), options.length) - 1] ?? defaultParentOption(d.parents);
   const [prefs, setPrefs] = usePrefs();
-  const [load, retry] = useLoad<PrFile[]>(() => getCommitFiles(repo, d.sha, option), [repo, d.sha, option.baseSha, props.signedIn]);
+  const [load, retry] = useLoad<PrFile[]>(["commitFiles", repo, d.sha, option.baseSha], () => getCommitFiles(repo, d.sha, option)); // patches: not kept between visits
   const [filterOpen, setFilterOpen] = React.useState(false);
   const [text, setText] = React.useState("");
   const [selected, setSelected] = React.useState<string | undefined>();
@@ -179,9 +171,10 @@ export function CommitDetailPage({ repo, props }: { repo: string; props: HubProp
   const { defaultBranch } = useDefaultBranch(repo);
   const [dark, setDark] = React.useState(false);
   React.useEffect(() => watchTheme(setDark), []);
-  const [load, retry] = useLoad(() => getCommitDetail(repo, sha), [repo, sha, props.signedIn]);
+  const [load, retry] = useLoad(["commit", repo, sha], () => getCommitDetail(repo, sha), true);
   const actions = useCommitActions(repo, props.signedIn, state.ref ?? defaultBranch ?? undefined);
-  const wiIds = React.useMemo(() => (load.t === "ready" ? findWorkItemIds(load.v.message) : []), [load]);
+  const message = load.t === "ready" ? load.v.message : undefined;
+  const wiIds = React.useMemo(() => (message !== undefined ? findWorkItemIds(message) : []), [message]); // useGh hands a new load object each render
   const wiLinks = useWorkItemLinks(wiIds);
   const tab = state.commitTab ?? "files";
   const back = () => go({ repo, ref: state.ref });

@@ -19,6 +19,7 @@ import { CommitTable } from "./Commits";
 import { FilesPreview } from "./NewPullRequest";
 import { HubProps, Loading, titleSwitcher, useDefaultBranch } from "./RepoHub";
 import { getBranchCompare, invalidateRefs, listBranches, listTagNames } from "./githubBrowse";
+import { useGh } from "./queryClient";
 import { gotoHash, patchHash } from "./hostNav";
 import { openInHub, useHubHref } from "./repoHref";
 import "./browser.css";
@@ -26,17 +27,12 @@ import "./browser.css";
 const KIND_ICON: Record<RefKind, string> = { branch: "BranchFork2", tag: "Tag", commit: "BranchCommit" };
 
 /** Branch and tag names for the pickers, loaded once per page; undefined while loading, [] when a list fails. */
-function useRefNames(repo: string, signedIn: boolean): { branches?: string[]; tags?: string[] } {
-  const [names, setNames] = React.useState<{ branches?: string[]; tags?: string[] }>({});
-  React.useEffect(() => {
-    let dead = false;
-    setNames({});
-    listBranches(repo).then((b) => !dead && setNames((n) => ({ ...n, branches: b })), () => !dead && setNames((n) => ({ ...n, branches: [] })));
-    listTagNames(repo).then((t) => !dead && setNames((n) => ({ ...n, tags: t })), () => !dead && setNames((n) => ({ ...n, tags: [] })));
-    return () => { dead = true; };
-  }, [repo, signedIn]);
-  return names;
+function useRefNames(repo: string): { branches?: string[]; tags?: string[] } {
+  const b = useGh(["refs", "branchNames", repo], () => listBranches(repo).catch(() => NO_NAMES), { persist: true });
+  const t = useGh(["refs", "tagNames", repo], () => listTagNames(repo).catch(() => NO_NAMES), { persist: true });
+  return { branches: b.t === "ready" ? b.v : undefined, tags: t.t === "ready" ? t.v : undefined };
 }
+const NO_NAMES: string[] = [];
 
 /** Native's version picker: branches and tags under headings, filtered by the search box; a commit SHA typed there is offered too. */
 function CompareRefPicker({ current, kind, branches, tags, defaultBranch, onPick, label }: {
@@ -76,22 +72,15 @@ function CompareRefPicker({ current, kind, branches, tags, defaultBranch, onPick
 
 export function BranchCompare({ repo, cmp, props }: { repo: string; cmp: CompareHashState; props: HubProps }) {
   const { base, head, tab } = cmp;
-  const { go, openSwitch, signedIn } = props;
+  const { go, openSwitch } = props;
   const href = useHubHref();
   const { defaultBranch } = useDefaultBranch(repo);
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: Data }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
-  const names = useRefNames(repo, signedIn);
+  // The compare itself is not kept between visits: it carries commit lists that go stale with every push.
+  const data = useGh<Data>(["refs", "compare", repo, base, head], () => getBranchCompare(repo, base, head));
+  const names = useRefNames(repo);
   const kindOf = (r: string) => refKind(r, names.branches ?? [], names.tags ?? []);
   // A pull request needs two branches: a tag or a commit on either side leaves "New pull request" off.
   const prOk = base !== head && kindOf(base) === "branch" && kindOf(head) === "branch";
-
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    getBranchCompare(repo, base, head).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, base, head, signedIn, reload]);
 
   const pick = (next: { base?: string; head?: string }) => gotoHash(serializeCompare({ repo, base, head, tab, ...next }));
   const commitState = React.useCallback((sha: string) => ({ repo, ref: head, commit: sha }), [repo, head]);
@@ -140,7 +129,7 @@ export function BranchCompare({ repo, cmp, props }: { repo: string; cmp: Compare
       </TabBar>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {data.t === "error" ? (
-          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="compare these branches" permission="Contents" />
+          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={invalidateRefs} subject="compare these branches" permission="Contents" />
         ) : data.t === "loading" ? (
           <Loading label="Comparing branches" />
         ) : (

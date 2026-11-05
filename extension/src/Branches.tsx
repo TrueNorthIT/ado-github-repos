@@ -32,6 +32,7 @@ import { ForksView } from "./Forks";
 import { serializeForks } from "./lib/forks";
 import { gotoHash, useHashExtras } from "./hostNav";
 import { usePrefs } from "./prefs";
+import { useGh } from "./queryClient";
 import { RefWriteError, useRefWrites } from "./refWrites";
 import "./browser.css";
 
@@ -53,43 +54,27 @@ export function BehindAhead({ value, max }: { value?: AheadBehind; max: number }
   );
 }
 
+const NO_LOCKS: ReadonlySet<string> = new Set();
+
 function BranchList({ repo, props }: { repo: string; props: HubProps }) {
-  const { state, go, openSwitch, signedIn } = props;
+  const { state, go, openSwitch } = props;
   const href = useHubHref();
   const [prefs, setPrefs, prefsReady] = usePrefs();
   const writes = useRefWrites();
   const tab: BranchTabId = state.branchTab ?? "mine";
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: BranchesData }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
-  const [viewer, setViewer] = React.useState("");
+  const data = useGh<BranchesData>(["refs", "branches", repo], () => listAllBranches(repo), { persist: true });
+  const viewerLoad = useGh(["misc", "viewer"], () => getViewerLogin().catch(() => ""), { persist: true });
+  const viewer = viewerLoad.t === "ready" ? viewerLoad.v : "";
   const [compares, setCompares] = React.useState<Record<string, AheadBehind>>({});
   const [query, setQuery] = React.useState(state.q ?? "");
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
   const [dialog, setDialog] = React.useState<{ kind: "new"; base?: string } | { kind: "delete" | "rename" | "default"; branch: Branch } | null>(null);
-  const [admin, setAdmin] = React.useState(false);
+  const adminLoad = useGh(["refs", "admin", repo], () => getIsRepoAdmin(repo), { persist: true });
+  const admin = adminLoad.t === "ready" && adminLoad.v;
   const [notice, setNotice] = React.useState<string | null>(null);
-  const [locked, setLocked] = React.useState<ReadonlySet<string>>(() => new Set());
-
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    setCompares({});
-    listAllBranches(repo).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, signedIn, reload]);
   // Branches the extension's own rulesets lock (Lock branch); read for everyone, so readers see the lock too.
-  React.useEffect(() => {
-    let dead = false;
-    getLockedBranches(repo).then((l) => !dead && setLocked(l), () => !dead && setLocked(new Set()));
-    return () => { dead = true; };
-  }, [repo, signedIn, reload]);
-  React.useEffect(() => { getViewerLogin().then(setViewer, () => setViewer("")); }, [signedIn]);
-  React.useEffect(() => {
-    let dead = false;
-    setAdmin(false);
-    getIsRepoAdmin(repo).then((a) => !dead && setAdmin(a));
-    return () => { dead = true; };
-  }, [repo, signedIn]);
+  const lockedLoad = useGh(["refs", "locked", repo], () => getLockedBranches(repo).catch(() => new Set<string>() as ReadonlySet<string>));
+  const locked = lockedLoad.t === "ready" ? lockedLoad.v : NO_LOCKS;
 
   // The search box owns its text; the hash follows a moment after typing (replace: no history entry per keystroke).
   React.useEffect(() => {
@@ -98,6 +83,8 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const v = data.t === "ready" ? data.v : undefined;
+  // A refreshed list (another repo, or a write) may have moved any branch: ask behind and ahead again. An unchanged refresh keeps the same object.
+  React.useEffect(() => setCompares({}), [v]);
   const favs = prefs.favourites[repo] ?? NO_FAVS;
   const visible = React.useMemo(() => {
     if (!v) return [];
@@ -130,7 +117,6 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   }, [wanted, repo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const max = maxDivergence(shown.map((b) => compares[b.name]));
-  const refresh = () => setReload((n) => n + 1);
   const toggleFolder = React.useCallback((p: string) => setCollapsed((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }), []);
   const toggleFav = (name: string) => setPrefs((p) => {
     const cur = p.favourites[repo] ?? [];
@@ -220,9 +206,9 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
   const create = (name: string, base: string) => {
     const from = v?.branches.find((b) => b.name === base);
     if (!v || !from) return;
-    void writes.run(() => createBranch(v.repoId, name, from.sha), () => { setDialog(null); refresh(); });
+    void writes.run(() => createBranch(v.repoId, name, from.sha), () => { setDialog(null); });
   };
-  const doDelete = (b: Branch) => void writes.run(() => deleteRef(b.id), () => { setDialog(null); setNotice(`Deleted branch ${b.name}.`); refresh(); });
+  const doDelete = (b: Branch) => void writes.run(() => deleteRef(b.id), () => { setDialog(null); setNotice(`Deleted branch ${b.name}.`); });
   const doRename = (b: Branch, to: string) => void writes.run(
     async () => {
       try {
@@ -232,9 +218,9 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         throw text ? new RefWriteError(text) : e;
       }
     },
-    () => { setPrefs((p) => renameInPrefs(p, repo, b.name, to)); setDialog(null); setNotice(`Renamed branch ${b.name} to ${to}.`); refresh(); }
+    () => { setPrefs((p) => renameInPrefs(p, repo, b.name, to)); setDialog(null); setNotice(`Renamed branch ${b.name} to ${to}.`); }
   );
-  const doSetDefault = (b: Branch) => void writes.run(() => setDefaultBranch(repo, b.name), () => { forgetDefaultBranch(repo); setDialog(null); setNotice(`${b.name} is now the default branch.`); refresh(); });
+  const doSetDefault = (b: Branch) => void writes.run(() => setDefaultBranch(repo, b.name), () => { forgetDefaultBranch(repo); setDialog(null); setNotice(`${b.name} is now the default branch.`); });
   // Lock / Unlock: the `update` rule of the extension's own ruleset for the branch (lib/policyEdit.ts), read fresh so its policies are kept.
   const doLock = (b: Branch, lock: boolean) => void writes.run(
     async () => {
@@ -245,7 +231,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         throw w ? new RefWriteError(w.text) : e;
       }
     },
-    () => { setNotice(lock ? `Locked ${b.name}. Nobody can push to it until it is unlocked.` : `Unlocked ${b.name}.`); refresh(); }
+    () => { setNotice(lock ? `Locked ${b.name}. Nobody can push to it until it is unlocked.` : `Unlocked ${b.name}.`); }
   );
   const closeDialog = () => { if (!writes.busy) { setDialog(null); writes.clearError(); } };
 
@@ -282,7 +268,7 @@ function BranchList({ repo, props }: { repo: string; props: HubProps }) {
         {notice && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
         {error ? (
-          <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); refresh(); }} subject="see this repository's branches" permission="Contents" />
+          <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={invalidateRefs} subject="see this repository's branches" permission="Contents" />
         ) : !nodes.length && !(data.t === "loading" || !prefsReady) ? (
           <ZeroData iconProps={{ iconName: "BranchFork2" }} imageAltText="" primaryText={state.q ? "No branches match" : tabEmpty} />
         ) : (

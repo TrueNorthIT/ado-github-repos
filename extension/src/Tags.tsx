@@ -19,33 +19,28 @@ import { createTag, deleteRef, mutate, findCommit, invalidateRefs, listAllBranch
 import { openInHub, useHubHref } from "./repoHref";
 import { ReleasesTab, TagTabs } from "./Releases";
 import { listAllReleases } from "./githubBrowse";
+import { useGh } from "./queryClient";
 import { releaseForTag, type Release } from "./lib/releases";
 import { RefWriteError, useRefWrites } from "./refWrites";
 import "./browser.css";
 
 const NO_BRANCHES: string[] = [];
 
+const NO_RELEASES: Release[] = [];
+
 function TagList({ repo, props }: { repo: string; props: HubProps }) {
-  const { state, go, openSwitch, signedIn } = props;
+  const { state, go, openSwitch } = props;
   const href = useHubHref();
   const writes = useRefWrites();
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: TagsData }>({ t: "loading" });
-  const [branches, setBranches] = React.useState<BranchesData | undefined>();
-  const [releases, setReleases] = React.useState<Release[]>([]);
-  const [reload, setReload] = React.useState(0);
+  const data = useGh<TagsData>(["refs", "tags", repo], () => listAllTags(repo), { persist: true });
+  const branchLoad = useGh<BranchesData>(["refs", "branches", repo], () => listAllBranches(repo), { persist: true }); // only the New tag dialog needs these
+  const branches = branchLoad.t === "ready" ? branchLoad.v : undefined;
+  const releaseLoad = useGh(["refs", "releases", repo], () => listAllReleases(repo), { persist: true }); // only the release links need these
+  const releases = releaseLoad.t === "ready" ? releaseLoad.v.releases : NO_RELEASES;
   const [query, setQuery] = React.useState(state.q ?? "");
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set());
   const [dialog, setDialog] = React.useState<{ kind: "new" } | { kind: "delete"; tag: TagRow } | { kind: "branch"; tag: TagRow } | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    listAllTags(repo).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    listAllBranches(repo).then((v) => !dead && setBranches(v), () => {}); // only the New tag dialog needs these
-    listAllReleases(repo).then((v) => !dead && setReleases(v.releases), () => !dead && setReleases([])); // only the release links need these
-    return () => { dead = true; };
-  }, [repo, signedIn, reload]);
 
   React.useEffect(() => {
     const t = setTimeout(() => { if ((state.q ?? "") !== query.trim()) go({ ...state, q: query.trim() || undefined }, true); }, 300);
@@ -54,7 +49,6 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
 
   const v = data.t === "ready" ? data.v : undefined;
   const nodes = React.useMemo(() => buildRefTree(v?.tags ?? [], { query: state.q }), [v, state.q]);
-  const refresh = () => setReload((n) => n + 1);
   const toggleFolder = React.useCallback((p: string) => setCollapsed((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; }), []);
   const branchNames = branches?.branches.map((b) => b.name) ?? NO_BRANCHES;
   const defaultBranch = branches?.defaultBranch ?? branchNames[0] ?? "";
@@ -116,13 +110,13 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
       }
       if (!oid) throw new RefWriteError("No commit to tag.");
       await createTag(repo, v.repoId, { name: p.name, oid, message: p.message });
-    }, () => { setDialog(null); refresh(); });
+    }, () => { setDialog(null); });
   };
   const createBranchFrom = (tag: TagRow, name: string) => {
     if (!v) return;
     void writes.run(() => mutate(branchFromTagMutation(v.repoId, tag, name)), () => { setDialog(null); setNotice(`Created branch ${name} from tag ${tag.name}.`); });
   };
-  const doDelete = (t: TagRow) => void writes.run(() => deleteRef(t.id), () => { setDialog(null); setNotice(`Deleted tag ${t.name}.`); refresh(); });
+  const doDelete = (t: TagRow) => void writes.run(() => deleteRef(t.id), () => { setDialog(null); setNotice(`Deleted tag ${t.name}.`); });
   const closeDialog = () => { if (!writes.busy) { setDialog(null); writes.clearError(); } };
 
   const error = data.t === "error" ? data.err : null;
@@ -149,7 +143,7 @@ function TagList({ repo, props }: { repo: string; props: HubProps }) {
         {notice && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setNotice(null)}>{notice}</MessageCard>}
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
         {error ? (
-          <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); refresh(); }} subject="see this repository's tags" permission="Contents" />
+          <ErrorView err={error} signIn={() => void props.signIn()} busy={props.busy} retry={invalidateRefs} subject="see this repository's tags" permission="Contents" />
         ) : none ? (
           <Card className="gh-pr-card gh-refs-card gh-tags-empty" contentProps={{ contentPadding: false }}>
             <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="This repository has no tags" secondaryText="Use tags to mark a point in history that is relevant to the repository." />

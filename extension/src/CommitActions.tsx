@@ -7,6 +7,7 @@ import { createBranch, createTag, listAllBranches, listAllTags } from "./githubB
 import { useRefWrites } from "./refWrites";
 import { CherryPickDialog } from "./CherryPick";
 import { getCanPush } from "./githubBrowse";
+import { useGh } from "./queryClient";
 import type { PickKind } from "./lib/cherryPick";
 
 type Open = { kind: "branch" | "tag"; sha: string } | { kind: PickKind; sha: string };
@@ -22,14 +23,9 @@ export function useCommitActions(repo: string, signedIn: boolean, branch?: strin
   const [notice, setNotice] = React.useState<string | null>(null);
 
   // Cherry-pick and Revert write branches: disabled for a viewer without push access (GET /repos permissions.push, REST).
-  const [canPush, setCanPush] = React.useState<boolean>();
+  const push = useGh(signedIn ? ["refs", "canPush", repo] : null, () => getCanPush(repo), { persist: true });
+  const canPush = signedIn && push.t === "ready" ? push.v : undefined;
   React.useEffect(() => setInfo(undefined), [repo]);
-  React.useEffect(() => {
-    let dead = false;
-    setCanPush(undefined);
-    if (signedIn) getCanPush(repo).then((v) => !dead && setCanPush(v));
-    return () => { dead = true; };
-  }, [repo, signedIn]);
   React.useEffect(() => {
     if (!open || (open.kind !== "branch" && open.kind !== "tag") || info?.[open.kind === "branch" ? "branches" : "tags"]) return;
     let dead = false;

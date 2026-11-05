@@ -24,6 +24,7 @@ import { ConfirmDeleteDialog } from "./RefDialogs";
 import { RelDate } from "./RelDate";
 import { ReleaseForm } from "./ReleaseForm";
 import { deleteRelease, invalidateReleases, listAllReleases, releaseReact } from "./githubBrowse";
+import { dropQueries, useGh } from "./queryClient";
 import { openInHub, useHubHref } from "./repoHref";
 import { useRefWrites } from "./refWrites";
 import "./browser.css";
@@ -180,18 +181,10 @@ const NONE_LABEL: Record<ReleaseKind, string> = { all: "No releases match", publ
 export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) {
   const { state, go, openSwitch, signedIn } = props;
   const writes = useRefWrites();
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: ReleasesPage }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  const data = useGh<ReleasesPage>(["refs", "releases", repo], () => listAllReleases(repo), { persist: true });
   const [query, setQuery] = React.useState(state.q ?? "");
   const [del, setDel] = React.useState<Release | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    listAllReleases(repo).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, signedIn, reload]);
 
   React.useEffect(() => {
     const t = setTimeout(() => { if ((state.q ?? "") !== query.trim()) go({ ...state, q: query.trim() || undefined, relPage: undefined }, true); }, 300);
@@ -205,7 +198,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
   const counts = React.useMemo(() => kindCounts(searched), [searched]);
   const list = React.useMemo(() => filterByKind(searched, kind), [searched, kind]);
   const paged = pageReleases(list, state.relPage ?? 1);
-  const refresh = () => (invalidateReleases(), setReload((n) => n + 1));
+  const refresh = () => (invalidateReleases(), dropQueries(["refs", "releases", repo]));
   const draft = () => go({ repo, tagTab: "releases", releaseForm: "new" });
   const back = () => go({ repo, tagTab: "releases" });
   // The form is a panel over the page: over the release being edited, else over the list (a new release's `release` is only the tag to preset).
@@ -304,7 +297,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
           mode={form}
           tag={state.release}
           signedIn={signedIn}
-          onDone={(tag) => { invalidateReleases(); go({ repo, tagTab: "releases", release: tag }); }}
+          onDone={(tag) => { refresh(); go({ repo, tagTab: "releases", release: tag }); }}
           onCancel={() => go(form === "edit" && state.release ? { repo, tagTab: "releases", release: state.release } : { repo, tagTab: "releases" })}
         />
       )}

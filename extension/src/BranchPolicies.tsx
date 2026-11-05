@@ -27,6 +27,7 @@ import {
 import { ErrorView } from "./Browser";
 import { setEditGuard } from "./hostNav";
 import { HubProps, Loading, titleSwitcher } from "./RepoHub";
+import { useGh } from "./queryClient";
 import { applyRulesetPlan, getBranchPolicies, getIsRepoAdmin, getOwnedRuleset, GhError, invalidateRefs, type BranchPoliciesData } from "./githubBrowse";
 import "./browser.css";
 
@@ -256,47 +257,43 @@ function EditBody({ branch, form, set, busy, locked }: { branch: string; form: P
 
 type Owned = { t: "loading" } | { t: "none" } | { t: "denied"; text: string } | { t: "ready"; rs: Ruleset | null };
 
+/** Whether the viewer may edit, and the owned ruleset when so. Never rejects: a refusal is a value the page shows. */
+async function loadOwned(repo: string, branch: string): Promise<Exclude<Owned, { t: "loading" }>> {
+  if (!(await getIsRepoAdmin(repo))) return { t: "none" };
+  try {
+    return { t: "ready", rs: await getOwnedRuleset(repo, branch) };
+  } catch (e) {
+    const w = e instanceof GhError && e.kind === "access" ? policyWriteError(e.status, e.apiMessage) : null;
+    return w ? { t: "denied", text: w.text } : { t: "none" };
+  }
+}
+
 export function BranchPolicies({ repo, branch, props }: { repo: string; branch: string; props: HubProps }) {
-  const { go, openSwitch, signedIn } = props;
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: BranchPoliciesData }>({ t: "loading" });
-  const [owned, setOwned] = React.useState<Owned>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  const { go, openSwitch } = props;
+  const data = useGh<BranchPoliciesData>(["refs", "policies", repo, branch], () => getBranchPolicies(repo, branch), { persist: true });
+  // Admins only: the extension's own ruleset for this branch, which the editor writes. Not kept between visits: the editor starts from GitHub's rules.
+  const ownedLoad = useGh<Exclude<Owned, { t: "loading" }>>(["refs", "policies", "owned", repo, branch], () => loadOwned(repo, branch));
+  const owned: Owned = ownedLoad.t === "ready" ? ownedLoad.v : { t: "loading" };
   const [form, setForm] = React.useState<PolicyForm | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<{ text: string; admin: boolean } | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    getBranchPolicies(repo, branch).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, branch, signedIn, reload]);
-  // Admins only: the extension's own ruleset for this branch, which the editor writes.
-  React.useEffect(() => {
-    let dead = false;
-    setOwned({ t: "loading" });
-    getIsRepoAdmin(repo).then(async (admin) => {
-      if (!admin) return !dead && setOwned({ t: "none" });
-      try {
-        const rs = await getOwnedRuleset(repo, branch);
-        if (dead) return;
-        setOwned({ t: "ready", rs });
-        setForm(formFromRules(rs?.rules));
-      } catch (e) {
-        if (dead) return;
-        const w = e instanceof GhError && e.kind === "access" ? policyWriteError(e.status, e.apiMessage) : null;
-        setOwned(w ? { t: "denied", text: w.text } : { t: "none" });
-      }
-    });
-    return () => { dead = true; };
-  }, [repo, branch, signedIn, reload]);
-
   const ownedRs = owned.t === "ready" ? owned.rs : null;
   const saved = React.useMemo(() => formFromRules(ownedRs?.rules), [ownedRs]);
+  // Seed the editor from the owned ruleset, and again when it changes on GitHub (after a save, or a refresh) unless there are unsaved edits.
+  const lastSaved = React.useRef<PolicyForm | null>(null);
+  const justSaved = React.useRef(false);
+  React.useEffect(() => {
+    if (owned.t !== "ready") return;
+    const prev = lastSaved.current;
+    setForm((f) => (!f || justSaved.current || (prev && JSON.stringify(f) === JSON.stringify(prev)) ? saved : f));
+    lastSaved.current = saved;
+    justSaved.current = false;
+  }, [owned.t, saved]);
   const editing = owned.t === "ready" && !!form;
   const changes = editing ? changedPolicies(saved, form!) : [];
   const problems = editing ? formErrors(form!) : [];
-  const set = React.useCallback((f: PolicyForm) => { setForm(f); setNotice(null); }, []);
+  const set = React.useCallback((f: PolicyForm) => { justSaved.current = false; setForm(f); setNotice(null); }, []);
 
   const save = async () => {
     if (!form || busy) return;
@@ -306,7 +303,7 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
       const fresh = await getOwnedRuleset(repo, branch); // the latest rules, so a lock set meanwhile is kept
       await applyRulesetPlan(savePlan(repo, branch, fresh, rulesFromForm(form, fresh?.rules)));
       setNotice(`Saved: ${changes.join(", ")}.`);
-      setReload((n) => n + 1);
+      justSaved.current = true; // applyRulesetPlan dropped the cached refs, so the ruleset refetches and reseeds the editor
     } catch (e) {
       const w = e instanceof GhError && (e.kind === "access" || e.kind === "other") ? policyWriteError(e.status, e.apiMessage) : null;
       setError(w ?? { admin: false, text: e instanceof GhError && e.kind === "auth" ? "Sign in to GitHub again, then save." : "The policies couldn't be saved. Try again." });
@@ -331,11 +328,11 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  const d = data.t === "ready" ? data.v : undefined;
   const others = React.useMemo(() => {
-    if (data.t !== "ready" || !editing) return null;
-    const d = data.v;
+    if (!d || !editing) return null;
     return toPolicies(d.rules.filter((r) => !ownedRs || r.ruleset_id !== ownedRs.id), d.classicState, d.branchInfo);
-  }, [data, editing, ownedRs]);
+  }, [d, editing, ownedRs]);
 
   return (
     <>
@@ -359,7 +356,7 @@ export function BranchPolicies({ repo, branch, props }: { repo: string; branch: 
       </Header>
       <div className="page-content page-content-top gh-pr-body flex-column">
         {data.t === "error" ? (
-          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this branch's policies" permission="Contents" />
+          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={invalidateRefs} subject="see this branch's policies" permission="Contents" />
         ) : data.t === "loading" || owned.t === "loading" ? (
           <Loading label="Loading branch policies" />
         ) : editing && others ? (

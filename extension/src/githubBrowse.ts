@@ -1008,7 +1008,7 @@ const releaseSets = new Map<string, { at: number; p: Promise<ReleasesPage> }>();
 const latestReleases = new Map<string, { at: number; p: Promise<ReturnType<typeof toLatestRelease>> }>();
 
 /** Drops the cached releases and latest release, after a write (the form's onDone, delete) or Try again. */
-export const invalidateReleases = () => (releaseSets.clear(), latestReleases.clear());
+export const invalidateReleases = () => (releaseSets.clear(), latestReleases.clear(), dropQueries(["refs", "releases"]));
 
 /** Every release (100 a page, newest first), cached 30 s like the other lists. */
 export const listAllReleases = (repo: string): Promise<ReleasesPage> =>
