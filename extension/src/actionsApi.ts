@@ -1,5 +1,5 @@
 // Actions API wrappers. The lists side (actions-lists) owns the top half; the run page (actions-runs) appends below the marker.
-import * as React from "react";
+import { useGh } from "./queryClient";
 import { getRaw, rest, restJson } from "./githubBrowse";
 import {
   dispatchRequest,
@@ -69,17 +69,12 @@ export async function getRepoAccess(repo: string): Promise<{ defaultBranch: stri
 
 /** Whether the viewer may write to the repository (dispatch, re-run, cancel, approve). False until known. */
 export function useCanWriteActions(repo: string): boolean {
-  const [can, setCan] = React.useState(false);
-  React.useEffect(() => {
-    let dead = false;
-    setCan(false);
-    getRepoAccess(repo).then((a) => !dead && setCan(a.canWrite), () => {});
-    return () => {
-      dead = true;
-    };
-  }, [repo]);
-  return can;
+  const a = useRepoAccess(repo);
+  return a.t === "ready" && a.v.canWrite;
 }
+
+/** getRepoAccess through the page's query cache (shared by the write checks and Run workflow). Not persisted: permissions change. */
+export const useRepoAccess = (repo: string) => useGh(["actions", "access", repo], () => getRepoAccess(repo));
 
 // ---------- run page (actions-runs) ----------
 

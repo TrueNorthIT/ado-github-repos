@@ -20,6 +20,7 @@ import { skeletonRows } from "./RepoHub";
 import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
 import { listEnvironmentDetails } from "./actionsApi";
+import { dropQueries, useGh } from "./queryClient";
 import { createVariable, deleteSecret, deleteVariable, isRepoAdmin, listSecrets, listVariables, updateVariable } from "./libraryApi";
 import type { Environment } from "./lib/environments";
 import {
@@ -39,17 +40,16 @@ import {
 type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
 const SECRET_MASK = "********";
 
-function useLoad<T>(fn: () => Promise<T>, deps: React.DependencyList): [Load<T>, () => void] {
-  const [s, setS] = React.useState<Load<T>>({ t: "loading" });
-  const [n, setN] = React.useState(0);
-  React.useEffect(() => {
-    let dead = false;
-    setS({ t: "loading" });
-    fn().then((v) => !dead && setS({ t: "ready", v }), (err) => !dead && setS({ t: "error", err }));
-    return () => { dead = true; };
-  }, [...deps, n]); // eslint-disable-line react-hooks/exhaustive-deps
-  return [s, React.useCallback(() => setN((x) => x + 1), [])];
+/**
+ * A read through the page's query cache, in the shape this tab renders, with its Try again. Variable values and secret names are not
+ * persisted (they are configuration, not a list of work); the environments are.
+ */
+function useLoad<T>(key: unknown[], fn: () => Promise<T>, persist = false): [Load<T>, () => void] {
+  const load = useGh(key, fn, { persist });
+  const v: Load<T> = load.t === "ready" ? { t: "ready", v: load.v } : load.t === "error" ? { t: "error", err: load.err } : { t: "loading" };
+  return [v, load.t === "ready" ? load.refetch : load.t === "error" ? load.retry : NOOP];
 }
+const NOOP = () => undefined;
 
 // ---------- the editor panel and the delete dialog ----------
 
@@ -214,10 +214,10 @@ function Problem({ e, section, retry, signIn }: { e: unknown; section: Section; 
   return <MessageCard className="gh-lib-problem" severity={p.kind === "permission" || p.kind === "auth" ? MessageCardSeverity.Info : MessageCardSeverity.Error} buttonProps={buttons}>{p.text}</MessageCard>;
 }
 
-function Group({ repo, def, admin, props, setEditing, setDeleting, tick }: { repo: string; def: GroupDef; admin: boolean; props: HubProps; setEditing: (e: Editing) => void; setDeleting: (d: Deleting) => void; tick: number }) {
+function Group({ repo, def, admin, props, setEditing, setDeleting }: { repo: string; def: GroupDef; admin: boolean; props: HubProps; setEditing: (e: Editing) => void; setDeleting: (d: Deleting) => void }) {
   const [collapsed, setCollapsed] = React.useState(false);
-  const [vars, reloadVars] = useLoad<LibVariable[]>(() => listVariables(repo, def.scope), [repo, def.key, props.signedIn, tick]);
-  const [secrets, reloadSecrets] = useLoad<LibSecret[]>(() => listSecrets(repo, def.scope), [repo, def.key, props.signedIn, tick]);
+  const [vars, reloadVars] = useLoad<LibVariable[]>(["actions", "library", repo, "variables", def.key], () => listVariables(repo, def.scope));
+  const [secrets, reloadSecrets] = useLoad<LibSecret[]>(["actions", "library", repo, "secrets", def.key], () => listSecrets(repo, def.scope));
   const settingsUrl = secretsSettingsUrl(repo, def.scope, def.envId);
   const varNames = React.useMemo(() => (vars.t === "ready" ? vars.v.map((v) => v.name) : []), [vars]);
   const edit = React.useCallback((v: LibVariable) => setEditing({ scope: def.scope, group: def.title, variable: v, taken: varNames }), [def, varNames, setEditing]);
@@ -267,20 +267,19 @@ function Group({ repo, def, admin, props, setEditing, setDeleting, tick }: { rep
 
 /** The Library tab's body: the repository's group, then one per environment. */
 export function LibraryTab({ repo, props }: { repo: string; props: HubProps }) {
-  const [adminLoad] = useLoad(() => isRepoAdmin(repo), [repo, props.signedIn]);
+  const [adminLoad] = useLoad(["actions", "library", repo, "admin"], () => isRepoAdmin(repo));
   const admin = adminLoad.t === "ready" && adminLoad.v;
-  const [envs, reloadEnvs] = useLoad<Environment[]>(() => listEnvironmentDetails(repo), [repo, props.signedIn]);
+  const [envs, reloadEnvs] = useLoad<Environment[]>(["actions", "envDetails", repo], () => listEnvironmentDetails(repo), true);
   const [editing, setEditing] = React.useState<Editing>();
   const [deleting, setDeleting] = React.useState<Deleting>();
-  const [tick, setTick] = React.useState(0);
   const groups = React.useMemo((): GroupDef[] => [
     { key: "repo", scope: { kind: "repo" }, title: "Repository", description: "Available to every workflow in the repository" },
     ...(envs.t === "ready" ? envs.v : []).map((e): GroupDef => ({ key: `env:${e.name}`, scope: { kind: "env", env: e.name }, title: e.name, description: "Environment: jobs that deploy here", envId: e.id })),
   ], [envs]);
-  const saved = () => { setEditing(undefined); setDeleting(undefined); setTick((t) => t + 1); };
+  const saved = () => { setEditing(undefined); setDeleting(undefined); dropQueries(["actions", "library", repo]); };
   return (
     <div className="flex-column gh-lib">
-      {groups.map((g) => <Group key={`${repo}/${g.key}`} repo={repo} def={g} admin={admin} props={props} setEditing={setEditing} setDeleting={setDeleting} tick={tick} />)}
+      {groups.map((g) => <Group key={`${repo}/${g.key}`} repo={repo} def={g} admin={admin} props={props} setEditing={setEditing} setDeleting={setDeleting} />)}
       {envs.t === "error" && <ErrorView err={envs.err} signIn={() => void props.signIn()} busy={props.busy} retry={reloadEnvs} subject="see this repository's environments" permission="Environments" />}
       {editing && <VariablePanel repo={repo} editing={editing} onClose={() => setEditing(undefined)} onSaved={saved} />}
       {deleting && <DeleteDialog repo={repo} target={deleting} onClose={() => setDeleting(undefined)} onDeleted={saved} />}

@@ -12,6 +12,7 @@ import { worstState, type Job, type JobStep, type RunState, type WorkflowRun } f
 import { foldRanges, parseLog, stepRanges, logCounts } from "./lib/workflowLog";
 import { buildLogDoc } from "./lib/logDoc";
 import { getJobLog } from "./actionsApi";
+import { useQuery } from "@tanstack/react-query";
 import { loadMonaco } from "./Browser";
 import { Loading } from "./RepoHub";
 import { StateIcon, STATE_TEXT, dur, isActive, spanMs, useNow, type RunPageProps } from "./ActionsRun";
@@ -43,8 +44,6 @@ const jobsKey = (jobs: Job[]) => jobs.map((j) => `${j.id}${j.state}${j.completed
 export function LogView({ repo, state, go, run, jobs, jobId, canWrite, onRerun }: Props) {
   const job = jobs.find((j) => j.id === jobId);
   const finished = job?.status === "completed";
-  const [log, setLog] = React.useState<{ id: number; text?: string; err?: boolean }>({ id: 0 });
-  const [tries, setTries] = React.useState(0);
   const [showTs, setShowTs] = React.useState(false);
   const [viewerFailed, setViewerFailed] = React.useState(false);
   const [rerunFailed, setRerunFailed] = React.useState(false);
@@ -59,16 +58,10 @@ export function LogView({ repo, state, go, run, jobs, jobId, canWrite, onRerun }
   // Opening another job expands it (the others keep whatever the viewer chose) and clears the step.
   React.useEffect(() => { setStep(undefined); setExpanded((s) => (s.has(jobId) ? s : new Set(s).add(jobId))); }, [jobId]);
 
-  // Fetch the log once the job has finished (the log is not available while it runs).
-  React.useEffect(() => {
-    if (!finished) return;
-    let dead = false;
-    setLog({ id: jobId });
-    getJobLog(repo, jobId).then((text) => !dead && setLog({ id: jobId, text }), () => !dead && setLog({ id: jobId, err: true }));
-    return () => { dead = true; };
-  }, [repo, jobId, finished, tries]);
-
-  const text = log.id === jobId ? log.text : undefined;
+  // Fetch the log once the job has finished (the log is not available while it runs). A finished job's log never changes, so going back to
+  // a job shows it at once; it is not persisted, and leaves memory five minutes after the last job view that used it.
+  const log = useQuery({ queryKey: ["actions", "log", repo, jobId], queryFn: () => getJobLog(repo, jobId), enabled: finished, staleTime: Infinity, cacheTime: 5 * 60_000 });
+  const text = finished ? log.data : undefined;
   const parsed = React.useMemo(() => {
     if (text === undefined) return undefined;
     const lines = parseLog(text);
@@ -227,8 +220,8 @@ export function LogView({ repo, state, go, run, jobs, jobId, canWrite, onRerun }
             {isActive(job.state) ? "The log appears when the job finishes." : `This job is ${STATE_TEXT[job.state].toLowerCase()}.`}
             <br />The steps on the left update as it runs.
           </div>
-        ) : log.err ? (
-          <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Try again", onClick: () => setTries((t) => t + 1) }]}>Could not load the log. Logs are deleted after the repository's retention period.</MessageCard>
+        ) : finished && log.isError ? (
+          <MessageCard severity={MessageCardSeverity.Error} buttonProps={[{ text: "Try again", onClick: () => void log.refetch() }]}>Could not load the log. Logs are deleted after the repository's retention period.</MessageCard>
         ) : text === undefined ? (
           <Loading label="Loading the log" />
         ) : viewerFailed ? (

@@ -34,6 +34,8 @@ import { GhError } from "./githubBrowse";
 import { LogView } from "./ActionsLog";
 import { DeleteRunDialog, RunStatusIcon, RUN_STATE_TEXT, type DeleteTarget } from "./ActionsUi";
 import "./actionsRun.css";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { dropQueries, useGh } from "./queryClient";
 
 export interface RunPageProps {
   repo: string;
@@ -87,74 +89,55 @@ export function useNow(on: boolean): number {
 interface RunData { run?: WorkflowRun; latestAttempt: number; jobs?: Job[]; pending: PendingDeployment[]; artifacts: Artifact[]; err?: unknown }
 const POLL_MS = 5000;
 
+const NO_DATA: RunData = { latestAttempt: 1, pending: [], artifacts: [] };
+const runActive = (d: RunData | undefined) => !!d?.run && (isActive(d.run.state) || !!d.jobs?.some((j) => isActive(j.state)));
+
+/**
+ * The run, its jobs, pending deployments and artifacts through the page's query cache: coming back to a run shows it at once while it
+ * refreshes. Polled every 5 s while anything is queued, waiting or running (not while the frame is hidden); a failed poll keeps what is shown.
+ */
 function useRunData(repo: string, runId: number, attempt: number | undefined) {
-  const [d, setD] = React.useState<RunData>({ latestAttempt: 1, pending: [], artifacts: [] });
-  const gen = React.useRef(0);
-  const load = React.useCallback(async (quiet: boolean) => {
-    const g = gen.current;
-    try {
+  const q = useQuery({
+    queryKey: ["actions", "run", repo, runId, attempt ?? null],
+    queryFn: async (): Promise<RunData> => {
       const [run, latest, jobs] = await Promise.all([getRun(repo, runId, attempt), attempt ? getRun(repo, runId) : undefined, listJobs(repo, runId, attempt)]);
       const waiting = run.state === "waiting" || jobs.some((j) => j.state === "waiting");
       const [pending, artifacts] = await Promise.all([waiting && !attempt ? listPendingDeployments(repo, runId) : [], listArtifacts(repo, runId).catch(() => [] as Artifact[])]);
-      if (g === gen.current) setD({ run, latestAttempt: (latest ?? run).attempt, jobs, pending, artifacts });
-    } catch (err) {
-      if (g === gen.current) setD((p) => (quiet && p.run ? p : { ...p, err }));
-    }
-  }, [repo, runId, attempt]);
-  React.useEffect(() => {
-    gen.current++;
-    setD({ latestAttempt: 1, pending: [], artifacts: [] });
-    void load(false);
-    return () => { gen.current++; };
-  }, [load]);
-  const active = !!d.run && (isActive(d.run.state) || !!d.jobs?.some((j) => isActive(j.state)));
-  React.useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => void load(true), POLL_MS);
-    return () => clearInterval(t);
-  }, [active, load]);
-  return { ...d, active, reload: React.useCallback(() => load(false), [load]), quietReload: React.useCallback(() => load(true), [load]) };
+      return { run, latestAttempt: (latest ?? run).attempt, jobs, pending, artifacts };
+    },
+    refetchInterval: (d) => (runActive(d) ? POLL_MS : false),
+  });
+  const { refetch } = q;
+  const reload = React.useCallback(async () => {
+    dropQueries(["actions", "runs", repo]); // the lists show this run's status too
+    dropQueries(["actions", "landing", repo]);
+    await refetch();
+  }, [refetch, repo]);
+  const d = q.data ?? NO_DATA;
+  return { ...d, err: q.data ? undefined : q.error ?? undefined, active: runActive(q.data), reload, quietReload: reload };
 }
 
-/** The workflow's jobs from its file at the run's commit: undefined while loading, null when unavailable. */
+/** The workflow's jobs from its file at the run's commit: undefined while loading, null when unavailable. A file at a commit never changes. */
 function useWorkflowDefs(repo: string, run: WorkflowRun | undefined): WorkflowJobDef[] | null | undefined {
-  const [defs, setDefs] = React.useState<WorkflowJobDef[] | null | undefined>();
-  const key = run ? `${run.headSha}:${run.path}` : "";
-  React.useEffect(() => {
-    if (!run) return;
-    let dead = false;
-    setDefs(undefined);
-    void getWorkflowYaml(repo, run.headSha, run.path).then((text) => {
-      let out: WorkflowJobDef[] | null = null;
-      try { out = text ? parseWorkflowJobs(text) : null; } catch { out = null; }
-      if (!dead) setDefs(out);
-    });
-    return () => { dead = true; };
-  }, [repo, key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return defs;
+  const load = useGh(run ? ["actions", "workflowDefs", repo, run.headSha, run.path] : null, async () => {
+    const text = await getWorkflowYaml(repo, run!.headSha, run!.path).catch(() => null);
+    try { return text ? parseWorkflowJobs(text) : null; } catch { return null; }
+  }, { staleTime: Infinity });
+  return load.t === "ready" ? load.v : undefined;
 }
 
 type JobNote = Annotation & { job: Job };
-/** Annotations of finished jobs, fetched once per job (ACT-11). ponytail: at most 40 jobs, six requests at a time. */
+/** Annotations of finished jobs, one query per job (ACT-11); a finished job's annotations don't change. ponytail: at most 40 jobs. */
 function useAnnotations(repo: string, jobs: Job[] | undefined): JobNote[] {
-  const cache = React.useRef(new Map<number, Annotation[]>());
-  const [, bump] = React.useState(0);
-  const key = jobs?.map((j) => `${j.id}${j.status === "completed" ? "c" : ""}`).join(",") ?? "";
-  React.useEffect(() => {
-    if (!jobs) return;
-    const todo = jobs.filter((j) => j.status === "completed" && !cache.current.has(j.id)).slice(0, 40);
-    if (!todo.length) return;
-    let dead = false;
-    void (async () => {
-      for (let i = 0; i < todo.length; i += 6) {
-        await Promise.all(todo.slice(i, i + 6).map((j) => listJobAnnotations(repo, j.id).then((a) => cache.current.set(j.id, a), () => cache.current.set(j.id, []))));
-        if (dead) return;
-        bump((n) => n + 1);
-      }
-    })();
-    return () => { dead = true; };
-  }, [repo, key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return (jobs ?? []).flatMap((j) => (cache.current.get(j.id) ?? []).map((a) => ({ ...a, job: j })));
+  const done = React.useMemo(() => (jobs ?? []).filter((j) => j.status === "completed").slice(0, 40), [jobs]);
+  const results = useQueries({
+    queries: done.map((j) => ({
+      queryKey: ["actions", "annotations", repo, j.id],
+      queryFn: () => listJobAnnotations(repo, j.id).catch(() => [] as Annotation[]),
+      staleTime: Infinity,
+    })),
+  });
+  return done.flatMap((j, i) => (results[i]?.data ?? []).map((a) => ({ ...a, job: j })));
 }
 
 // ---------- the page ----------

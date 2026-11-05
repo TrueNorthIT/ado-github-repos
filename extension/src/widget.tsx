@@ -8,6 +8,7 @@ import type { IWidgetConfigurationContext, SaveStatus, WidgetSettings, WidgetSta
 import "azure-devops-ui/Core/override.css";
 import { widgetFrame } from "./lib/widgets";
 import { PrWidget, RunsWidget, WidgetConfig } from "./Widgets";
+import { QueryProvider } from "./queryPersist";
 
 /** WidgetStatusType.Success, and ConfigurationEvent.ConfigurationChange, from azure-devops-extension-api/Dashboard. */
 const SUCCESS: WidgetStatus = { statusType: 0 };
@@ -31,7 +32,7 @@ SDK.init({ loaded: false, applyTheme: true }).then(() => {
           current = data;
           void context.notify(CONFIGURATION_CHANGE, { data: { data } });
         };
-        ReactDOM.render(<WidgetConfig kind={frame.kind} settings={settings} onChange={onChange} />, root);
+        ReactDOM.render(<QueryProvider><WidgetConfig kind={frame.kind} settings={settings} onChange={onChange} /></QueryProvider>, root);
         return SUCCESS;
       },
       onSave: async (): Promise<SaveStatus> => (current ? { isValid: true, customSettings: { data: current } } : { isValid: false }),
@@ -41,7 +42,7 @@ SDK.init({ loaded: false, applyTheme: true }).then(() => {
     // Each load (and each preview change while configuring) re-renders with the new settings; the widget fetches its own data and shows
     // its own loading state, so the host is told straight away that it has painted.
     const show = async (settings: WidgetSettings): Promise<WidgetStatus> => {
-      ReactDOM.render(<Widget settings={settings} />, root);
+      ReactDOM.render(<QueryProvider><Widget settings={settings} /></QueryProvider>, root);
       return SUCCESS;
     };
     // IConfigurableWidget names the preview hook `reload`; `reconfigure` is the same, for hosts that ask for it by that name.

@@ -13,6 +13,7 @@ import { Tree, ExpandableTreeCell, type ITreeColumn } from "azure-devops-ui/Tree
 import { ITreeItem, TreeItemProvider } from "azure-devops-ui/Utilities/TreeItemProvider";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { loadTestResults, type TestResultsLoad } from "./actionsApi";
+import { useGh } from "./queryClient";
 import { formatDuration, type Artifact } from "./lib/workflows";
 import { groupsWith, repeatedNames, summarise, TEST_SCAN_CAP, testDuration, type TestCase, type TestGroup, type TestOutcome } from "./lib/testResults";
 import { formatBytes } from "./lib/releases";
@@ -29,27 +30,13 @@ const OUTCOME_TEXT: Record<TestOutcome, string> = { passed: "Passed", failed: "F
 const OUTCOME_STATUS = { passed: Statuses.Success, failed: Statuses.Failed, other: Statuses.Skipped } as const;
 const runDur = (ms: number | undefined) => (ms === undefined ? "" : ms < 1000 ? `${ms}ms` : formatDuration(ms));
 
-// Results per run and set of artifacts, so going back to the tab does not download again.
-const cache = new Map<string, Promise<TestResultsLoad>>();
-
 type Load = { t: "loading" } | { t: "error" } | { t: "ready"; v: TestResultsLoad };
 
+/** Results per run and set of artifacts, through the page's query cache, so going back to the tab does not download again. Not persisted. */
 function useTestResults(repo: string, runId: number, artifacts: Artifact[]): Load {
-  const key = `${repo}#${runId}#${artifacts.map((a) => `${a.id}${a.expired ? "x" : ""}`).join(",")}`;
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    let p = cache.get(key);
-    if (!p) {
-      p = loadTestResults(repo, artifacts);
-      cache.set(key, p);
-      p.catch(() => cache.delete(key));
-    }
-    p.then((v) => !dead && setLoad({ t: "ready", v }), () => !dead && setLoad({ t: "error" }));
-    return () => { dead = true; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return load;
+  const set = artifacts.map((a) => `${a.id}${a.expired ? "x" : ""}`).join(",");
+  const load = useGh(["actions", "tests", repo, runId, set], () => loadTestResults(repo, artifacts), { staleTime: Infinity });
+  return load.t === "ready" ? { t: "ready", v: load.v } : load.t === "error" ? { t: "error" } : { t: "loading" };
 }
 
 const EXAMPLE = `- name: Upload test results

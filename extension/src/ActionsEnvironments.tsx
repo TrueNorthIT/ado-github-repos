@@ -14,6 +14,9 @@ import { ErrorView } from "./Browser";
 import { RelDate } from "./RelDate";
 import { RunStatusIcon } from "./ActionsUi";
 import { latestDeployment, listDeployments, listEnvironmentDetails } from "./actionsApi";
+import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useGh } from "./queryClient";
 import { serializeActions, type ActionsHashState } from "./lib/actionsHash";
 import { deploymentState, deploymentStateText, runIdOfStatus, type Deployment, type Environment } from "./lib/environments";
 
@@ -97,28 +100,19 @@ function envColumns(repo: string, openEnv: (name: string) => void, openRun: (id:
   ];
 }
 
-type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
-
 function EnvironmentList({ repo, go, props }: { repo: string; go: Go; props: HubProps }) {
-  const [load, setLoad] = React.useState<Load<EnvRow[]>>({ t: "loading" });
-  const [n, setN] = React.useState(0);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    (async () => {
-      const envs = await listEnvironmentDetails(repo);
-      // One small read per environment for its latest deployment (repositories rarely have more than a handful).
-      const latest = await Promise.all(envs.slice(0, 50).map((e) => latestDeployment(repo, e.name)));
-      return envs.map((env, i): EnvRow => ({ env, latest: latest[i] }));
-    })().then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, props.signedIn, n]);
+  const load = useGh(["actions", "environments", repo], async () => {
+    const envs = await listEnvironmentDetails(repo);
+    // One small read per environment for its latest deployment (repositories rarely have more than a handful).
+    const latest = await Promise.all(envs.slice(0, 50).map((e) => latestDeployment(repo, e.name)));
+    return envs.map((env, i): EnvRow => ({ env, latest: latest[i] }));
+  }, { persist: true });
   const openEnv = React.useCallback((name: string) => go({ tab: "environments", env: name }), [go]);
   const openRun = React.useCallback((id: number) => go({ run: id }), [go]);
   const cols = React.useMemo(() => envColumns(repo, openEnv, openRun), [repo, openEnv, openRun]);
   const rows = load.t === "ready" ? load.v : undefined;
   const provider = React.useMemo(() => (rows ? new ArrayItemProvider(rows) : skeletonRows<EnvRow>(4)), [rows]);
-  if (load.t === "error") return <ErrorView err={load.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => setN((x) => x + 1)} subject="see this repository's environments" permission="Environments" />;
+  if (load.t === "error") return <ErrorView err={load.err} signIn={() => void props.signIn()} busy={props.busy} retry={load.retry} subject="see this repository's environments" permission="Environments" />;
   if (rows && !rows.length) {
     return <ZeroData iconProps={{ iconName: "Rocket" }} imageAltText="" primaryText="No environments" secondaryText="Environments appear here once a workflow job names one (environment:) or one is added in the repository settings." />;
   }
@@ -192,46 +186,41 @@ function deploymentColumns(repo: string, openRun: (id: number) => void): ITableC
   ];
 }
 
-type HistoryState = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; rows: Deployment[]; next?: number };
-
+/** An environment's deployments, a page per "Load more", through the page's query cache (persisted, like the other Actions lists). */
 function EnvironmentHistory({ repo, env, go, props }: { repo: string; env: string; go: Go; props: HubProps }) {
-  const [s, setS] = React.useState<HistoryState>({ t: "loading" });
-  const [more, setMore] = React.useState(false);
-  const [n, setN] = React.useState(0);
-  React.useEffect(() => {
-    let dead = false;
-    setS({ t: "loading" });
-    listDeployments(repo, env).then((r) => !dead && setS({ t: "ready", rows: r.deployments, next: r.next }), (err) => !dead && setS({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, env, props.signedIn, n]);
+  const q = useInfiniteQuery({
+    queryKey: ["actions", "deployments", repo, env],
+    queryFn: ({ pageParam = 1 }) => listDeployments(repo, env, pageParam as number),
+    getNextPageParam: (last) => last.next,
+    meta: { persist: true },
+  });
+  const [moreFailed, setMoreFailed] = React.useState(false);
   const openRun = React.useCallback((id: number) => go({ run: id }), [go]);
   const cols = React.useMemo(() => deploymentColumns(repo, openRun), [repo, openRun]);
-  const rows = s.t === "ready" ? s.rows : undefined;
+  const rows = React.useMemo(() => {
+    if (!q.data) return undefined;
+    const seen = new Set<number>();
+    return q.data.pages.flatMap((p) => p.deployments).filter((d) => !seen.has(d.id) && !!seen.add(d.id));
+  }, [q.data]);
   const provider = React.useMemo(() => (rows ? new ArrayItemProvider(rows) : skeletonRows<Deployment>()), [rows]);
   const loadMore = async () => {
-    if (s.t !== "ready" || !s.next) return;
-    setMore(true);
-    try {
-      const r = await listDeployments(repo, env, s.next);
-      setS((o) => (o.t === "ready" ? { t: "ready", rows: [...o.rows, ...r.deployments.filter((x) => !o.rows.some((y) => y.id === x.id))], next: r.next } : o));
-    } catch (err) {
-      setS({ t: "error", err });
-    }
-    setMore(false);
+    setMoreFailed(false);
+    const r = await q.fetchNextPage();
+    if (r.isError) setMoreFailed(true);
   };
   let body: React.ReactNode;
-  if (s.t === "error") body = <ErrorView err={s.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => setN((x) => x + 1)} subject="see this environment's deployments" permission="Deployments" />;
+  if (!rows && q.isError) body = <ErrorView err={q.error} signIn={() => void props.signIn()} busy={props.busy} retry={() => void q.refetch()} subject="see this environment's deployments" permission="Deployments" />;
   else if (rows && !rows.length) body = <ZeroData iconProps={{ iconName: "Rocket" }} imageAltText="" primaryText="No deployments yet" secondaryText={`Deployments to ${env} appear here.`} />;
   else {
-    const ready = s.t === "ready" ? s : undefined;
     body = (
       <>
         <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
           <Table<Deployment> ariaLabel={rows ? `Deployments to ${env}` : "Loading deployments"} role="table" columns={cols} itemProvider={provider} showHeader spacerWidth={8} />
         </Card>
-        {ready?.next && (
+        {moreFailed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setMoreFailed(false)}>Could not load more deployments. Try again.</MessageCard>}
+        {q.hasNextPage && (
           <div className="gh-act-more flex-row justify-center">
-            <Button text={more ? "Loading" : "Load more"} disabled={more} onClick={() => void loadMore()} />
+            <Button text={q.isFetchingNextPage ? "Loading" : "Load more"} disabled={q.isFetchingNextPage} onClick={() => void loadMore()} />
           </div>
         )}
       </>

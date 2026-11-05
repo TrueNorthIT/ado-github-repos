@@ -35,6 +35,8 @@ import { dismissReasons, MAX_DISMISS_COMMENT } from "./lib/securityRequests";
 import type { AlertCount } from "./lib/securityCounts";
 import type { AlertKind, RatedSeverity, SecurityFilters, StateFilter } from "./lib/securityTypes";
 import type { SnippetLine } from "./lib/codeSnippet";
+import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
+import { dropQueries, useGh } from "./queryClient";
 import { dismissAlert, listAlerts, loadDetail, loadSnippet, openCount, reopenAlert, toApiError, writeErrorText, type AlertPage, type DetailData } from "./securityData";
 import "./browser.css";
 
@@ -175,9 +177,7 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
   const ecoSel = React.useMemo(() => pickSelection(ECOSYSTEMS, seed?.ecosystem), []); // eslint-disable-line react-hooks/exhaustive-deps
   const valSel = React.useMemo(() => pickSelection(VALIDITIES, seed?.validity), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [applied, setApplied] = React.useState({ state: (seed?.state ?? "open") as StateFilter, severity: seed?.severity, branch: seed?.branch ?? "", tool: seed?.tool ?? "", rule: seed?.rule ?? "", text: seed?.text ?? "", ecosystem: seed?.ecosystem ?? "", package: seed?.package ?? "", validity: seed?.validity as SecretValidity | undefined });
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  const [more, setMore] = React.useState<{ busy: boolean; err: boolean }>({ busy: false, err: false });
-  const [reload, setReload] = React.useState(0);
+  const [moreErr, setMoreErr] = React.useState(false);
 
   // Typing is debounced; every change is kept in the hash so a reload or a link keeps it.
   const hashState = (next: typeof applied): Omit<SecurityHashState, "repo"> => ({ tab, state: next.state === "open" ? undefined : next.state, severity: next.severity, branch: next.branch, tool: next.tool, rule: next.rule, text: next.text, ecosystem: next.ecosystem, package: next.package, validity: next.validity });
@@ -214,23 +214,26 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
     ecosystem: kind === "dependabot" ? applied.ecosystem || undefined : undefined,
     package: kind === "dependabot" ? applied.package || undefined : undefined,
     validity: kind === "secret" ? applied.validity : undefined }), [applied, kind]);
-  const serverKey = JSON.stringify(server);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    setMore({ busy: false, err: false });
-    listAlerts(kind, repo, server).then((page) => !dead && setLoad({ t: "ready", page }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [kind, repo, serverKey, reload, props.signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The alerts through the page's query cache, a page per "Load more": coming back from an alert shows the list at once while it refreshes,
+  // and a filter change keeps the rows until the new ones arrive. Persisted (the rows, not the alert pages).
+  const q = useInfiniteQuery({
+    queryKey: ["security", "alerts", repo, kind, server],
+    queryFn: ({ pageParam }) => listAlerts(kind, repo, server, (pageParam as AlertPage["next"] | undefined) ?? null),
+    getNextPageParam: (last) => last.next ?? undefined,
+    keepPreviousData: true,
+    meta: { persist: true },
+  });
+  const load: Load = React.useMemo(() => {
+    if (q.data) return { t: "ready", page: { rows: q.data.pages.flatMap((p) => p.rows), next: q.data.pages[q.data.pages.length - 1]?.next ?? null } };
+    if (q.isError) return { t: "error", err: q.error };
+    return { t: "loading" };
+  }, [q.data, q.isError, q.error]);
+  const more = { busy: q.isFetchingNextPage, err: moreErr };
 
   const loadMore = () => {
-    if (load.t !== "ready" || !load.page.next || more.busy) return;
-    const prev = load.page;
-    setMore({ busy: true, err: false });
-    listAlerts(kind, repo, server, prev.next).then(
-      (p) => { setLoad({ t: "ready", page: { rows: [...prev.rows, ...p.rows], next: p.next } }); setMore({ busy: false, err: false }); },
-      () => setMore({ busy: false, err: true })
-    );
+    if (!q.hasNextPage || q.isFetchingNextPage) return;
+    setMoreErr(false);
+    void q.fetchNextPage().then((r) => r.isError && setMoreErr(true));
   };
 
   // The filters ride along in the hash, so the alert page's back button returns to this list as it was.
@@ -258,7 +261,7 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
           <Table<AlertRow> ariaLabel="Loading alerts" role="table" columns={cols} itemProvider={skeletonRows<AlertRow>()} spacerWidth={8} />
         </Card>
       )}
-      {load.t === "error" && <Unavailable kind={kind} repo={repo} err={load.err} retry={() => setReload((n) => n + 1)} signIn={() => void props.signIn()} busy={props.busy} />}
+      {load.t === "error" && <Unavailable kind={kind} repo={repo} err={load.err} retry={() => void q.refetch()} signIn={() => void props.signIn()} busy={props.busy} />}
       {load.t === "ready" && !rows.length && (
         <ZeroData
           iconProps={{ iconName: filtered ? "Filter" : "Shield" }}
@@ -272,7 +275,7 @@ function AlertList({ repo, kind, seed, props }: { repo: string; kind: AlertKind;
           <Table<AlertRow> ariaLabel={`${TABS.find((t) => t.id === tab)!.name} alerts`} role="table" columns={cols} itemProvider={provider} spacerWidth={8} singleClickActivation onActivate={(_e, r) => open(r.data.number)} />
         </Card>
       )}
-      {load.t === "ready" && load.page.next && (
+      {load.t === "ready" && load.page.next && !q.isPreviousData && (
         <div className="gh-sec-more flex-row flex-center">
           <Button text={more.busy ? "Loading" : "Load more"} disabled={more.busy} onClick={loadMore} />
           {more.err && <span className="gh-sec-more-err" role="alert">Could not load more alerts.</span>}
@@ -384,28 +387,17 @@ function DismissDialog({ kind, busy, error, clearError, submit, close }: { kind:
 }
 
 function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: string; kind: AlertKind; number: number; props: HubProps; back: string; onChanged: () => void }) {
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: DetailData }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  // Not persisted: an alert page is one item, refetched on every visit (it shows its last value while it does).
+  const data = useGh<DetailData>(["security", "alert", repo, kind, number], () => loadDetail(kind, repo, number));
   const [picked, setPicked] = React.useState<AlertInstance | undefined>();
-  const [snippet, setSnippet] = React.useState<SnippetLine[] | undefined>();
   const [dialog, setDialog] = React.useState(false);
   const [writes, setWrites] = React.useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
 
-  React.useEffect(() => {
-    let dead = false;
-    loadDetail(kind, repo, number).then((v) => !dead && setData({ t: "ready", v }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [kind, repo, number, reload, props.signedIn]);
-
   const v = data.t === "ready" ? data.v : undefined;
   const shown = picked ?? v?.latest;
-  React.useEffect(() => {
-    setSnippet(undefined);
-    if (kind !== "code" || !shown) return;
-    let dead = false;
-    loadSnippet(repo, shown).then((s) => !dead && setSnippet(s));
-    return () => { dead = true; };
-  }, [kind, repo, shown?.commitSha, shown?.location?.path, shown?.location?.startLine]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The code around the alert, from the file at the instance's commit (which never changes).
+  const snip = useGh<SnippetLine[]>(kind === "code" && shown ? ["security", "snippet", repo, shown.commitSha, shown.location?.path ?? "", shown.location?.startLine ?? 0, shown.location?.endLine ?? 0] : null, () => loadSnippet(repo, shown!), { staleTime: Infinity });
+  const snippet = snip.t === "ready" ? snip.v : undefined;
 
   const run = async (fn: () => Promise<void>) => {
     setWrites({ busy: true, error: null });
@@ -413,7 +405,7 @@ function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: strin
       await fn();
       setDialog(false);
       setWrites({ busy: false, error: null });
-      setReload((n) => n + 1); // refetch: GitHub's answer, not our guess, is what the page shows
+      dropQueries(["security", "alert", repo, kind, number]); // refetch: GitHub's answer, not our guess, is what the page shows
       onChanged();
     } catch (e) {
       setWrites({ busy: false, error: writeErrorText(kind, repo, e) });
@@ -446,7 +438,7 @@ function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: strin
       <div className="page-content gh-pr-body flex-column">
         {writes.error && !dialog && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setWrites({ busy: false, error: null })}>{writes.error}</MessageCard>}
         {data.t === "loading" && <Loading label="Loading alert" />}
-        {data.t === "error" && <Unavailable kind={kind} repo={repo} err={data.err} retry={() => setReload((n) => n + 1)} signIn={() => void props.signIn()} busy={props.busy} />}
+        {data.t === "error" && <Unavailable kind={kind} repo={repo} err={data.err} retry={data.retry} signIn={() => void props.signIn()} busy={props.busy} />}
         {v && d && (
           <>
             <Card className="gh-pr-card" titleProps={{ text: "Details" }}>
@@ -530,20 +522,25 @@ function AlertPage({ repo, kind, number, props, back, onChanged }: { repo: strin
 
 // ---------- the hub ----------
 
+const KINDS = ["dependabot", "code", "secret"] as const;
+
 function SecurityPage({ repo, props }: { repo: string; props: HubProps }) {
   const { security } = useHashExtras(); // BrowseState drops view=security, so the page is routed on its own parse of the hash
   const sec = security && security.repo === repo ? security : null;
   const tab: SecTab = sec?.tab ?? "dependencies";
   const kind = kindForTab(tab);
-  const [counts, setCounts] = React.useState<Partial<Record<AlertKind, AlertCount>>>({});
-  const [tick, setTick] = React.useState(0);
   const branch = sec?.branch;
-  React.useEffect(() => {
-    let dead = false;
-    setCounts({});
-    for (const k of ["dependabot", "code", "secret"] as const) openCount(k, repo, k === "code" ? branch : undefined).then((c) => !dead && c && setCounts((o) => ({ ...o, [k]: c })));
-    return () => { dead = true; };
-  }, [repo, branch, tick, props.signedIn]);
+  // The tab badges: one count per source, persisted with the lists. A failed count is null (the tab body explains why).
+  const countQueries = useQueries({
+    queries: KINDS.map((k) => ({
+      queryKey: ["security", "counts", repo, k, k === "code" ? branch ?? null : null],
+      queryFn: async () => (await openCount(k, repo, k === "code" ? branch : undefined)) ?? null,
+      meta: { persist: true },
+    })),
+  });
+  const counts: Partial<Record<AlertKind, AlertCount>> = {};
+  KINDS.forEach((k, i) => { const c = countQueries[i]?.data; if (c) counts[k] = c; });
+  const changed = () => { dropQueries(["security", "counts", repo]); dropQueries(["security", "alerts", repo]); };
 
   const go = (r: string) => gotoHash(serializeSecurity({ repo: r, tab }));
   return (
@@ -567,7 +564,7 @@ function SecurityPage({ repo, props }: { repo: string; props: HubProps }) {
         })}
       </TabBar>
       {sec?.alert ? (
-        <AlertPage key={`${repo}/${tab}/${sec.alert}`} repo={repo} kind={kind} number={sec.alert} props={props} back={serializeSecurity({ ...sec, alert: undefined })} onChanged={() => setTick((n) => n + 1)} />
+        <AlertPage key={`${repo}/${tab}/${sec.alert}`} repo={repo} kind={kind} number={sec.alert} props={props} back={serializeSecurity({ ...sec, alert: undefined })} onChanged={changed} />
       ) : (
         <div className="page-content page-content-top gh-pr-body flex-column">
           <AlertList key={`${repo}/${tab}`} repo={repo} kind={kind} seed={sec} props={props} />

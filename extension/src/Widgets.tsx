@@ -18,6 +18,7 @@ import { ObservableValue, type IReadonlyObservableValue } from "azure-devops-ui/
 import { ArrayItemProvider, type IItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { loadProject, type ProjectCtx } from "./connections";
 import { getTokens } from "./auth";
+import { useGh } from "./queryClient";
 import { GhError, restJson } from "./githubBrowse";
 import { listRuns, listWorkflows } from "./actionsApi";
 import { hubHref, openHub, type HubId } from "./hostNav";
@@ -48,22 +49,22 @@ export const DEFAULT_TITLE: Record<WidgetKind, string> = { prs: "GitHub pull req
 
 interface Project { ctx: ProjectCtx; repos: string[]; /** What an unconfigured widget shows. */ fallback?: string }
 
-/** The project and its connected github.com repos, once. */
+/** The project and its connected github.com repos, once per frame (not persisted: the widget's record is not per project). */
 function useProject(): Project | null | "error" {
-  const [p, setP] = React.useState<Project | null | "error">(null);
-  React.useEffect(() => {
-    let dead = false;
-    loadProject().then(
-      (r) => {
-        const repos = mergeRows(r.connections).rows.filter((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); }).map((x) => x.label);
-        // An unconfigured widget shows the repo you last had open in this project, as the hubs do, else the first connected one.
-        if (!dead) setP({ ctx: r.ctx, repos, fallback: pickDefaultRepo(repos, recallRepo(r.ctx.org, r.ctx.project)) });
-      },
-      () => !dead && setP("error")
-    );
-    return () => { dead = true; };
-  }, []);
-  return p;
+  const load = useGh(["misc", "widgetProject"], async () => {
+    const r = await loadProject();
+    const repos = mergeRows(r.connections).rows.filter((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); }).map((x) => x.label);
+    return { ctx: r.ctx, repos };
+  }, { staleTime: Infinity });
+  // An unconfigured widget shows the repo you last had open in this project, as the hubs do, else the first connected one.
+  const v = load.t === "ready" ? load.v : undefined;
+  const failed = load.t === "error";
+  return React.useMemo(() => (v ? { ...v, fallback: pickDefaultRepo(v.repos, recallRepo(v.ctx.org, v.ctx.project)) } : failed ? "error" : null), [v, failed]);
+}
+
+/** No stored GitHub sign-in: thrown, so it is never cached or persisted, and shown as the sign-in notice (errorOf). */
+async function needTokens(): Promise<void> {
+  if (!(await getTokens())) throw new GhError("auth", 401);
 }
 
 type LoadError = { kind: "signedOut" } | { kind: "message"; text: string };
@@ -167,31 +168,20 @@ export function PrWidget({ settings }: { settings: WidgetSettingsLike }) {
   const project = useProject();
   const ctx = project && project !== "error" ? project.ctx : undefined;
   const repo = s.repo ?? (project && project !== "error" ? project.fallback : undefined);
-  const [data, setData] = React.useState<{ key: string; rows: WidgetPr[]; more: boolean } | { key: string; error: LoadError }>();
-  const key = `${repo}|${s.filter}`;
-
-  React.useEffect(() => {
-    if (!repo) return;
-    let dead = false;
-    (async () => {
-      if (!(await getTokens())) return !dead && setData({ key, error: { kind: "signedOut" } });
-      try {
-        const [list, me] = await Promise.all([
-          restJson<unknown[]>({ method: "GET", path: pullsPath(repo) }),
-          s.filter === "all" ? Promise.resolve(undefined) : restJson<{ login?: string }>({ method: "GET", path: "/user" }).then((r) => r.body.login),
-        ]);
-        const rows = filterPrs((Array.isArray(list.body) ? list.body : []).map(toWidgetPr), s.filter, me);
-        if (!dead) setData({ key, rows, more: /rel="next"/.test(list.link ?? "") });
-      } catch (e) {
-        if (!dead) setData({ key, error: errorOf(e, "pull requests", repo) });
-      }
-    })();
-    return () => { dead = true; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Through the frame's query cache, persisted: a dashboard opened again shows its last rows at once while they refresh.
+  // Another repo or filter (the configuration preview) starts from shimmer rows, as before.
+  const load = useGh(repo ? ["misc", "widget", "prs", repo, s.filter] : null, async () => {
+    await needTokens();
+    const [list, me] = await Promise.all([
+      restJson<unknown[]>({ method: "GET", path: pullsPath(repo!) }),
+      s.filter === "all" ? Promise.resolve(undefined) : restJson<{ login?: string }>({ method: "GET", path: "/user" }).then((r) => r.body.login),
+    ]);
+    return { rows: filterPrs((Array.isArray(list.body) ? list.body : []).map(toWidgetPr), s.filter, me), more: /rel="next"/.test(list.link ?? "") };
+  }, { persist: true });
 
   const wide = settings.size.columnSpan >= 3;
   const cols = React.useMemo(() => (ctx && repo ? prColumns(ctx, repo, wide) : []), [ctx, repo, wide]);
-  const current = data?.key === key ? data : undefined;
+  const current: { rows: WidgetPr[]; more: boolean } | { error: LoadError } | undefined = load.t === "ready" ? load.v : load.t === "error" ? { error: errorOf(load.err, "pull requests", repo!) } : undefined;
   const rows = current && "rows" in current ? current.rows : undefined;
   const provider = React.useMemo<IItemProvider<WidgetPr | IReadonlyObservableValue<WidgetPr | undefined>>>(() => (rows ? new ArrayItemProvider(rows) : skeleton), [rows]);
   const title = settings.name || DEFAULT_TITLE.prs;
@@ -268,25 +258,12 @@ export function RunsWidget({ settings }: { settings: WidgetSettingsLike }) {
   const ctx = project && project !== "error" ? project.ctx : undefined;
   const repo = s.repo ?? (project && project !== "error" ? project.fallback : undefined);
   const perPage = barCount(settings.size.columnSpan);
-  const key = `${repo}|${s.workflowId ?? ""}|${perPage}`;
-  const [data, setData] = React.useState<{ key: string; runs: WorkflowRun[] } | { key: string; error: LoadError }>();
-
-  React.useEffect(() => {
-    if (!repo) return;
-    let dead = false;
-    (async () => {
-      if (!(await getTokens())) return !dead && setData({ key, error: { kind: "signedOut" } });
-      try {
-        const page = await listRuns(repo, { workflowId: s.workflowId, perPage });
-        if (!dead) setData({ key, runs: page.runs });
-      } catch (e) {
-        if (!dead) setData({ key, error: errorOf(e, "workflow runs", repo) });
-      }
-    })();
-    return () => { dead = true; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const current = data?.key === key ? data : undefined;
+  // Persisted, as the PR widget's rows.
+  const load = useGh(repo ? ["actions", "widget", repo, s.workflowId ?? null, perPage] : null, async () => {
+    await needTokens();
+    return { runs: (await listRuns(repo!, { workflowId: s.workflowId, perPage })).runs };
+  }, { persist: true });
+  const current: { runs: WorkflowRun[] } | { error: LoadError } | undefined = load.t === "ready" ? load.v : load.t === "error" ? { error: errorOf(load.err, "workflow runs", repo!) } : undefined;
   const runs = current && "runs" in current ? current.runs : undefined;
   const bars = React.useMemo(() => (runs ? runBars(runs, new Date()) : []), [runs]);
   const title = settings.name || DEFAULT_TITLE.runs;
@@ -327,7 +304,9 @@ export function WidgetConfig({ kind, settings, onChange }: { kind: WidgetKind; s
   const [runs, setRuns] = React.useState<RunsWidgetSettings>(() => parseRunsSettings(settings.customSettings?.data));
   const repos = project && project !== "error" ? project.repos : [];
   const repo = (kind === "prs" ? pr.repo : runs.repo) ?? (project && project !== "error" ? project.fallback : undefined);
-  const [workflows, setWorkflows] = React.useState<Workflow[] | "signedOut" | "error">();
+  const wfLoad = useGh(kind === "runs" && repo ? ["actions", "widgetWorkflows", repo] : null, async () => { await needTokens(); return listWorkflows(repo!); }, { persist: true });
+  const workflows: Workflow[] | "signedOut" | "error" | undefined =
+    wfLoad.t === "ready" ? wfLoad.v : wfLoad.t === "error" ? (wfLoad.err instanceof GhError && wfLoad.err.kind === "auth" ? "signedOut" : "error") : undefined;
 
   const update = (next: PrWidgetSettings | RunsWidgetSettings) => {
     if (kind === "prs") setPr(next as PrWidgetSettings);
@@ -337,21 +316,6 @@ export function WidgetConfig({ kind, settings, onChange }: { kind: WidgetKind; s
   // A widget saved without a repo shows the first connected one; write it down so the preview and the saved settings agree.
   React.useEffect(() => { if (repo && !(kind === "prs" ? pr.repo : runs.repo)) update(kind === "prs" ? { ...pr, repo } : { ...runs, repo }); }, [repo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  React.useEffect(() => {
-    if (kind !== "runs" || !repo) return;
-    let dead = false;
-    setWorkflows(undefined);
-    (async () => {
-      if (!(await getTokens())) return !dead && setWorkflows("signedOut");
-      try {
-        const list = await listWorkflows(repo);
-        if (!dead) setWorkflows(list);
-      } catch (e) {
-        if (!dead) setWorkflows(e instanceof GhError && e.kind === "auth" ? "signedOut" : "error");
-      }
-    })();
-    return () => { dead = true; };
-  }, [kind, repo]);
 
   if (project === "error") return <div className="gh-widget-config"><ProjectNotice project={project} /></div>;
   if (project && !repos.length) return <div className="gh-widget-config"><ProjectNotice project={project} /></div>;

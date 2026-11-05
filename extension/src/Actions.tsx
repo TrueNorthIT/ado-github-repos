@@ -35,7 +35,9 @@ import { gotoHash, openHub, patchHash, useHashExtras } from "./hostNav";
 import { applyEditFlag } from "./lib/editHash";
 import { serialize } from "./lib/browseState";
 import { GhError, listBranches } from "./githubBrowse";
-import { dispatchWorkflow, getDispatchInputs, getRepoAccess, getScheduleCrons, listEnvironments, listRuns, listWorkflows, setWorkflowEnabled, useCanWriteActions } from "./actionsApi";
+import { dispatchWorkflow, getDispatchInputs, getScheduleCrons, listEnvironments, listRuns, listWorkflows, setWorkflowEnabled, useCanWriteActions, useRepoAccess, type RunsPage } from "./actionsApi";
+import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { dropQueries, queryClient, useGh } from "./queryClient";
 import { nextScheduledRuns, timeUntil, type ScheduledRun } from "./lib/cron";
 import { fullDateTime } from "./lib/dateFormat";
 import { MenuItemType } from "azure-devops-ui/Menu";
@@ -66,23 +68,13 @@ const TABS: { id: ActTab; name: string }[] = [
 ];
 const DEBOUNCE_MS = 300;
 const POLL_MS = 10_000;
+const NO_RUNS: WorkflowRun[] = [];
 const isActive = (r: WorkflowRun) => r.state === "queued" || r.state === "waiting" || r.state === "inProgress";
 
 // ---------- loading ----------
 
-type Load<T> = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; v: T };
-
-function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): [Load<T>, () => void] {
-  const [load, setLoad] = React.useState<Load<T>>({ t: "loading" });
-  const [n, setN] = React.useState(0);
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    fn().then((v) => !dead && setLoad({ t: "ready", v }), (err) => !dead && setLoad({ t: "error", err }));
-    return () => { dead = true; };
-  }, [...deps, n]); // eslint-disable-line react-hooks/exhaustive-deps
-  return [load, () => setN((x) => x + 1)];
-}
+/** The workflows of a repository (persisted: the Workflow page's header and the landing tables start from it). */
+const useWorkflows = (repo: string) => useGh(["actions", "workflows", repo], () => listWorkflows(repo), { persist: true });
 
 const shortSha = (s: string) => s.slice(0, 7);
 
@@ -290,12 +282,12 @@ function WorkflowTable({ repo, rows, openWf, open, recent }: { repo: string; row
 
 function Landing({ repo, tab, goto, props }: { repo: string; tab: "recent" | "all"; goto: Goto; props: HubProps }) {
   // The latest 100 runs of the repository stand in for "each workflow's latest run".
-  const [load, retry] = useAsync(async () => {
+  const load = useGh(["actions", "landing", repo], async () => {
     const [wfs, recent] = await Promise.all([listWorkflows(repo), listRuns(repo, { perPage: 100 })]);
     const latest = new Map<number, WorkflowRun>();
     for (const r of recent.runs) if (!latest.has(r.workflowId)) latest.set(r.workflowId, r);
     return wfs.map((wf): WorkflowRow => ({ wf, latest: latest.get(wf.id) }));
-  }, [repo, props.signedIn]);
+  }, { persist: true });
   const openWf = React.useCallback((id: number) => goto({ workflow: id }), [goto]);
   const open = React.useCallback((id: number) => goto({ run: id }), [goto]);
   if (load.t === "loading") {
@@ -305,7 +297,7 @@ function Landing({ repo, tab, goto, props }: { repo: string; tab: "recent" | "al
       </Card>
     );
   }
-  if (load.t === "error") return <ErrorView err={load.err} signIn={() => void props.signIn()} busy={props.busy} retry={retry} subject="see this repository's workflows" permission="Actions" />;
+  if (load.t === "error") return <ErrorView err={load.err} signIn={() => void props.signIn()} busy={props.busy} retry={load.retry} subject="see this repository's workflows" permission="Actions" />;
   const rows = tab === "recent"
     ? load.v.filter((r) => r.latest).sort((a, b) => b.latest!.createdAt.getTime() - a.latest!.createdAt.getTime())
     : load.v.slice().sort((a, b) => a.wf.name.localeCompare(b.wf.name));
@@ -360,41 +352,33 @@ function FilterRow({ st, goto }: { st: ActionsHashState; goto: Goto }) {
   );
 }
 
-type RunsState = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; runs: WorkflowRun[]; pages: number; next?: number };
+/**
+ * The runs of the repository or one workflow, a page per "Load more", through the page's query cache. Every page shown is re-read
+ * every 10 s while one of its runs is queued, waiting or in progress (not while the frame is hidden). A filter change keeps the rows
+ * until the new ones arrive; another workflow or repository is another component (keyed), so it starts from shimmer rows.
+ */
+function useRuns(repo: string, workflowId: number | undefined, filters: RunFilters) {
+  const q = useInfiniteQuery({
+    queryKey: ["actions", "runs", repo, workflowId ?? null, filters],
+    queryFn: ({ pageParam = 1 }) => listRuns(repo, { workflowId, page: pageParam as number, ...filters }),
+    getNextPageParam: (last) => last.next,
+    keepPreviousData: true,
+    meta: { persist: true },
+    refetchInterval: (data) => (data?.pages.some((p) => p.runs.some(isActive)) ? POLL_MS : false),
+  });
+  // Pages overlap when runs start between reads: each run once, first seen first.
+  const runs = React.useMemo(() => {
+    if (!q.data) return undefined;
+    const seen = new Set<number>();
+    return q.data.pages.flatMap((p) => p.runs).filter((r) => !seen.has(r.id) && !!seen.add(r.id));
+  }, [q.data]);
+  return { q, runs };
+}
 
-function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }: { repo: string; workflowId?: number; filters: RunFilters; goto: Goto; props: HubProps; tick: number; showWorkflow: boolean }) {
-  const key = `${repo}|${workflowId ?? ""}|${JSON.stringify(filters)}`;
-  const [s, setS] = React.useState<RunsState>({ t: "loading" });
-  const [more, setMore] = React.useState(false);
-  const [n, setN] = React.useState(0);
-  const query = (page: number) => listRuns(repo, { workflowId, page, ...filters });
-  React.useEffect(() => {
-    let dead = false;
-    setS((o) => (o.t === "ready" && tick > 0 ? o : { t: "loading" })); // a refresh after Run workflow keeps the rows on screen
-    query(1).then((r) => !dead && setS({ t: "ready", runs: r.runs, pages: 1, next: r.next }), (err) => !dead && setS({ t: "error", err }));
-    return () => { dead = true; };
-  }, [key, props.signedIn, tick, n]); // eslint-disable-line react-hooks/exhaustive-deps
-  const runs = s.t === "ready" ? s.runs : [];
-  const live = runs.some(isActive);
-  const pages = s.t === "ready" ? s.pages : 1;
-  // Poll every 10s while a visible run is queued, waiting or in progress; re-reads every page shown so far.
-  React.useEffect(() => {
-    if (!live) return;
-    let dead = false;
-    const t = setInterval(async () => {
-      try {
-        const all: WorkflowRun[] = [];
-        let next: number | undefined;
-        for (let p = 1; p <= pages; p++) {
-          const r = await query(p);
-          all.push(...r.runs.filter((x) => !all.some((y) => y.id === x.id)));
-          next = r.next;
-        }
-        if (!dead) setS((o) => (o.t === "ready" && o.pages === pages ? { t: "ready", runs: all, pages, next } : o));
-      } catch { /* the next tick tries again */ }
-    }, POLL_MS);
-    return () => { dead = true; clearInterval(t); };
-  }, [live, pages, key]); // eslint-disable-line react-hooks/exhaustive-deps
+function RunsList({ repo, workflowId, filters, goto, props, showWorkflow }: { repo: string; workflowId?: number; filters: RunFilters; goto: Goto; props: HubProps; showWorkflow: boolean }) {
+  const { q, runs: loaded } = useRuns(repo, workflowId, filters);
+  const runs = loaded ?? NO_RUNS;
+  const [moreFailed, setMoreFailed] = React.useState(false);
   const now = useNow(runs.some((r) => r.state === "inProgress"));
   const open = React.useCallback((id: number) => goto({ run: id }), [goto]);
   const canWrite = useCanWriteActions(repo);
@@ -403,31 +387,27 @@ function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }
   const onDeleted = () => {
     const t = deleting!;
     setDeleting(undefined);
-    if (!t.logsOnly) setS((o) => (o.t === "ready" ? { ...o, runs: o.runs.filter((r) => r.id !== t.id) } : o));
+    if (t.logsOnly) return;
+    queryClient.setQueriesData<InfiniteData<RunsPage>>(["actions", "runs", repo], (d) => d && { ...d, pages: d.pages.map((p) => ({ ...p, runs: p.runs.filter((r) => r.id !== t.id) })) });
+    dropQueries(["actions", "landing", repo]); // its "latest run" may have been this one
   };
   const dialog = deleting && <DeleteRunDialog repo={repo} target={deleting} onClose={() => setDeleting(undefined)} onDeleted={onDeleted} />;
   const loadMore = async () => {
-    if (s.t !== "ready" || !s.next) return;
-    const page = s.next;
-    setMore(true);
-    try {
-      const r = await query(page);
-      setS((o) => (o.t === "ready" ? { t: "ready", runs: [...o.runs, ...r.runs.filter((x) => !o.runs.some((y) => y.id === x.id))], pages: page, next: r.next } : o));
-    } catch (err) {
-      setS({ t: "error", err });
-    }
-    setMore(false);
+    setMoreFailed(false);
+    const r = await q.fetchNextPage();
+    if (r.isError) setMoreFailed(true);
   };
   const filtered = Object.values(filters).some(Boolean);
-  if (s.t === "loading") {
+  // A failed refresh keeps the rows already shown; only a list with nothing to show turns into the error.
+  if (!loaded && q.isError) return <ErrorView err={q.error} signIn={() => void props.signIn()} busy={props.busy} retry={() => void q.refetch()} subject="see this repository's workflow runs" permission="Actions" />;
+  if (!loaded) {
     return (
       <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
         <RunTable repo={repo} runs={undefined} open={open} now={now} showWorkflow={showWorkflow} label="Loading workflow runs" />
       </Card>
     );
   }
-  if (s.t === "error") return <ErrorView err={s.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => setN((x) => x + 1)} subject="see this repository's workflow runs" permission="Actions" />;
-  if (!s.runs.length) {
+  if (!runs.length) {
     return filtered
       ? <ZeroData iconProps={{ iconName: "Filter" }} imageAltText="" primaryText="No matching runs" secondaryText="Clear or change the filters to see more." />
       : <ZeroData iconProps={{ iconName: "Play" }} imageAltText="" primaryText="No runs yet" secondaryText="Runs appear here when the workflow is triggered." />;
@@ -435,12 +415,13 @@ function RunsList({ repo, workflowId, filters, goto, props, tick, showWorkflow }
   return (
     <>
       <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
-        <RunTable repo={repo} runs={s.runs} open={open} now={now} showWorkflow={showWorkflow} label="Workflow runs" onDelete={onDelete} />
+        <RunTable repo={repo} runs={runs} open={open} now={now} showWorkflow={showWorkflow} label="Workflow runs" onDelete={onDelete} />
       </Card>
       {dialog}
-      {s.next && (
+      {moreFailed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setMoreFailed(false)}>Could not load more runs. Try again.</MessageCard>}
+      {q.hasNextPage && !q.isPreviousData && (
         <div className="gh-act-more flex-row justify-center">
-          <Button text={more ? "Loading" : "Load more"} disabled={more} onClick={() => void loadMore()} />
+          <Button text={q.isFetchingNextPage ? "Loading" : "Load more"} disabled={q.isFetchingNextPage} onClick={() => void loadMore()} />
         </div>
       )}
     </>
@@ -456,21 +437,16 @@ interface DispatchInfo {
 }
 
 function useDispatchInfo(repo: string, wf: Workflow | undefined): DispatchInfo | undefined {
-  const [info, setInfo] = React.useState<DispatchInfo>();
-  const id = wf?.id;
-  React.useEffect(() => {
-    if (!wf) return;
-    let dead = false;
-    setInfo(undefined);
-    (async () => {
-      const a = await getRepoAccess(repo);
-      const inputs = a.canWrite && !wf.disabled ? await getDispatchInputs(repo, a.defaultBranch, wf.path) : null;
-      if (!dead) setInfo({ ...a, inputs });
-    })().catch(() => !dead && setInfo({ defaultBranch: "main", canWrite: false, inputs: null }));
-    return () => { dead = true; };
-  }, [repo, id, wf?.disabled]); // eslint-disable-line react-hooks/exhaustive-deps
-  return info;
+  const access = useRepoAccess(repo);
+  const a = access.t === "ready" ? access.v : access.t === "error" ? NO_ACCESS : undefined;
+  const wants = !!wf && !!a && a.canWrite && !wf.disabled;
+  // The workflow file's workflow_dispatch inputs on the default branch. A file that can't be read leaves Run workflow out, as before.
+  const inputs = useGh(wants ? ["actions", "dispatch", repo, a.defaultBranch, wf.path] : null, () => getDispatchInputs(repo, a!.defaultBranch, wf!.path).catch(() => null));
+  if (!wf || !a) return undefined;
+  if (!wants) return { ...a, inputs: null };
+  return inputs.t === "ready" ? { ...a, inputs: inputs.v } : inputs.t === "error" ? { ...a, inputs: null } : undefined;
 }
+const NO_ACCESS = { defaultBranch: "main", canWrite: false };
 
 const initialValue = (i: DispatchInput) => i.default ?? (i.type === "boolean" ? "false" : i.type === "choice" ? i.options?.[0] ?? "" : "");
 
@@ -618,7 +594,7 @@ function ScheduledRunsPanel({ repo, wf, branch, onClose }: { repo: string; wf: W
 }
 
 function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHashState; goto: Goto; props: HubProps }) {
-  const [wfs] = useAsync(() => listWorkflows(repo), [repo, props.signedIn]);
+  const wfs = useWorkflows(repo);
   const loaded = wfs.t === "ready" ? wfs.v.find((w) => w.id === st.workflow) : undefined;
   // Enable/disable flips the workflow in place rather than reloading the list (and the header) from scratch.
   const [enabled, setEnabled] = React.useState<boolean>();
@@ -635,6 +611,8 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
     try {
       await setWorkflowEnabled(repo, wf.id, on);
       setEnabled(on);
+      dropQueries(["actions", "workflows", repo]);
+      dropQueries(["actions", "landing", repo]);
     } catch (e) {
       setFailure(writeError(e, on ? "enable the workflow" : "disable the workflow"));
     }
@@ -642,14 +620,13 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
   };
   const [panel, setPanel] = React.useState(false);
   const [queued, setQueued] = React.useState(false);
-  const [refresh, setRefresh] = React.useState(0);
   const timers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
   React.useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const onQueued = () => {
     setPanel(false);
     setQueued(true);
     // GitHub creates the run asynchronously: look again a couple of times.
-    timers.current = [1500, 5000].map((ms) => setTimeout(() => setRefresh((x) => x + 1), ms));
+    timers.current = [1500, 5000].map((ms) => setTimeout(() => { dropQueries(["actions", "runs", repo]); dropQueries(["actions", "landing", repo]); }, ms));
   };
   const filters: RunFilters = { branch: st.branch, status: st.status, actor: st.actor, event: st.event };
   return (
@@ -695,7 +672,7 @@ function WorkflowPage({ repo, st, goto, props }: { repo: string; st: ActionsHash
       ))}
       {queued && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setQueued(false)}>Run queued. It will appear in the list in a moment.</MessageCard>}
       <FilterRow st={st} goto={goto} />
-      <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} tick={refresh} showWorkflow={false} />
+      <RunsList repo={repo} workflowId={st.workflow} filters={filters} goto={goto} props={props} showWorkflow={false} />
       {panel && wf && info?.inputs && <RunWorkflowPanel repo={repo} wf={wf} info={info} onClose={() => setPanel(false)} onQueued={onQueued} />}
       {badge && wf && info && <StatusBadgeDialog repo={repo} path={wf.path} name={wf.name} defaultBranch={info.defaultBranch} onClose={() => setBadge(false)} />}
       {schedules && wf && info && <ScheduledRunsPanel repo={repo} wf={wf} branch={info.defaultBranch} onClose={() => setSchedules(false)} />}
@@ -737,7 +714,7 @@ function ActionsPage({ repo, props }: { repo: string; props: HubProps }) {
             {tab === "runs" ? (
               <>
                 <FilterRow st={st} goto={goto} />
-                <RunsList key={repo} repo={repo} filters={{ branch: st.branch, status: st.status, actor: st.actor, event: st.event }} goto={goto} props={props} tick={0} showWorkflow />
+                <RunsList key={repo} repo={repo} filters={{ branch: st.branch, status: st.status, actor: st.actor, event: st.event }} goto={goto} props={props} showWorkflow />
               </>
             ) : tab === "environments" ? (
               <EnvironmentsTab repo={repo} go={goto} props={props} />
