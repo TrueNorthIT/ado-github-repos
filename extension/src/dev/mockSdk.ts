@@ -4,9 +4,10 @@ import { LIVE } from "./live";
 
 export const scenario = () => new URLSearchParams(location.search).get("scenario") || "ok";
 /** Which hub contribution the mock page pretends to be: `?hub=commits|pushes|branches|tags|prs|actions|security`; anything else is Files. Read only here. */
-export const MOCK_HUBS = ["repos", "commits", "pushes", "branches", "tags", "prs", "actions", "security"] as const;
+export const MOCK_HUBS = ["repos", "commits", "pushes", "branches", "tags", "prs", "actions", "security", "myprs"] as const;
 export const mockHub = () => {
   const h = new URLSearchParams(location.search).get("hub");
+  if (h === "myprs") return "github-my-prs-hub"; // the organisation-level GitHub pull requests page
   return h === "repos" || !h || !(MOCK_HUBS as readonly string[]).includes(h) ? "github-repos-hub" : `github-repos-${h}-hub`;
 };
 
@@ -73,7 +74,7 @@ const nav = {
   setHash: (h: string) => { location.hash = h; },
   replaceHash: (h: string) => { history.replaceState(null, "", "#" + h.replace(/^#+/, "")); window.dispatchEvent(new HashChangeEvent("hashchange")); }, // replaceState fires no event; the host adds the "#" itself; the host does notify
   // The real host loads the other hub's page; mock mode swaps the ?hub= switch and keeps the hash.
-  navigate: (u: string) => { const n = new URL(location.href); if (!n.pathname.endsWith("/hub.html")) { n.pathname = n.pathname.replace(/[^/]*$/, "hub.html"); n.search = ""; } n.searchParams.set("hub", /github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
+  navigate: (u: string) => { const n = new URL(location.href); if (!n.pathname.endsWith("/hub.html")) { n.pathname = n.pathname.replace(/[^/]*$/, "hub.html"); n.search = ""; } n.searchParams.set("hub", /github-my-prs-hub(?:[\/#]|$)/.test(u) ? "myprs" : /github-repos-(commits|pushes|branches|tags|prs|actions|security)-hub(?:[\/#]|$)/.exec(u)?.[1] ?? "repos"); n.hash = new URL(u).hash; location.href = n.href; },
   onHashChanged: (cb: (h: string) => void) => window.addEventListener("hashchange", () => cb(location.hash)),
 };
 

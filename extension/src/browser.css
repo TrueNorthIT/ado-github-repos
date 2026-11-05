@@ -773,3 +773,6 @@
 /* CM-6: the lines an existing multi-line thread covers: a bar at the gutter's code edge (clear of the "+") and a light tint. */
 .monaco-editor .gh-thread-range { background: rgba(var(--palette-primary, 0, 120, 212), .07); }
 .monaco-editor .gh-thread-range-gutter { box-shadow: inset -3px 0 0 rgba(var(--palette-primary, 0, 120, 212), 1); }
+/* The organisation-level GitHub pull requests page (MyPrsHub.tsx): no tab bar under its title, so no tab gap either. */
+.gh-myprs-header.gh-hub-header.bolt-header { padding-bottom: 0; height: 56px; }
+.gh-myprs-project { gap: 6px; min-width: 0; }
