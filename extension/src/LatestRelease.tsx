@@ -5,16 +5,13 @@ import { RelDate } from "./RelDate";
 import { getLatestRelease } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import type { BrowseState } from "./lib/browseState";
+import { useGh } from "./queryClient";
 
-export function LatestRelease({ repo, signedIn }: { repo: string; signedIn?: boolean }) {
+/** `signedIn` is no longer read: signing in refetches every query. Kept so callers need not change. */
+export function LatestRelease({ repo }: { repo: string; signedIn?: boolean }) {
   const href = useHubHref();
-  const [latest, setLatest] = React.useState<Awaited<ReturnType<typeof getLatestRelease>>>();
-  React.useEffect(() => {
-    let dead = false;
-    setLatest(undefined);
-    getLatestRelease(repo).then((l) => !dead && setLatest(l), () => {});
-    return () => { dead = true; };
-  }, [repo, signedIn]);
+  const load = useGh(["refs", "latestRelease", repo], () => getLatestRelease(repo), { persist: true });
+  const latest = load.t === "ready" ? load.v : undefined;
   if (!latest) return null;
   const s: BrowseState = { repo, tagTab: "releases", release: latest.tagName };
   return (

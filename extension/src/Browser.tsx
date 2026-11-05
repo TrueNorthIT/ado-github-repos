@@ -12,7 +12,7 @@ import { MoreButton, type IMenuItem } from "azure-devops-ui/Menu";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { ZeroData } from "azure-devops-ui/ZeroData";
 import { Splitter, SplitterElementPosition } from "azure-devops-ui/Splitter";
-import { skeletonRows } from "./RepoHub"; // a cycle with RepoHub (which imports this file), harmless: only used at render time
+import { skeletonRows } from "./RepoHub"; // useConnected too; a cycle with RepoHub (which imports this file), harmless: only used at render time
 import { Table, ITableColumn, SimpleTableCell, TableColumnLayout, ColumnSorting, SortOrder } from "azure-devops-ui/Table";
 import { RelDate } from "./RelDate";
 import { LatestRelease } from "./LatestRelease";
@@ -32,9 +32,10 @@ import { githubUrl } from "./lib/githubUrl";
 import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import { watchTheme } from "./theme";
 import { loadProject } from "./connections";
-import { mergeRows } from "./lib/rows";
-import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
-import { GhError, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, getViewerLogin, getWriteContext, listBranches, listDir, pathExistsOn, renderMarkdown } from "./githubBrowse";
+import { useConnected } from "./RepoHub";
+import { useQueryClient } from "@tanstack/react-query";
+import { useGh, type GhLoad } from "./queryClient";
+import { GhError, invalidateBrowse, findEntry, getBlob, getRaw, getRenderedMarkdown, getCommits, getRepo, getTree, getViewerLogin, getWriteContext, listBranches, listDir, pathExistsOn, renderMarkdown } from "./githubBrowse";
 import { IconSize } from "azure-devops-ui/Icon";
 import { FileIcon, RepoIcon } from "./fileIcons";
 import { FindBox, type Crumb } from "./FindBox";
@@ -313,16 +314,8 @@ type FileData = { entry: TreeEntry; kind: FileKind; text?: string; md?: Prepared
 function FileView({ f, repo, refName, dark, go, tab, lines, onSelect }: { f: FileData; repo: string; refName: string; dark: boolean; go: (s: BrowseState) => void; tab: string; lines?: LineRange | null; onSelect?: (r: LineRange) => void }) {
   // A markdown file's Contents tab shows its source, which the rendered-HTML fetch doesn't have.
   const source = f.kind === "markdown" && tab === "contents";
-  const [rawText, setRawText] = React.useState<string>();
-  React.useEffect(() => setRawText(undefined), [f.entry.path, refName]);
-  React.useEffect(() => {
-    if (!source || rawText !== undefined) return;
-    let dead = false;
-    getRaw(repo, refName, f.entry.path).then((b) => !dead && setRawText(new TextDecoder().decode(b)), () => !dead && setRawText("Could not load the raw text."));
-    return () => {
-      dead = true;
-    };
-  }, [source, rawText, repo, refName, f.entry.path]);
+  const raw = useGh(source ? ["browse", "rawText", repo, refName, f.entry.path] : null, () => getRaw(repo, refName, f.entry.path).then((b) => new TextDecoder().decode(b)), { staleTime: CONTENT_STALE_MS });
+  const rawText = raw.t === "ready" ? raw.v : raw.t === "error" ? "Could not load the raw text." : undefined;
 
   const download = async () => {
     const url = URL.createObjectURL(await getBlob(repo, refName, f.entry.path));
@@ -348,17 +341,14 @@ function FileView({ f, repo, refName, dark, go, tab, lines, onSelect }: { f: Fil
 
 // ---------- listing ----------
 
+const NO_COMMITS: Record<string, CommitInfo> = {};
+
 /** `entries` undefined while the folder loads: shimmer rows in the same columns. */
 function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEntry[] | undefined; go: (path: string) => void; repo: string; refName: string; folder: string; menu: (e: TreeEntry) => IMenuItem[] }) {
   // Names show at once; commit info fills in after. A failed lookup just leaves those cells blank.
-  const [commits, setCommits] = React.useState<Record<string, CommitInfo>>({});
-  React.useEffect(() => {
-    let dead = false;
-    setCommits({});
-    if (!entries) return;
-    getCommits(repo, refName, folder, entries).then((c) => !dead && setCommits(c), () => {});
-    return () => { dead = true; };
-  }, [entries, repo, refName, folder]);
+  // Kept between visits with the folder itself: the last change per entry is small metadata.
+  const commitsLoad = useGh(entries ? ["browse", "folderCommits", repo, refName, folder] : null, () => getCommits(repo, refName, folder, entries!), { persist: true });
+  const commits = commitsLoad.t === "ready" ? commitsLoad.v : NO_COMMITS;
   const [dir, setDir] = React.useState<"asc" | "desc">("asc");
   const sorted = React.useMemo(() => entries ? new ArrayItemProvider(sortListing(entries, dir)) : skeletonRows<TreeEntry>(), [entries, dir, commits]); // a new provider when commits arrive makes Table redraw its cells
   const sorting = React.useMemo(() => new ColumnSorting<TreeEntry>((_i, order) => setDir(order === SortOrder.descending ? "desc" : "asc")), []);
@@ -444,18 +434,10 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
 
 function Readme({ entries, repo, refName, go }: { entries: TreeEntry[]; repo: string; refName: string; go: (s: BrowseState) => void }) {
   const readme = findReadme(entries);
-  const [prepared, setPrepared] = React.useState<PreparedMarkdown>();
-  React.useEffect(() => {
-    setPrepared(undefined);
-    if (!readme) return;
-    let dead = false;
-    getRenderedMarkdown(repo, refName, readme.path)
-      .then((html) => !dead && setPrepared(prepareMarkdownHtml(html, { owner: repo.split("/")[0], name: repo.split("/")[1], ref: refName, dir: dirOf(readme.path) })))
-      .catch(() => {}); // a README that won't load is not worth an error banner
-    return () => {
-      dead = true;
-    };
-  }, [readme?.path, repo, refName]);
+  // Rendered HTML is content, so it is cached for this visit only, never kept. A README that won't load is not worth an error banner.
+  const load = useGh(readme ? ["browse", "readme", repo, refName, readme.path] : null, () =>
+    getRenderedMarkdown(repo, refName, readme!.path).then((html) => prepareMarkdownHtml(html, { owner: repo.split("/")[0], name: repo.split("/")[1], ref: refName, dir: dirOf(readme!.path) })), { staleTime: CONTENT_STALE_MS });
+  const prepared = load.t === "ready" ? load.v : undefined;
   if (!readme || !prepared) return null;
   return (
     <Card className="no-padding gh-readme" contentProps={{ contentPadding: false }}>
@@ -617,15 +599,8 @@ export function BranchPicker({ refName, items, loading, onOpen, setQuery, onSele
 
 /** The project's connected github.com repos as "owner/name", from the same (cached) load as the list view. */
 export function useConnectedRepos(current: string): string[] | undefined {
-  const [repos, setRepos] = React.useState<string[]>();
-  React.useEffect(() => {
-    let dead = false;
-    loadProject().then(
-      (p) => !dead && setRepos(mergeRows(p.connections).rows.filter((r) => { const ref = parseRepoUrl(r.url); return ref && isGitHubDotCom(ref); }).map((r) => r.label)),
-      () => !dead && setRepos([])
-    );
-    return () => { dead = true; };
-  }, []);
+  const load = useConnected();
+  const repos = load.t === "ready" ? load.v.repos : load.t === "error" ? [] : undefined;
   return repos && (repos.some((r) => r.toLowerCase() === current.toLowerCase()) ? repos : [current, ...repos]);
 }
 
@@ -655,7 +630,41 @@ export function RepoSwitcher({ repo, openTick, onPick, compact }: { repo: string
 
 // ---------- the browser ----------
 
-type Ctx = { ref: string; defaultBranch: string; tree: GitTree; write: WriteContext | null; clone: CloneUrls };
+/** What the page knows once the repo, its tree and the viewer's write access are in. `Base` comes first (kept between visits). */
+type Base = { ref: string; defaultBranch: string; clone: CloneUrls };
+type Ctx = Base & { tree: GitTree; write: WriteContext | null };
+
+/** The repo's default branch and clone URLs: small, kept between visits. */
+const repoInfoKey = (repo: string) => ["browse", "repo", repo];
+/**
+ * How long the tree and a path's contents count as fresh. Longer than the lists' 30 s: a recursive tree can be large and a file's text is
+ * downloaded whole, so a refocus shouldn't fetch them again every half minute. (Before the query cache they were never refreshed in a visit.)
+ */
+const CONTENT_STALE_MS = 5 * 60_000;
+/** The recursive tree for a ref. Not kept between visits: it can run to megabytes. */
+const treeQuery = (repo: string, ref: string) => ({ queryKey: ["browse", "tree", repo, ref], queryFn: () => getTree(repo, ref), staleTime: CONTENT_STALE_MS });
+
+/** What is at a path: a folder's entries, a file and its contents, a submodule, or nothing. */
+async function loadView(repo: string, ref: string, tree: GitTree, path: string): Promise<Exclude<View, { t: "loading" } | { t: "error" }>> {
+  if (path === "") return { t: "folder", entries: await listDir(repo, tree, "") };
+  const entry = await findEntry(repo, tree, path);
+  if (!entry) return { t: "missing" };
+  if (entry.kind === "folder") return { t: "folder", entries: await listDir(repo, tree, path) };
+  if (entry.kind === "submodule") return { t: "submodule", entry };
+  let kind = classifyFile(entry.name, entry.size ?? 0);
+  const f: FileData = { entry, kind };
+  if (kind === "markdown") {
+    f.md = prepareMarkdownHtml(await getRenderedMarkdown(repo, ref, path), { owner: repo.split("/")[0], name: repo.split("/")[1], ref, dir: dirOf(path) });
+  } else if (kind === "text") {
+    const bytes = await getRaw(repo, ref, path);
+    kind = f.kind = classifyFile(entry.name, entry.size ?? bytes.byteLength, new Uint8Array(bytes, 0, Math.min(8000, bytes.byteLength)));
+    if (kind === "text") f.text = new TextDecoder().decode(bytes);
+  }
+  return { t: "file", f };
+}
+
+const NO_LOOKUP = (): undefined => undefined;
+const loadErr = <T,>(l: GhLoad<T>) => (l.t === "error" ? l.err : null);
 
 /** The Edit pane's Preview tab: GitHub renders the unsaved text (POST /markdown), through the same sanitiser and renderer as the Preview tab. */
 function MarkdownPreview({ text, repo, refName, dir, go }: { text: string; repo: string; refName: string; dir: string; go: (s: BrowseState) => void }) {
@@ -712,10 +721,6 @@ const readWidth = () => {
 export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, commandBarItems }: BrowserProps) {
   const { repo } = state;
   const path = state.path ?? "";
-  const [reload, setReload] = React.useState(0);
-  const [ctx, setCtx] = React.useState<Ctx | null>(null);
-  const [ctxErr, setCtxErr] = React.useState<unknown>(null);
-  const [view, setView] = React.useState<View>({ t: "loading" });
   const [dark, setDark] = React.useState(false);
   const [branches, setBranches] = React.useState<string[] | undefined>();
   const [query, setQuery] = React.useState("");
@@ -746,68 +751,38 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
 
   React.useEffect(() => watchTheme(setDark), []);
 
-  // Repo, ref and tree.
+  // Repo, ref and tree, then what is at the path. The repo facts and folder listings are kept between visits, so a revisit shows the folder
+  // at once; the tree and the write context (the head an edit commits against) are asked again each visit. Another repo, ref or path
+  // starts from shimmer rows; a refresh of the same one keeps what is shown.
+  const queryClient = useQueryClient();
+  const infoLoad = useGh(repoInfoKey(repo), () => getRepo(repo).then((info) => ({ defaultBranch: info.defaultBranch, clone: cloneUrls(repo, info) })), { persist: true });
+  const info = infoLoad.t === "ready" ? infoLoad.v : undefined;
+  const ref = state.ref ?? info?.defaultBranch;
+  const base = React.useMemo<Base | null>(() => (info && ref ? { ref, defaultBranch: info.defaultBranch, clone: info.clone } : null), [info, ref]);
+  const treeLoad = useGh(ref ? treeQuery(repo, ref).queryKey : null, () => getTree(repo, ref!), { staleTime: CONTENT_STALE_MS });
+  const tree = treeLoad.t === "ready" ? treeLoad.v : undefined;
+  // A failed lookup just means no edit actions.
+  const writeLoad = useGh(ref ? ["browse", "write", repo, ref] : null, () => getWriteContext(repo, ref!).catch(() => null));
+  const write = writeLoad.t === "ready" ? writeLoad.v : undefined;
+  const ctx = React.useMemo<Ctx | null>(() => (base && tree ? { ...base, tree, write: write ?? null } : null), [base, tree, write]);
+  const lookupPath = React.useMemo(() => (tree ? treeLookup(tree) : undefined), [tree]);
+  // The tree is read through the cache inside the query, so a write (which drops "browse") reads the new tree, not the one this render had.
+  const viewLoad = useGh(ref ? ["browse", "view", repo, ref, path] : null, async () => loadView(repo, ref!, await queryClient.fetchQuery(treeQuery(repo, ref!)), path), {
+    persist: path === "" || lookupPath?.(path) === "folder", // folder listings only, never a file's contents
+    staleTime: CONTENT_STALE_MS,
+  });
+  const view: View = viewLoad.t === "ready" ? viewLoad.v : viewLoad.t === "error" ? { t: "error", err: viewLoad.err } : { t: "loading" };
+  const ctxErr = loadErr(infoLoad) ?? loadErr(treeLoad);
+
   React.useEffect(() => {
-    let dead = false;
-    setCtx(null);
-    setCtxErr(null);
     setBranches(undefined);
     seen.current = new Set();
     setSeenCount(0);
-    (async () => {
-      try {
-        const info = await getRepo(repo);
-        const ref = state.ref ?? info.defaultBranch;
-        // The head is read with the tree: a web edit commits against the head the page was loaded at. A failed lookup just means no edit actions.
-        const [tree, write] = await Promise.all([getTree(repo, ref), getWriteContext(repo, ref).catch(() => null)]);
-        if (!dead) setCtx({ ref, defaultBranch: info.defaultBranch, tree, write, clone: cloneUrls(repo, info) });
-      } catch (e) {
-        if (!dead) setCtxErr(e);
-      }
-    })();
-    return () => {
-      dead = true;
-    };
-  }, [repo, state.ref, signedIn, reload]);
+  }, [repo, state.ref]);
+  const viewEntries = view.t === "folder" && path !== "" ? view.entries : undefined;
+  React.useEffect(() => { if (viewEntries) noteEntries(viewEntries); }, [viewEntries, noteEntries]);
 
-  // What is at the path.
-  React.useEffect(() => {
-    if (!ctx) return;
-    let dead = false;
-    setView({ t: "loading" });
-    (async () => {
-      try {
-        const { tree, ref } = ctx;
-        if (path === "") return !dead && setView({ t: "folder", entries: await listDir(repo, tree, "") });
-        const entry = await findEntry(repo, tree, path);
-        if (dead) return;
-        if (!entry) return setView({ t: "missing" });
-        if (entry.kind === "folder") {
-          const entries = await listDir(repo, tree, path);
-          noteEntries(entries);
-          return !dead && setView({ t: "folder", entries });
-        }
-        if (entry.kind === "submodule") return setView({ t: "submodule", entry });
-        let kind = classifyFile(entry.name, entry.size ?? 0);
-        const f: FileData = { entry, kind };
-        if (kind === "markdown") {
-          f.md = prepareMarkdownHtml(await getRenderedMarkdown(repo, ref, path), { owner: repo.split("/")[0], name: repo.split("/")[1], ref, dir: dirOf(path) });
-        } else if (kind === "text") {
-          const bytes = await getRaw(repo, ref, path);
-          kind = f.kind = classifyFile(entry.name, entry.size ?? bytes.byteLength, new Uint8Array(bytes, 0, Math.min(8000, bytes.byteLength)));
-          if (kind === "text") f.text = new TextDecoder().decode(bytes);
-        }
-        if (!dead) setView({ t: "file", f });
-      } catch (e) {
-        if (!dead) setView({ t: "error", err: e });
-      }
-    })();
-    return () => {
-      dead = true;
-    };
-  }, [ctx, path, repo, reload, noteEntries]);
-
-  const refName = ctx?.ref ?? state.ref ?? "";
+  const refName = base?.ref ?? state.ref ?? "";
   const nav = React.useCallback((p: string) => go({ repo, ref: state.ref, path: p }), [go, repo, state.ref]);
   const toList = () => go({ view: "repos" });
   const isFile = view.t === "file";
@@ -820,9 +795,8 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
     if (lastWhere.current !== where) { lastWhere.current = where; setEditing(null); setSel(null); }
   }, [refName, path]);
   const cancelEdit = React.useCallback(() => setEditing(null), []);
-  const write = ctx?.write;
-  const canEdit = !!write?.canWrite && !!write.headOid;
-  const lookup = React.useMemo(() => (ctx ? treeLookup(ctx.tree) : () => undefined), [ctx]);
+  const canEdit = !!ctx && !!write?.canWrite && !!write.headOid;
+  const lookup = lookupPath ?? NO_LOOKUP;
 
   const openWrite = (d: WriteDialog) => {
     writes.clearError();
@@ -851,8 +825,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
     setDialog(null);
     setEditing(null);
     if (plan.openPr) return void openHub("prs", branchRowNewPrHash(repo, plan.branch));
-    setCommitted(`Committed to ${plan.branch}.`);
-    setReload((n) => n + 1);
+    setCommitted(`Committed to ${plan.branch}.`); // FileWrites dropped the "browse" reads, so the tree, folder and file refetch
     if (goto !== undefined && goto !== path) nav(goto);
   };
   /** The ⋯ items of a folder (New file here, Upload here) or a file (Rename, Delete); none without push access to a branch. */
@@ -871,27 +844,24 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
     [canEdit, writes.busy, repo]
   );
 
-  const doSignIn = async () => {
-    await signIn();
-    setReload((n) => n + 1);
-  };
+  const doSignIn = () => signIn(); // signing in refetches every read
 
   const openBranches = () => {
     if (!branches) listBranches(repo).then(setBranches, () => setBranches([]));
   };
   const switchBranch = async (next: string) => {
-    if (!ctx || next === ctx.ref) return;
+    if (!base || next === base.ref) return;
     setNotice(null);
     try {
       const t = await getTree(repo, next);
       const keep = needsFolderFetch(t, path) ? ((await pathExistsOn(repo, t, path)) ? path : "") : pathAfterSwitch(path, t);
-      go({ repo, ref: next === ctx.defaultBranch ? undefined : next, path: keep, tab: keep === path ? state.tab : undefined });
+      go({ repo, ref: next === base.defaultBranch ? undefined : next, path: keep, tab: keep === path ? state.tab : undefined });
     } catch {
       setNotice(`Could not switch to ${next}.`);
     }
   };
 
-  const items = (filterBranches(branches ?? [], query, ctx?.defaultBranch) as string[]).map((b) => ({ id: b, text: b }));
+  const items = (filterBranches(branches ?? [], query, base?.defaultBranch) as string[]).map((b) => ({ id: b, text: b }));
   const crumbs: Crumb[] = breadcrumbs(path).map((c, i, all) => ({
     text: c.name,
     ...(i < all.length - 1 ? { href: hashFor({ repo, ref: state.ref, path: c.path }), onClick: hubClick(() => nav(c.path)) } : {}),
@@ -911,7 +881,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const tab = resolveTab(state.tab, kind, hasPreview && kind === "file");
   const { against, lines, edit: editAsked } = useHashExtras();
   const [prefs] = usePrefs();
-  const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], ctx?.defaultBranch, refName) ?? ctx?.defaultBranch ?? refName;
+  const compareWith = against ?? compareBaseFor(prefs.compareBase?.[repo], base?.defaultBranch, refName) ?? base?.defaultBranch ?? refName;
   const tabProps = { repo, urlRef: state.ref, refName, path, signedIn, signIn: () => void doSignIn(), busy };
   const showable = view.t === "file" && (view.f.kind === "text" || view.f.kind === "markdown"); // Blame and Compare need text
   // A selection in the Contents view, else the lines the page was opened at, give "Copy link to lines".
@@ -934,13 +904,13 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
   const editable = canEdit && view.t === "file" && tab === "contents" && (view.f.kind === "text" || view.f.kind === "markdown") && !editing;
   // A link with edit=true (the Actions hub's "Edit" on a workflow) opens the file straight in the editor once it has loaded, then drops the key.
   React.useEffect(() => {
-    if (!editAsked || !ctx || view.t === "loading") return;
+    if (!editAsked || !ctx || write === undefined || view.t === "loading") return; // write: the edit button waits for the write context
     patchHash((h) => applyEditFlag(h, false));
     if (editable) void startEdit();
     else if (view.t === "file" && !editing) setNotice(canEdit ? "This file can't be edited here." : `You can't edit files on ${refName} here: your GitHub sign-in has no write access to it.`);
-  }, [editAsked, ctx, view.t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editAsked, ctx, write, view.t]); // eslint-disable-line react-hooks/exhaustive-deps
   const headerItems = editing ? [] : [
-    ...(ctx ? [{ id: "clone", text: "Clone", important: true, renderButton: () => <CloneButton key="clone" urls={ctx.clone} /> }] : []),
+    ...(base ? [{ id: "clone", text: "Clone", important: true, renderButton: () => <CloneButton key="clone" urls={base.clone} /> }] : []),
     ...(editable ? [{ id: "edit", text: "Edit", important: true, iconProps: { iconName: "Edit" }, disabled: loadingEdit || writes.busy, onActivate: () => void startEdit() }] : []),
     ...(hereItems.length ? [{ id: "more", important: true, text: "More actions", renderButton: () => <MoreButton key="more" ariaLabel={`Actions for ${baseOf(path) || "the repository root"}`} contextualMenuProps={{ menuProps: { id: "gh-files-menu", items: hereItems } }} /> }] : []),
   ];
@@ -994,10 +964,10 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
               </div>
               {err ? (
                 <div className="page-content page-content-top">
-                  <ErrorView err={err} signIn={doSignIn} busy={busy} retry={() => setReload((n) => n + 1)} back={toList} />
+                  <ErrorView err={err} signIn={doSignIn} busy={busy} retry={() => { invalidateBrowse(); infoLoad.t === "error" && infoLoad.retry(); }} back={toList} />
                 </div>
               ) : (
-                ctx && (
+                base && (
                   <>
                     {/* In azure-devops-ui 2.281 the 21px/600 title (class title-m) is TitleSize.Large; TitleSize.Medium renders 17px/400. */}
                     <Header className="repos-files-header" title={path === "" ? "Files" : baseOf(path)} titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={headerItems} />
@@ -1029,31 +999,31 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
                           target={editing.kind === "edit" ? editing.path : newPath || "the new file"}
                           setText={(t) => { editText.current = t; }}
                           cancel={cancelEdit}
-                          renderPreview={classifyFile(baseOf(editing.kind === "edit" ? editing.path : newPath.trim()), 0) === "markdown" ? (t) => <MarkdownPreview text={t} repo={repo} refName={ctx.ref} dir={dirOf(editing.kind === "edit" ? editing.path : newPath.trim())} go={go} /> : undefined}
+                          renderPreview={classifyFile(baseOf(editing.kind === "edit" ? editing.path : newPath.trim()), 0) === "markdown" ? (t) => <MarkdownPreview text={t} repo={repo} refName={base.ref} dir={dirOf(editing.kind === "edit" ? editing.path : newPath.trim())} go={go} /> : undefined}
                           commit={() => openWrite(editing.kind === "edit" ? { kind: "edit", path: editing.path, text: editText.current, original: editing.initial, bom: editing.bom } : { kind: "new", path: newPath, text: editText.current })}
                         />
                       )}
                       {view.t === "loading" && (kind === "folder" && tab !== "history" ? <Listing entries={undefined} go={nav} repo={repo} refName={refName} folder={path} menu={entryMenu} /> : <Spinner size={SpinnerSize.large} ariaLabel="Loading" />)}
                       {view.t === "missing" && (
                         <MessageCard severity={MessageCardSeverity.Warning} buttonProps={[{ text: "Go to the repository root", onClick: () => nav("") }]}>
-                          This path doesn't exist on {ctx.ref}.
+                          This path doesn't exist on {base.ref}.
                         </MessageCard>
                       )}
                       {view.t === "submodule" && <MessageCard severity={MessageCardSeverity.Info}>{view.entry.name} is a submodule, which can't be opened here.</MessageCard>}
                       {view.t === "folder" && tab === "history" && <HistoryTab {...tabProps} />}
                       {view.t === "folder" && tab !== "history" && !editing && (
                         <>
-                          <Listing entries={view.entries} go={nav} repo={repo} refName={ctx.ref} folder={path} menu={entryMenu} />
-                          <Readme entries={view.entries} repo={repo} refName={ctx.ref} go={go} />
+                          <Listing entries={view.entries} go={nav} repo={repo} refName={base.ref} folder={path} menu={entryMenu} />
+                          <Readme entries={view.entries} repo={repo} refName={base.ref} go={go} />
                         </>
                       )}
                       {view.t === "file" && tab === "history" && <HistoryTab {...tabProps} />}
                       {view.t === "file" && (tab === "blame" || tab === "compare") && !showable && <MessageCard severity={MessageCardSeverity.Info}>{tab === "blame" ? "Blame" : "Compare"} is only available for text files.</MessageCard>}
                       {view.t === "file" && tab === "blame" && showable && <BlameTab {...tabProps} dark={dark} />}
                       {view.t === "file" && tab === "compare" && showable && (
-                        <CompareTab {...tabProps} dark={dark} against={compareWith} defaultBranch={ctx.defaultBranch} setAgainst={(r) => patchHash((h) => applyAgainst(h, r))} />
+                        <CompareTab {...tabProps} dark={dark} against={compareWith} defaultBranch={base.defaultBranch} setAgainst={(r) => patchHash((h) => applyAgainst(h, r))} />
                       )}
-                      {view.t === "file" && (tab === "contents" || tab === "preview") && !editing && <FileView f={view.f} repo={repo} refName={ctx.ref} dark={dark} go={go} tab={tab} lines={lines} onSelect={setSel} />}
+                      {view.t === "file" && (tab === "contents" || tab === "preview") && !editing && <FileView f={view.f} repo={repo} refName={base.ref} dark={dark} go={go} tab={tab} lines={lines} onSelect={setSel} />}
                     </div>
                   </>
                 )
@@ -1075,7 +1045,7 @@ export function RepoBrowser({ state, go, openSwitch, signedIn, signIn, busy, com
           writes={writes}
           close={() => { if (!writes.busy) { setDialog(null); writes.clearError(); } }}
           done={afterWrite}
-          reload={() => { setDialog(null); setEditing(null); writes.clearError(); setReload((n) => n + 1); }}
+          reload={() => { setDialog(null); setEditing(null); writes.clearError(); invalidateBrowse(); }}
         />
       )}
     </Surface>

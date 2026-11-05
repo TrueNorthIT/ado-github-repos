@@ -15,6 +15,8 @@ import { CommitTable } from "./Commits";
 import { BranchBar, Loading, PersonLine } from "./RepoHub";
 import { RelDate } from "./RelDate";
 import { openInHub, useHubHref } from "./repoHref";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useGh } from "./queryClient";
 import "./browser.css";
 
 interface TabProps {
@@ -31,32 +33,21 @@ interface TabProps {
 // ---------- History ----------
 
 /** The commits that touched the path on the current branch, in the Commits page's table; a row opens the commit in the Commits hub. */
-export function HistoryTab({ repo, urlRef, refName, path, signedIn, signIn, busy }: TabProps) {
+export function HistoryTab({ repo, urlRef, refName, path, signIn, busy }: TabProps) {
   const href = useHubHref();
-  const [rows, setRows] = React.useState<CommitRow[]>([]);
-  const [next, setNext] = React.useState<{ more: boolean; cursor: string | null }>({ more: false, cursor: null });
-  const [load, setLoad] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready" }>({ t: "loading" });
-  const [more, setMore] = React.useState(false);
-  const [reload, setReload] = React.useState(0);
-
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    setRows([]);
-    listCommits(repo, refName, undefined, path).then(
-      (p) => { if (dead) return; setRows(p.rows); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setLoad({ t: "ready" }); },
-      (err) => !dead && setLoad({ t: "error", err })
-    );
-    return () => { dead = true; };
-  }, [repo, refName, path, signedIn, reload]);
-
-  const loadMore = () => {
-    if (!next.cursor) return;
-    setMore(true);
-    listCommits(repo, refName, next.cursor, path).then(
-      (p) => { setRows((r) => [...r, ...p.rows]); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setMore(false); },
-      (err) => { setMore(false); setLoad({ t: "error", err }); }
-    );
+  // A page per "Load more", kept between visits (commit rows are metadata). A failed refresh or "Load more" keeps the rows shown.
+  const q = useInfiniteQuery({
+    queryKey: ["browse", "history", repo, refName, path],
+    queryFn: ({ pageParam }) => listCommits(repo, refName, pageParam as string | undefined, path),
+    getNextPageParam: (last) => (last.hasNextPage && last.endCursor ? last.endCursor : undefined),
+    meta: { persist: true },
+  });
+  const rows = React.useMemo<CommitRow[] | undefined>(() => q.data?.pages.flatMap((p) => p.rows), [q.data]);
+  const [moreFailed, setMoreFailed] = React.useState(false);
+  const loadMore = async () => {
+    setMoreFailed(false);
+    const r = await q.fetchNextPage();
+    if (r.isError) setMoreFailed(true);
   };
 
   const commitState = React.useCallback((sha: string) => ({ repo, ref: urlRef, commit: sha }), [repo, urlRef]);
@@ -65,8 +56,8 @@ export function HistoryTab({ repo, urlRef, refName, path, signedIn, signIn, busy
   const openPr = React.useCallback((n: number) => void openInHub("prs", { repo, view: "prs", pr: n })(), [repo]);
   const prHref = React.useCallback((n: number) => href("prs", { repo, view: "prs", pr: n }), [href, repo]);
 
-  if (load.t === "error") return <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this repository's history" permission="Contents" />;
-  if (load.t === "loading") {
+  if (!rows && q.isError) return <ErrorView err={q.error} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); void q.refetch(); }} subject="see this repository's history" permission="Contents" />;
+  if (!rows) {
     return (
       <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
         <CommitTable rows={undefined} label="Loading history" commitHref={commitHref} open={open} prHref={prHref} openPr={openPr} />
@@ -79,9 +70,10 @@ export function HistoryTab({ repo, urlRef, refName, path, signedIn, signIn, busy
       <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
         <CommitTable rows={rows} label={`History of ${path || repo} on ${refName}`} commitHref={commitHref} open={open} prHref={prHref} openPr={openPr} />
       </Card>
-      {next.more && (
+      {moreFailed && <MessageCard severity={MessageCardSeverity.Warning} onDismiss={() => setMoreFailed(false)}>Could not load more commits. Try again.</MessageCard>}
+      {q.hasNextPage && (
         <div className="gh-load-more flex-row justify-center">
-          {more ? <Spinner size={SpinnerSize.medium} ariaLabel="Loading more commits" /> : <Button text="Load more" onClick={loadMore} />}
+          {q.isFetchingNextPage ? <Spinner size={SpinnerSize.medium} ariaLabel="Loading more commits" /> : <Button text="Load more" onClick={() => void loadMore()} />}
         </div>
       )}
     </>
@@ -115,30 +107,21 @@ function BlameGutterBlock({ block, commitHref, open }: { block: BlameBlock; comm
 
 /** Blame as native draws it: a gutter block per run of lines from one commit (short sha, author, date, message, linked to the commit, tinted by age) beside the read-only file in Monaco.
  *  The editor is laid out at its full height (16px a line, no inner scroll) so the page scrolls and the gutter rows line up with the lines. */
-export function BlameTab({ repo, urlRef, refName, path, dark, signedIn, signIn, busy }: TabProps & { dark: boolean }) {
+export function BlameTab({ repo, urlRef, refName, path, dark, signIn, busy }: TabProps & { dark: boolean }) {
   const href = useHubHref();
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; text: string; blocks: BlameBlock[] }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  // The file's text is content: cached for this visit only, never kept.
+  const load = useGh(["browse", "blame", repo, refName, path], () =>
+    Promise.all([getRaw(repo, refName, path), getBlame(repo, refName, path)]).then(([raw, ranges]) => {
+      const text = stripFinalNewline(decode(raw));
+      return { text, blocks: blameBlocks(ranges, lineCountOf(text)) };
+    }), { staleTime: 5 * 60_000 });
   const [failed, setFailed] = React.useState(false);
   const box = React.useRef<HTMLDivElement>(null);
   const darkRef = React.useRef(dark);
   darkRef.current = dark;
 
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    Promise.all([getRaw(repo, refName, path), getBlame(repo, refName, path)]).then(
-      ([raw, ranges]) => {
-        if (dead) return;
-        const text = stripFinalNewline(decode(raw));
-        setData({ t: "ready", text, blocks: blameBlocks(ranges, lineCountOf(text)) });
-      },
-      (err) => !dead && setData({ t: "error", err })
-    );
-    return () => { dead = true; };
-  }, [repo, refName, path, signedIn, reload]);
-
-  const text = data.t === "ready" ? data.text : undefined;
+  const data = load.t === "ready" ? load.v : undefined;
+  const text = data?.text;
   React.useEffect(() => {
     if (text === undefined) return;
     let dead = false;
@@ -159,8 +142,8 @@ export function BlameTab({ repo, urlRef, refName, path, dark, signedIn, signIn, 
   const commitHref = React.useCallback((sha: string) => href("commits", { repo, ref: urlRef, commit: sha }), [href, repo, urlRef]);
   const open = React.useCallback((sha: string) => void openInHub("commits", { repo, ref: urlRef, commit: sha })(), [repo, urlRef]);
 
-  if (data.t === "error") return <ErrorView err={data.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="see this file's blame" permission="Contents" />;
-  if (data.t === "loading") return <Loading label="Loading blame" />;
+  if (load.t === "error") return <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); load.retry(); }} subject="see this file's blame" permission="Contents" />;
+  if (!data) return <Loading label="Loading blame" />;
   const lines = lineCountOf(data.text);
   // Without Monaco (it failed to load) a plain table still gives line numbers beside the same gutter.
   return (
@@ -189,36 +172,26 @@ const fetchSide = (repo: string, ref: string, path: string): Promise<Side> =>
   );
 
 /** This file on the current branch against another ref (default: the repo's default branch) in the diff editor: the other ref is the original, this branch the modified side. */
-export function CompareTab({ repo, refName, path, against, setAgainst, defaultBranch, dark, signedIn, signIn, busy }: TabProps & { against: string; setAgainst: (ref: string) => void; defaultBranch?: string; dark: boolean }) {
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; original: string; modified: string; missingOn?: string; noRef?: boolean }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+export function CompareTab({ repo, refName, path, against, setAgainst, defaultBranch, dark, signIn, busy }: TabProps & { against: string; setAgainst: (ref: string) => void; defaultBranch?: string; dark: boolean }) {
+  // Both versions are content: cached for this visit only, never kept.
+  const load = useGh(["browse", "compare", repo, against, refName, path], async () => {
+    const [o, m] = await Promise.all([fetchSide(repo, against, path), fetchSide(repo, refName, path)]);
+    const missingOn = !o.ok ? against : !m.ok ? refName : undefined;
+    // A 404 also means the ref itself is gone (seen live: a mistyped `against` read as "file does not exist on it").
+    // ponytail: getBranchNames reads the first 100 branches only, so a full page proves nothing; page it if that matters.
+    const names = missingOn ? await getBranchNames(repo).catch(() => [missingOn]) : [];
+    const noRef = !!missingOn && names.length < 100 && !names.includes(missingOn);
+    return { original: o.ok ? o.text : "", modified: m.ok ? m.text : "", missingOn, noRef };
+  }, { staleTime: 5 * 60_000 });
+  const data = load.t === "ready" ? load.v : undefined;
   const [failed, setFailed] = React.useState(false);
   const [height, setHeight] = React.useState(0);
   const box = React.useRef<HTMLDivElement>(null);
   const darkRef = React.useRef(dark);
   darkRef.current = dark;
 
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    Promise.all([fetchSide(repo, against, path), fetchSide(repo, refName, path)]).then(
-      async ([o, m]) => {
-        if (dead) return;
-        const missingOn = !o.ok ? against : !m.ok ? refName : undefined;
-        // A 404 also means the ref itself is gone (seen live: a mistyped `against` read as "file does not exist on it").
-        // ponytail: getBranchNames reads the first 100 branches only, so a full page proves nothing; page it if that matters.
-        const names = missingOn ? await getBranchNames(repo).catch(() => [missingOn]) : [];
-        const noRef = !!missingOn && names.length < 100 && !names.includes(missingOn);
-        if (dead) return;
-        setData({ t: "ready", original: o.ok ? o.text : "", modified: m.ok ? m.text : "", missingOn, noRef });
-      },
-      (err) => !dead && setData({ t: "error", err })
-    );
-    return () => { dead = true; };
-  }, [repo, refName, against, path, signedIn, reload]);
-
-  const same = data.t === "ready" && !data.missingOn && data.original === data.modified;
-  const ready = data.t === "ready" && !same ? data : undefined;
+  const same = !!data && !data.missingOn && data.original === data.modified;
+  const ready = data && !same ? data : undefined; // the query's value: the same object until the text changes, so Monaco isn't rebuilt
   React.useEffect(() => {
     if (!ready) return;
     let dead = false;
@@ -246,9 +219,9 @@ export function CompareTab({ repo, refName, path, against, setAgainst, defaultBr
         <span className="gh-compare-label body-m">Compare with</span>
         <BranchBar repo={repo} current={against} defaultBranch={defaultBranch} onPick={setAgainst} />
       </div>
-      {data.t === "error" ? (
-        <ErrorView err={data.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); setReload((n) => n + 1); }} subject="compare this file" permission="Contents" />
-      ) : data.t === "loading" ? (
+      {load.t === "error" ? (
+        <ErrorView err={load.err} signIn={signIn} busy={busy} retry={() => { invalidateRefs(); load.retry(); }} subject="compare this file" permission="Contents" />
+      ) : !data ? (
         <Loading label="Loading both versions" />
       ) : same ? (
         <ZeroData iconProps={{ iconName: "Accept" }} imageAltText="" primaryText="No differences" secondaryText={`${path} is the same on ${refName} and ${against}.`} />

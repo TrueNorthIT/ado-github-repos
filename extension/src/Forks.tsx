@@ -23,6 +23,7 @@ import { ErrorView } from "./Browser";
 import { type HubProps, skeletonRows, titleSwitcher } from "./RepoHub";
 import { GhError, createFork, getForkAheadBehind, getRepo, getViewerLogin, getViewerOrgs, invalidateForks, listForks } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
+import { useGh } from "./queryClient";
 import { inBatches, maxDivergence, type AheadBehind } from "./lib/branches";
 import { applySourceRepo, githubForkUrl, type Fork } from "./lib/forks";
 import { serializeNewPr } from "./lib/newPrHash";
@@ -97,24 +98,18 @@ function ForkDialog({ repo, close, done }: { repo: string; close: () => void; do
 }
 
 export function ForksView({ repo, props }: { repo: string; props: HubProps }) {
-  const { go, openSwitch, signedIn } = props;
+  const { go, openSwitch } = props;
   const href = useHubHref();
-  const [data, setData] = React.useState<{ t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; forks: Fork[]; base: string }>({ t: "loading" });
-  const [reload, setReload] = React.useState(0);
+  // The forks and the base they compare against; kept between visits, refreshed in the background.
+  const data = useGh(["refs", "forks", repo], () => Promise.all([listForks(repo), getRepo(repo)]).then(([forks, info]) => ({ forks, base: info.defaultBranch })), { persist: true });
   const [compares, setCompares] = React.useState<Record<string, AheadBehind | null>>({});
   const [dialog, setDialog] = React.useState(false);
   const [notice, setNotice] = React.useState<string>();
 
-  React.useEffect(() => {
-    let dead = false;
-    setData({ t: "loading" });
-    setCompares({});
-    Promise.all([listForks(repo), getRepo(repo)]).then(([forks, info]) => !dead && setData({ t: "ready", forks, base: info.defaultBranch }), (err) => !dead && setData({ t: "error", err }));
-    return () => { dead = true; };
-  }, [repo, signedIn, reload]);
+  React.useEffect(() => setCompares({}), [repo]);
 
-  // Behind / ahead a few at a time, as the Branches page does.
-  const ready = data.t === "ready" ? data : undefined;
+  // Behind / ahead a few at a time, as the Branches page does. `ready` is the query's value, the same object until the forks change.
+  const ready = data.t === "ready" ? data.v : undefined;
   React.useEffect(() => {
     if (!ready) return;
     let dead = false;
@@ -194,7 +189,7 @@ export function ForksView({ repo, props }: { repo: string; props: HubProps }) {
       <div className="page-content page-content-top gh-pr-body flex-column">
         {notice && <MessageCard severity={MessageCardSeverity.Info} onDismiss={() => setNotice(undefined)}>{notice}</MessageCard>}
         {data.t === "error" ? (
-          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateForks(); setReload((n) => n + 1); }} subject="see this repository's forks" permission="Metadata" />
+          <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={() => { invalidateForks(); data.retry(); }} subject="see this repository's forks" permission="Metadata" />
         ) : ready && !ready.forks.length ? (
           <ZeroData iconProps={{ iconName: "GitFork" }} imageAltText="" primaryText="No forks" secondaryText="Nobody has forked this repository, or you can't see the forks." />
         ) : (
@@ -210,8 +205,7 @@ export function ForksView({ repo, props }: { repo: string; props: HubProps }) {
           done={(made, where) => {
             setDialog(false);
             setNotice(`Forked to ${made?.fullName ?? `${where}/${repo.split("/")[1]}`}. GitHub can take a few minutes to finish copying it.`);
-            invalidateForks();
-            setReload((n) => n + 1);
+            invalidateForks(); // the list on screen refetches
           }}
         />
       )}

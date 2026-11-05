@@ -1,6 +1,7 @@
 // Shared parts of the Repos hubs (Commits, Pushes, Branches, Tags): the page shell with the repo fallback, the repo switcher
 // item, the branch picker bar, the table helpers and the person cell. Each hub is its own page (same hub.html, routed by contribution id).
 import * as React from "react";
+import * as SDK from "azure-devops-extension-sdk";
 import { Page } from "azure-devops-ui/Page";
 import { Surface, SurfaceBackground } from "azure-devops-ui/Surface";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
@@ -20,6 +21,7 @@ import { pickDefaultRepo, recallRepo } from "./lib/lastRepo";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
 import { getRepo, listBranches } from "./githubBrowse";
+import { dropQueries, useGh } from "./queryClient";
 import { BranchPicker, RepoSwitcher } from "./Browser";
 import "./browser.css";
 
@@ -37,21 +39,33 @@ export interface HubProps {
 /** The repo for a hub opened with no repo in the hash (the left nav carries none): the one you last had open in this project if it is
  *  still connected (lib/lastRepo.ts), otherwise the first connected github.com repo. */
 export function useDefaultRepo(enabled: boolean): { repo?: string; none: boolean } {
-  const [r, setR] = React.useState<{ repo?: string; none: boolean }>({ none: false });
-  React.useEffect(() => {
-    if (!enabled) return;
-    let dead = false;
-    loadProject().then(
-      (p) => {
-        const connected = mergeRows(p.connections).rows.filter((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); }).map((x) => x.label);
-        const repo = pickDefaultRepo(connected, recallRepo(p.ctx.org, p.ctx.project));
-        if (!dead) setR({ repo, none: !repo });
-      },
-      () => !dead && setR({ none: true })
-    );
-    return () => { dead = true; };
-  }, [enabled]);
-  return r;
+  const load = useConnected(enabled);
+  if (load.t === "error") return { none: true };
+  if (load.t !== "ready") return { none: false };
+  const repo = pickDefaultRepo(load.v.repos, recallRepo(load.v.org, load.v.project));
+  return { repo, none: !repo };
+}
+
+/**
+ * The project's connected github.com repos as "owner/name", with the organisation and project they are remembered under. Kept between
+ * visits, so a hub opened from the left nav picks its repo at once; the stored list is refreshed in the background.
+ */
+export function useConnected(enabled = true) {
+  // Per project: the hubs' saved records are per organisation, user and hub, so without the project another project's list would show first.
+  return useGh(enabled ? ["misc", "connectedRepos", currentProjectId()] : null, async () => {
+    const p = await loadProject();
+    const repos = mergeRows(p.connections).rows.filter((x) => { const ref = parseRepoUrl(x.url); return ref && isGitHubDotCom(ref); }).map((x) => x.label);
+    return { repos, org: p.ctx.org, project: p.ctx.project };
+  }, { persist: true });
+}
+
+/** The page's project id, read at once from the SDK's web context ("" when the page has none). */
+function currentProjectId(): string {
+  try {
+    return SDK.getWebContext()?.project?.id ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export const Loading = ({ label = "Loading" }: { label?: string }) => (
@@ -90,23 +104,15 @@ export const titleSwitcher = (repo: string, openSwitch: number, onPick: (r: stri
 
 // ---------- repo facts ----------
 
-const infos = new Map<string, Promise<{ defaultBranch: string }>>();
-/** The repo's default branch (cached per repo; a failure is retried next time). */
+const defaultBranchKey = (repo: string) => ["refs", "defaultBranch", repo];
+/** The repo's default branch: kept between visits and refreshed in the background; a failure is asked again next time. */
 export function useDefaultBranch(repo: string): { defaultBranch?: string; err?: unknown } {
-  const [r, setR] = React.useState<{ defaultBranch?: string; err?: unknown }>({});
-  React.useEffect(() => {
-    let dead = false;
-    setR({});
-    let p = infos.get(repo);
-    if (!p) infos.set(repo, (p = getRepo(repo)));
-    p.then((i) => !dead && setR({ defaultBranch: i.defaultBranch }), (err) => { infos.delete(repo); if (!dead) setR({ err }); });
-    return () => { dead = true; };
-  }, [repo]);
-  return r;
+  const load = useGh(defaultBranchKey(repo), () => getRepo(repo).then((i) => i.defaultBranch), { persist: true });
+  return load.t === "ready" ? { defaultBranch: load.v } : load.t === "error" ? { err: load.err } : {};
 }
 
-/** Forgets the cached default branch (after "Set as default branch"), so the next useDefaultBranch reads it again. */
-export const forgetDefaultBranch = (repo: string) => void infos.delete(repo);
+/** Forgets the cached default branch (after "Set as default branch"), so useDefaultBranch reads it again. */
+export const forgetDefaultBranch = (repo: string) => dropQueries(defaultBranchKey(repo));
 
 /** The branch picker, as on Files: loads the branch names when first opened. `onPick` gets the branch. */
 /** `inTitle`: the page-header form, on the title row after the repo switcher (Commits, Pushes), instead of its own row above the header. */
