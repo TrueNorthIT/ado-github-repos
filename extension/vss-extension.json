@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "github-repos",
-  "version": "0.39.3",
+  "version": "0.40.0",
   "name": "GitHub Repos",
   "description": "Lists and browses the GitHub repositories connected to a project, in its own GitHub Repos section.",
   "publisher": "TrueNorthIT",
@@ -166,6 +166,16 @@
         "name": "GitHub Actions history configuration",
         "description": "Choose the GitHub repository and workflow.",
         "uri": "dist/widget.html"
+      }
+    },
+    {
+      "id": "github-my-work-tab",
+      "type": "ms.vss-web.tab",
+      "targets": ["ms.vss-tfs-web.my-work-pivot"],
+      "properties": {
+        "name": "GitHub",
+        "order": 1050,
+        "uri": "dist/myWorkTab.html"
       }
     },
     {

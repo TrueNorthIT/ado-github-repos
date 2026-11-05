@@ -151,6 +151,8 @@ export const notifyLoadFailed = async (e: unknown) => { console.error("[mock sdk
 /** The object a widget frame registered, as the dashboard host would fetch it (factories are called). */
 export const registeredObject = (id: string) => { const r = registered.get(id); return typeof r === "function" ? r() : r; };
 export const notifyLoadSucceeded = async () => {};
+export const getConfiguration = () => ({});
+export const resize = (_w?: number, _h?: number) => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];
 export const getHost = () => ({ id: "host-1", name: "demo-org", type: 2 });

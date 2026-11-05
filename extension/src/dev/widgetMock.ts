@@ -8,6 +8,7 @@ const user = (login: string) => ({ login, id: 1, avatar_url: avatar(login), type
 export function widgetRest(u: URL, init: RequestInit | undefined, sc: string): Response | undefined {
   if ((init?.method ?? "GET") !== "GET") return undefined;
   if (u.pathname === "/user") return json(user(ME));
+  if (u.pathname === "/search/issues") return mySearch(u.searchParams.get("q") ?? ""); // the My work flyout's GitHub tab
   const m = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(u.pathname);
   if (!m || u.searchParams.get("state") !== "open") return undefined;
   if (`${m[1]}/${m[2]}`.toLowerCase() !== PR_REPO) return json([]);
@@ -28,4 +29,25 @@ export function widgetRest(u: URL, init: RequestInit | undefined, sc: string): R
     200,
     open.length > per ? { link: `<https://api.github.com${u.pathname}?state=open&per_page=${per}&page=2>; rel="next"` } : {}
   );
+}
+
+/** GET /search/issues for the My work tab: the fixture's open pull requests by the mock user, or awaiting their review. */
+function mySearch(q: string): Response {
+  const mine = /\bauthor:@me\b/.test(q), review = /\breview-requested:@me\b/.test(q);
+  const hits = PRS.filter((p) => p.node.state === "OPEN" && ((mine && p.node.author?.login === ME) || (review && p.reviewRequested.includes(ME))));
+  return json({
+    total_count: hits.length,
+    incomplete_results: false,
+    items: hits.map((p) => ({
+      number: p.node.number,
+      title: p.node.title,
+      html_url: p.node.url,
+      repository_url: `https://api.github.com/repos/${PR_REPO}`,
+      pull_request: { html_url: p.node.url },
+      draft: p.node.isDraft,
+      user: p.node.author ? user(p.node.author.login) : null,
+      created_at: p.node.createdAt,
+      updated_at: p.node.updatedAt,
+    })),
+  });
 }

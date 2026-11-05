@@ -1,0 +1,9 @@
+/* The GitHub tab in ADO's My work flyout (src/myWorkTab.tsx). The flyout's own tabs put a 24px gutter round cards 16px apart. */
+html, body { margin: 0; }
+.gh-mw { padding: 16px 24px 0; gap: 16px; }
+.gh-mw-card-header { padding-bottom: 8px; }
+.gh-mw-line1 { min-width: 0; gap: 8px; }
+.gh-mw-line1 .gh-mw-title { padding: 0; min-width: 0; color: inherit; flex: 0 1 auto; } /* as .gh-pr-title: the subtle Link's own 6px padding put titles out of line with line 2 */
+.gh-mw-pill { flex-shrink: 0; }
+.gh-mw-empty { padding: 12px 20px 16px; }
+.gh-mw-footer { padding: 4px 0 12px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
