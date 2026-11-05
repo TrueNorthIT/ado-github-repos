@@ -27,6 +27,7 @@ import { fakeTokens, scenario } from "./mockSdk";
 import { LIVE, SANDBOX, liveFetch } from "./live";
 
 // Live mode: the project is connected to the sandbox repo only.
+const PLATFORM_CONNS = LIVE ? [] : [{ id: "conn-platform", isConnectionValid: true, repos: ["truenorthit/customer-portal"] }];
 const CONNS = LIVE ? [{ id: "conn-live", isConnectionValid: true, repos: [SANDBOX] }] : CONNECTIONS;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -255,11 +256,14 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
     return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item", ...wiCardFields(id) } } : null)) });
   }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
-  const conn = /\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
+  // The organisation's projects (the My work tab scans them all): "Platform" also connects customer-portal, so that repository is in two.
+  if (u.hostname === "dev.azure.com" && /^\/[^/]+\/_apis\/projects$/.test(u.pathname)) return sc === "noProjectScope" ? status(401) : json({ value: [{ name: "Demo Project" }, { name: "Platform" }] });
+  const conn = /^\/[^/]+\/([^/]+)\/_apis\/githubconnections(?:\/([^/]+)\/repos)?$/.exec(u.pathname);
   if (u.hostname === "dev.azure.com" && conn) {
     if (sc === "forbidden") return status(403);
-    if (conn[1]) return json({ value: (CONNS.find((c) => c.id === conn[1])?.repos ?? []).map((r) => ({ gitHubRepositoryUrl: `https://github.com/${r}` })) });
-    return json({ value: sc === "noConnections" ? [] : CONNS.map(({ id, isConnectionValid }) => ({ id, isConnectionValid })) });
+    const conns = decodeURIComponent(conn[1]) === "Platform" ? PLATFORM_CONNS : CONNS;
+    if (conn[2]) return json({ value: (conns.find((c) => c.id === conn[2])?.repos ?? []).map((r) => ({ gitHubRepositoryUrl: `https://github.com/${r}` })) });
+    return json({ value: sc === "noConnections" ? [] : conns.map(({ id, isConnectionValid }) => ({ id, isConnectionValid })) });
   }
   return undefined;
 }

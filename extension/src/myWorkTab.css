@@ -1,9 +1,14 @@
-/* The GitHub tab in ADO's My work flyout (src/myWorkTab.tsx). The flyout's own tabs put a 24px gutter round cards 16px apart. */
-html, body { margin: 0; }
-.gh-mw { padding: 16px 24px 0; gap: 16px; }
+/* The GitHub tab in ADO's My work flyout (src/myWorkTab.tsx). The frame fills the tab: the cards scroll and "View more" stays at the
+   bottom, as on ADO's own Pull requests tab (24px gutter, cards 16px apart, a footer with a top rule). */
+html, body, #root { height: 100%; margin: 0; }
+#root > .bolt-surface { height: 100%; }
+.gh-mw { height: 100%; }
+.gh-mw-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 24px; gap: 16px; }
+.gh-mw-scroll > * { flex-shrink: 0; }
 .gh-mw-card-header { padding-bottom: 8px; }
 .gh-mw-line1 { min-width: 0; gap: 8px; }
 .gh-mw-line1 .gh-mw-title { padding: 0; min-width: 0; color: inherit; flex: 0 1 auto; } /* as .gh-pr-title: the subtle Link's own 6px padding put titles out of line with line 2 */
 .gh-mw-pill { flex-shrink: 0; }
 .gh-mw-empty { padding: 12px 20px 16px; }
-.gh-mw-footer { padding: 4px 0 12px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-mw-footer { flex: none; padding: 16px; border-top: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
+.gh-mw-more { font-weight: 600; }

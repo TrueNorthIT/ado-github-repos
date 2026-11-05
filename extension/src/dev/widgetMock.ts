@@ -35,10 +35,18 @@ export function widgetRest(u: URL, init: RequestInit | undefined, sc: string): R
 function mySearch(q: string): Response {
   const mine = /\bauthor:@me\b/.test(q), review = /\breview-requested:@me\b/.test(q);
   const hits = PRS.filter((p) => p.node.state === "OPEN" && ((mine && p.node.author?.login === ME) || (review && p.reviewRequested.includes(ME))));
+  // Two more: one in customer-portal, which two projects connect (the tab asks which), and one in a repository no project connects (left out).
+  const extra = [
+    ...(review ? [{ repo: "truenorthit/customer-portal", number: 41, title: "Show the account balance on the dashboard", author: "carol", draft: false }] : []),
+    ...(mine ? [{ repo: "someone-else/unconnected", number: 7, title: "This repository is not connected to any project", author: ME, draft: false }] : []),
+  ].map((x) => ({
+    number: x.number, title: x.title, html_url: `https://github.com/${x.repo}/pull/${x.number}`, repository_url: `https://api.github.com/repos/${x.repo}`,
+    pull_request: {}, draft: x.draft, user: user(x.author), created_at: new Date(Date.now() - 9 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 4 * 3600e3).toISOString(),
+  }));
   return json({
-    total_count: hits.length,
+    total_count: hits.length + extra.length,
     incomplete_results: false,
-    items: hits.map((p) => ({
+    items: [...extra, ...hits.map((p) => ({
       number: p.node.number,
       title: p.node.title,
       html_url: p.node.url,
@@ -48,6 +56,6 @@ function mySearch(q: string): Response {
       user: p.node.author ? user(p.node.author.login) : null,
       created_at: p.node.createdAt,
       updated_at: p.node.updatedAt,
-    })),
+    }))],
   });
 }
