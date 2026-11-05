@@ -165,6 +165,7 @@ export const invalidateBrowse = () => {
   trees.clear();
   folderTrees.clear();
   commits.clear();
+  dropQueries(["browse"]);
 };
 
 /** The viewer's permission and the head commit of `branch`, for committing a web edit. headOid is null when `branch` is not a branch (a tag or a commit). Not cached: it is the head the edit is made against. */
@@ -359,7 +360,7 @@ export const getPrFiles = (repo: string, number: number) =>
   });
 
 /** Drops the cached PR page and files (Try again). */
-export const invalidatePr = () => (prPages.clear(), prFiles.clear(), updateLists.clear(), rangeContexts.clear());
+export const invalidatePr = () => (prPages.clear(), prFiles.clear(), updateLists.clear(), rangeContexts.clear(), dropQueries(["pr"]));
 
 // ---------- batch 4: updates, viewed files, ranges ----------
 
@@ -508,7 +509,7 @@ export const getFeed = (repo: string, number: number) =>
   });
 
 /** Drops this PR's cached page and feed, so the header's "x/y comments resolved" and the list's counts refetch. */
-export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`), editNodes.delete(`${repo}#${number}`), projectNodes.delete(`${repo}#${number}`));
+export const invalidatePrPage = (repo: string, number: number) => (prPages.delete(`${repo}#${number}`), feeds.delete(`${repo}#${number}`), actionNodes.delete(`${repo}#${number}`), editNodes.delete(`${repo}#${number}`), projectNodes.delete(`${repo}#${number}`), dropQueries(["pr", repo, number]));
 
 /** Drops just the cached actions node, so the next getActions asks GitHub again. */
 export const invalidateActions = (repo: string, number: number) => void actionNodes.delete(`${repo}#${number}`);
@@ -624,7 +625,7 @@ const refTtl = (() => {
 })();
 
 /** Drops cached commit lists, pushes, branches and tags (after a write, or Try again). */
-export const invalidateRefs = () => (refCaches.forEach((m) => m.clear()), dropQueries(["commits"]));
+export const invalidateRefs = () => (refCaches.forEach((m) => m.clear()), dropQueries(["refs"]));
 
 const split = (repo: string) => repo.split("/") as [string, string];
 
@@ -1117,7 +1118,7 @@ export const listForks = (repo: string): Promise<Fork[]> =>
     }
     return out.slice(0, MAX_FORKS);
   });
-export const invalidateForks = () => forkLists.clear();
+export const invalidateForks = () => (forkLists.clear(), dropQueries(["refs", "forks"]));
 
 /** Behind / ahead of a fork's default branch against the parent's `base`, from the cross-repository compare. */
 export const getForkAheadBehind = (repo: string, base: string, fork: Fork): Promise<AheadBehind> =>

@@ -158,15 +158,16 @@ export function CommitTable(p: CommitTableProps) {
  * The branch's commits through the page's query cache, a page per "Load more". Coming back to the list shows what it had while it
  * refreshes; a changed server-side filter keeps the rows on screen until the new ones arrive, but another branch starts from shimmer rows.
  */
-function useCommitPages(repo: string, ref: string | undefined, server: CommitFilters, signedIn: boolean) {
+function useCommitPages(repo: string, ref: string | undefined, server: CommitFilters) {
   const branch = `${repo}@${ref}`;
   const shown = React.useRef(branch);
   const q = useInfiniteQuery({
-    queryKey: ["commits", repo, ref, JSON.stringify(normalizeCommitFilters({ ...server, text: undefined })), signedIn],
+    queryKey: ["refs", "commits", repo, ref, JSON.stringify(normalizeCommitFilters({ ...server, text: undefined }))],
     queryFn: ({ pageParam = 1 }) => listCommitsRest(repo, ref!, server, pageParam as number),
     getNextPageParam: (last) => (last.hasNextPage && last.endCursor ? Number(last.endCursor) : undefined),
     enabled: !!ref,
     keepPreviousData: shown.current === branch,
+    meta: { persist: true },
   });
   React.useEffect(() => { if (q.data && !q.isPreviousData) shown.current = branch; });
   const rows = React.useMemo(() => q.data?.pages.flatMap((p) => p.rows), [q.data]);
@@ -217,7 +218,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]);
 
-  const { q, rows: loaded } = useCommitPages(repo, ref ?? undefined, server, signedIn);
+  const { q, rows: loaded } = useCommitPages(repo, ref ?? undefined, server);
   const rows = loaded ?? NO_ROWS;
   const loadMore = async () => {
     const r = await q.fetchNextPage();

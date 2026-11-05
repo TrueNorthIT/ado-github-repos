@@ -12,6 +12,8 @@ import { Table, ITableColumn, SimpleTableCell } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { loadProject, PermissionError, ProjectCtx } from "./connections";
 import { fetchMetadata } from "./github";
+import { queryClient } from "./queryClient";
+import { clearPersisted } from "./queryPersist";
 import * as SDK from "azure-devops-extension-sdk";
 import { RepoBrowser, hubClick } from "./Browser";
 import { PullRequestsHub } from "./PullRequests";
@@ -131,7 +133,7 @@ export function App() {
     setBusy(true);
     const r = await signIn();
     setBusy(false);
-    if (r.ok) setSignedIn(true);
+    if (r.ok) { setSignedIn(true); void queryClient.invalidateQueries(); } // reads made signed out (or as someone else) ask again
     else if (r.reason === "blocked") setNotice("The sign-in window was blocked. Allow pop-ups for this site, then try again.");
     else if (r.reason === "error") setNotice(`GitHub sign-in failed${r.error ? `: ${r.error}` : "."}`);
     // "closed": user cancelled; stay signed out.
@@ -139,6 +141,7 @@ export function App() {
   const doSignOut = async () => {
     await signOut();
     clearCache();
+    void clearPersisted();
     setSignedIn(false);
     setMeta(undefined);
   };

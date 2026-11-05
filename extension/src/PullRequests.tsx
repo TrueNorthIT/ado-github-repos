@@ -168,11 +168,12 @@ type Load = { t: "loading" } | { t: "error"; err: unknown; retry: () => void } |
  * One tab's rows through the page's query cache: coming back to a tab (or from a PR) shows the rows it had while they refresh,
  * and a new page or filter keeps the current rows on screen until its own arrive. An error shows only when there are no rows to keep.
  */
-function useList(repo: string, tab: PrTab, filters: ListFilters, cursor: string | null, signedIn: boolean): Load {
+function useList(repo: string, tab: PrTab, filters: ListFilters, cursor: string | null): Load {
   const q = useQuery({
-    queryKey: [...prListKey(repo, tab, filters.text ?? "", cursor, filters), signedIn],
+    queryKey: prListKey(repo, tab, filters.text ?? "", cursor, filters),
     queryFn: () => listPrs(repo, tab, filters.text ?? "", cursor, filters),
     keepPreviousData: true,
+    meta: { persist: true },
   });
   if (q.data) return { t: "ready", data: q.data, previous: q.isPreviousData };
   if (q.isError) return { t: "error", err: q.error, retry: () => void q.refetch() };
@@ -260,7 +261,7 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
-  const load = useList(p.repo, p.tab, filters, cursors[cursors.length - 1], p.signedIn);
+  const load = useList(p.repo, p.tab, filters, cursors[cursors.length - 1]);
   const data = load.t === "ready" ? load.data : undefined;
   const settled = load.t === "ready" && !load.previous; // the pager waits for the page it last asked for
   return (
@@ -321,7 +322,7 @@ function Section({ title, rows, p }: { title: string; rows: PrListRow[] | undefi
 }
 
 function MineList(p: TabProps) {
-  const load = useList(p.repo, "mine", NO_FILTERS, null, p.signedIn);
+  const load = useList(p.repo, "mine", NO_FILTERS, null);
   const mine = load.t === "ready" ? load.data.mine : undefined;
   return (
     <>

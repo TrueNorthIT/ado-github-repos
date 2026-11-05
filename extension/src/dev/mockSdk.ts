@@ -157,5 +157,6 @@ export const resize = (_w?: number, _h?: number) => {};
 export const getAccessToken = async () => "mock-ado-token";
 export const getService = async <T>(id: string): Promise<T> => services[id];
 export const getHost = () => ({ id: "host-1", name: "demo-org", type: 2 });
+export const getUser = () => ({ id: "user-1", name: "mock@example.com", displayName: "Mock User", descriptor: "", imageUrl: "" });
 export const getExtensionContext = () => ({ id: "mock-extension", extensionId: "github-repos", publisherId: "TrueNorthIT", version: "0.0.0" });
 export const getWebContext = () => ({ account: { name: "demo-org" }, project: { id: "proj-1", name: "Demo Project" } });

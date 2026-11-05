@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^4.44.0",
+    "@tanstack/react-query-persist-client": "^4.44.0",
     "azure-devops-extension-api": "^4.270.0",
     "azure-devops-extension-sdk": "^4.2.0",
     "azure-devops-ui": "^2.281.0",
