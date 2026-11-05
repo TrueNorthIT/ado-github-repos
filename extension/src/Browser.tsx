@@ -429,7 +429,15 @@ function Listing({ entries, go, repo, refName, folder, menu }: { entries: TreeEn
   if (entries && !entries.length) return <ZeroData iconProps={{ iconName: "FabricFolder" }} imageAltText="" primaryText="This folder is empty" />;
   return (
     <Card className="bolt-table-card" contentProps={{ contentPadding: false }}>
-      <Table<TreeEntry> ariaLabel={entries ? "Folder contents" : "Loading folder contents"} columns={columns} itemProvider={sorted} behaviors={[sorting]} role="table" />
+      <Table<TreeEntry>
+        ariaLabel={entries ? "Folder contents" : "Loading folder contents"}
+        columns={columns}
+        itemProvider={sorted}
+        behaviors={[sorting]}
+        role="table"
+        singleClickActivation // a click anywhere on the row opens it, as native Files does; the Table leaves clicks on links and buttons to them
+        onActivate={(_e, r) => { if (r.data.kind !== "submodule") go(r.data.path); }}
+      />
     </Card>
   );
 }
