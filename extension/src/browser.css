@@ -636,7 +636,7 @@
 
 /* Blame tab: a gutter of one block per run of lines from a commit, beside Monaco laid out at 16px a line */
 .gh-blame-card { width: 100%; box-sizing: border-box; overflow: hidden; }
-.gh-blame { align-items: flex-start; }
+.gh-blame { align-items: flex-start; flex: 1 1 auto; min-width: 0; } /* the card content is a flex row: without this the blame kept the width of its first render and the code scrolled sideways in a strip */
 .gh-blame-gutter { width: 420px; max-width: 45%; overflow: hidden; border-right: 1px solid var(--palette-black-alpha-10, rgba(0, 0, 0, .1)); }
 .gh-blame-code { min-width: 0; }
 .gh-blame-block { box-sizing: border-box; overflow: hidden; padding: 0 8px 0 6px; font-size: 12px; line-height: 16px; border-left: 4px solid transparent; border-top: 1px solid var(--palette-black-alpha-6, rgba(0, 0, 0, .06)); margin-top: -1px; }
