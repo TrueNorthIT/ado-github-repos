@@ -25,6 +25,7 @@ import { CommitDetailPage } from "./CommitDetail";
 import { useCommitActions } from "./CommitActions";
 import { GraphCell, graphWidth } from "./CommitGraph";
 import { BranchBar, CheckStatusCell, CommitTime, HubProps, PersonLine, PrCell, RepoHubPage, skeletonRows, titleSwitcher, useDefaultBranch } from "./RepoHub";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { findCommit, invalidateRefs, listCommitsRest } from "./githubBrowse";
 import { openInHub, useHubHref } from "./repoHref";
 import { usePrefs } from "./prefs";
@@ -153,7 +154,26 @@ export function CommitTable(p: CommitTableProps) {
 
 // ---------- the list ----------
 
-type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready" };
+/**
+ * The branch's commits through the page's query cache, a page per "Load more". Coming back to the list shows what it had while it
+ * refreshes; a changed server-side filter keeps the rows on screen until the new ones arrive, but another branch starts from shimmer rows.
+ */
+function useCommitPages(repo: string, ref: string | undefined, server: CommitFilters, signedIn: boolean) {
+  const branch = `${repo}@${ref}`;
+  const shown = React.useRef(branch);
+  const q = useInfiniteQuery({
+    queryKey: ["commits", repo, ref, JSON.stringify(normalizeCommitFilters({ ...server, text: undefined })), signedIn],
+    queryFn: ({ pageParam = 1 }) => listCommitsRest(repo, ref!, server, pageParam as number),
+    getNextPageParam: (last) => (last.hasNextPage && last.endCursor ? Number(last.endCursor) : undefined),
+    enabled: !!ref,
+    keepPreviousData: shown.current === branch,
+  });
+  React.useEffect(() => { if (q.data && !q.isPreviousData) shown.current = branch; });
+  const rows = React.useMemo(() => q.data?.pages.flatMap((p) => p.rows), [q.data]);
+  return { q, rows };
+}
+
+const NO_ROWS: CommitRow[] = [];
 
 function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const { state, go, openSwitch, signedIn } = props;
@@ -161,11 +181,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
   const ref = state.ref ?? defaultBranch;
   const href = useHubHref();
   const [prefs, setPrefs] = usePrefs();
-  const [rows, setRows] = React.useState<CommitRow[]>([]);
-  const [next, setNext] = React.useState<{ more: boolean; cursor: string | null }>({ more: false, cursor: null });
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  const [more, setMore] = React.useState(false);
-  const [reload, setReload] = React.useState(0);
+  const [searchErr, setSearchErr] = React.useState<unknown>(null);
   const { commitFilters: fromHash } = useHashExtras();
   const [filterOpen, setFilterOpen] = React.useState(() => Object.keys(fromHash).length > 0);
   const [keyword, setKeyword] = React.useState(fromHash.text ?? "");
@@ -201,27 +217,11 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]);
 
-  // First page, again whenever the repo, branch, sign-in or a server-side filter changes.
-  const serverKey = JSON.stringify(normalizeCommitFilters(server));
-  React.useEffect(() => {
-    if (!ref) return;
-    let dead = false;
-    setLoad({ t: "loading" });
-    setRows([]);
-    listCommitsRest(repo, ref, server, 1).then(
-      (p) => { if (dead) return; setRows(p.rows); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setLoad({ t: "ready" }); },
-      (err) => !dead && setLoad({ t: "error", err })
-    );
-    return () => { dead = true; };
-  }, [repo, ref, signedIn, reload, serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadMore = () => {
-    if (!ref || !next.cursor) return;
-    setMore(true);
-    listCommitsRest(repo, ref, server, Number(next.cursor)).then(
-      (p) => { setRows((r) => [...r, ...p.rows]); setNext({ more: p.hasNextPage, cursor: p.endCursor }); setMore(false); },
-      (err) => { setMore(false); setLoad({ t: "error", err }); }
-    );
+  const { q, rows: loaded } = useCommitPages(repo, ref ?? undefined, server, signedIn);
+  const rows = loaded ?? NO_ROWS;
+  const loadMore = async () => {
+    const r = await q.fetchNextPage();
+    if (r.isError) setNotice("Could not load more commits. Try again.");
   };
 
   const openCommit = React.useCallback((sha: string) => go({ repo, ref: state.ref, commit: sha }), [go, repo, state.ref]);
@@ -248,13 +248,14 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
       if (c) go({ repo, ref: state.ref, commit: c.sha });
       else setNotice(`No commit starts with ${t}.`);
     } catch (e) {
-      setLoad({ t: "error", err: e });
+      setSearchErr(e);
     }
   };
 
   const doSignIn = () => { void props.signIn(); };
-  const retry = () => { invalidateRefs(); setReload((n) => n + 1); };
-  const error = repoErr ?? (load.t === "error" ? load.err : null);
+  const retry = () => { setSearchErr(null); invalidateRefs(); };
+  // A failed refresh or "Load more" keeps the rows already shown; only a list with nothing to show turns into the error.
+  const error = repoErr ?? searchErr ?? (q.isError && !loaded ? q.error : null);
   const pick = (r: string) => go({ repo: r });
 
   return (
@@ -302,7 +303,7 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
         {filterOpen && badDate && <MessageCard severity={MessageCardSeverity.Warning}>Enter dates as dd/mm/yyyy, for example 03/11/2026. A date that isn't valid is ignored.</MessageCard>}
         {error ? (
           <ErrorView err={error} signIn={doSignIn} busy={props.busy} retry={retry} subject="see this repository's commits" permission="Contents" />
-        ) : load.t === "loading" || !ref ? (
+        ) : !loaded || !ref ? (
           <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
             <CommitTable rows={undefined} label="Loading commits" commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} />
           </Card>
@@ -320,9 +321,9 @@ function CommitList({ repo, props }: { repo: string; props: HubProps }) {
             <Card className="gh-pr-card gh-commits-card bolt-table-card" contentProps={{ contentPadding: false }}>
               <CommitTable rows={filtered} graph={graph} label={`Commits on ${ref}`} commitHref={commitHref} open={openCommit} prHref={prHref} openPr={openPr} menu={actions.menu} workItems={workItems} />
             </Card>
-            {next.more && (
+            {q.hasNextPage && !q.isPreviousData && (
               <div className="gh-load-more flex-row justify-center">
-                {more ? <Spinner size={SpinnerSize.medium} ariaLabel="Loading more commits" /> : <Button text="Load more" onClick={loadMore} />}
+                {q.isFetchingNextPage ? <Spinner size={SpinnerSize.medium} ariaLabel="Loading more commits" /> : <Button text="Load more" onClick={() => void loadMore()} />}
               </div>
             )}
           </>

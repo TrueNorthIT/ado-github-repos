@@ -30,7 +30,8 @@ import type { PrListRow } from "./lib/prModel";
 import { loadProject } from "./connections";
 import { mergeRows } from "./lib/rows";
 import { isGitHubDotCom, parseRepoUrl } from "./lib/repoUrl";
-import { invalidatePrs, listPrs, type PrListResult } from "./githubBrowse";
+import { useQuery } from "@tanstack/react-query";
+import { listPrs, prListKey, type PrListResult } from "./githubBrowse";
 import { applyListFilters, hasListFilters, type ListFilters } from "./lib/prListFilters";
 import { isUpdatedSinceViewed, viewedKey, type LastViewedMap } from "./lib/lastViewed";
 import { gotoHash, patchHash, useHashExtras } from "./hostNav";
@@ -161,20 +162,21 @@ function PrTable({ rows, repo, open, label, skeleton }: { rows: PrListRow[] | un
 
 // ---------- loading a tab ----------
 
-type Load = { t: "loading" } | { t: "error"; err: unknown } | { t: "ready"; data: PrListResult };
+type Load = { t: "loading" } | { t: "error"; err: unknown; retry: () => void } | { t: "ready"; data: PrListResult; /** The rows are the previous page or filter's, kept while this one loads. */ previous: boolean };
 
-function useList(repo: string, tab: PrTab, filters: ListFilters, cursor: string | null, reload: number, signedIn: boolean): Load {
-  const [load, setLoad] = React.useState<Load>({ t: "loading" });
-  React.useEffect(() => {
-    let dead = false;
-    setLoad({ t: "loading" });
-    listPrs(repo, tab, filters.text ?? "", cursor, filters).then(
-      (data) => !dead && setLoad({ t: "ready", data }),
-      (err) => !dead && setLoad({ t: "error", err })
-    );
-    return () => { dead = true; };
-  }, [repo, tab, JSON.stringify(filters), cursor, reload, signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
-  return load;
+/**
+ * One tab's rows through the page's query cache: coming back to a tab (or from a PR) shows the rows it had while they refresh,
+ * and a new page or filter keeps the current rows on screen until its own arrive. An error shows only when there are no rows to keep.
+ */
+function useList(repo: string, tab: PrTab, filters: ListFilters, cursor: string | null, signedIn: boolean): Load {
+  const q = useQuery({
+    queryKey: [...prListKey(repo, tab, filters.text ?? "", cursor, filters), signedIn],
+    queryFn: () => listPrs(repo, tab, filters.text ?? "", cursor, filters),
+    keepPreviousData: true,
+  });
+  if (q.data) return { t: "ready", data: q.data, previous: q.isPreviousData };
+  if (q.isError) return { t: "error", err: q.error, retry: () => void q.refetch() };
+  return { t: "loading" };
 }
 
 interface TabProps {
@@ -188,12 +190,11 @@ interface TabProps {
 }
 
 const NO_FILTERS: ListFilters = {};
-const retry = (bump: () => void) => () => { invalidatePrs(); bump(); };
 
 const Loading = () => <div className="gh-pr-loading flex-row flex-center justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading pull requests" /></div>;
 const Empty = () => <ZeroData iconProps={{ iconName: "BranchPullRequest" }} imageAltText="" primaryText="No pull requests" />;
-const Failed = ({ load, p, bump }: { load: Extract<Load, { t: "error" }>; p: TabProps; bump: () => void }) => (
-  <ErrorView err={load.err} signIn={p.signIn} busy={p.busy} retry={retry(bump)} subject="see this repository's pull requests" permission="Pull requests" />
+const Failed = ({ load, p }: { load: Extract<Load, { t: "error" }>; p: TabProps }) => (
+  <ErrorView err={load.err} signIn={p.signIn} busy={p.busy} retry={load.retry} subject="see this repository's pull requests" permission="Pull requests" />
 );
 
 // ---------- Active / Completed / Abandoned ----------
@@ -244,7 +245,6 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
   const draftSelection = React.useMemo(() => new DropdownSelection(), []);
   const [filters, setFilters] = React.useState<ListFilters>(fromHash);
   const [cursors, setCursors] = React.useState<(string | null)[]>([null]); // the cursor behind each page seen so far; the last is current
-  const [reload, setReload] = React.useState(0);
   React.useEffect(() => {
     if (fromHash.draft) draftSelection.select(DRAFT_ITEMS.findIndex((d) => d.id === fromHash.draft));
     let t: ReturnType<typeof setTimeout>;
@@ -260,8 +260,9 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
     filter.subscribe(onChange, FILTER_CHANGE_EVENT);
     return () => { clearTimeout(t); filter.unsubscribe(onChange, FILTER_CHANGE_EVENT); };
   }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
-  const load = useList(p.repo, p.tab, filters, cursors[cursors.length - 1], reload, p.signedIn);
+  const load = useList(p.repo, p.tab, filters, cursors[cursors.length - 1], p.signedIn);
   const data = load.t === "ready" ? load.data : undefined;
+  const settled = load.t === "ready" && !load.previous; // the pager waits for the page it last asked for
   return (
     <>
       {p.filterOpen && (
@@ -271,8 +272,8 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
           <DropdownFilterBarItem filterItemKey="draft" placeholder="Draft or ready" items={DRAFT_ITEMS} selection={draftSelection} enforceSingleSelect showFilterBox={false} ariaLabel="Draft or ready" />
           <Pager
             filterItemKey="pager"
-            hasPrev={cursors.length > 1}
-            hasNext={!!data?.hasNextPage}
+            hasPrev={settled && cursors.length > 1}
+            hasNext={settled && !!data?.hasNextPage}
             onPrev={() => setCursors((c) => c.slice(0, -1))}
             onNext={() => data?.endCursor && setCursors((c) => [...c, data.endCursor])}
           />
@@ -283,7 +284,7 @@ function StateList(p: TabProps & { tab: Exclude<PrTab, "mine"> }) {
           <PrTable rows={undefined} repo={p.repo} open={p.open} label="Loading pull requests" />
         </Card>
       )}
-      {load.t === "error" && <Failed load={load} p={p} bump={() => setReload((n) => n + 1)} />}
+      {load.t === "error" && <Failed load={load} p={p} />}
       {data && !data.rows.length && (hasListFilters(filters) ? <ZeroData iconProps={{ iconName: "Filter" }} imageAltText="" primaryText="No matching pull requests" secondaryText="Clear or change the filters to see more." /> : <Empty />)}
       {data && data.rows.length > 0 && (
         <Card className="gh-pr-card bolt-table-card" contentProps={{ contentPadding: false }}>
@@ -320,8 +321,7 @@ function Section({ title, rows, p }: { title: string; rows: PrListRow[] | undefi
 }
 
 function MineList(p: TabProps) {
-  const [reload, setReload] = React.useState(0);
-  const load = useList(p.repo, "mine", NO_FILTERS, null, reload, p.signedIn);
+  const load = useList(p.repo, "mine", NO_FILTERS, null, p.signedIn);
   const mine = load.t === "ready" ? load.data.mine : undefined;
   return (
     <>
@@ -331,7 +331,7 @@ function MineList(p: TabProps) {
           <Section title="Review requested" rows={undefined} p={p} />
         </>
       )}
-      {load.t === "error" && <Failed load={load} p={p} bump={() => setReload((n) => n + 1)} />}
+      {load.t === "error" && <Failed load={load} p={p} />}
       {mine && !mine.created.length && !mine.reviewRequested.length && <Empty />}
       {mine && (mine.created.length > 0 || mine.reviewRequested.length > 0) && (
         <>

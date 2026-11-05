@@ -1,6 +1,7 @@
 // GitHub REST calls for the file browser. Every call carries the signed-in user's token.
 import { getTokens } from "./auth";
 import { tokenAction } from "./lib/tokens";
+import { dropQueries, queryClient } from "./queryClient";
 import { buildQueries, mapResponse, type CommitInfo } from "./lib/commits";
 import { listFolder, listFromFolderTree, needsFolderFetch, pathExists, type GitTree, type TreeEntry } from "./lib/tree";
 import { detailQuery, listQuery, type GraphQlRequest, type PrTab } from "./lib/prQuery";
@@ -176,7 +177,7 @@ export const clearCache = () => {
   trees.clear();
   folderTrees.clear();
   commits.clear();
-  prLists.clear();
+  queryClient.clear(); // another sign-in may see other rows
   prPages.clear();
   prFiles.clear();
   feeds.clear();
@@ -290,19 +291,21 @@ const pageOf = (c: GqlConnection | null | undefined, now: number) => ({
 });
 
 const PR_TTL_MS = 30_000;
-const prLists = new Map<string, { at: number; p: Promise<PrListResult> }>();
+
+/** What decides listPrs' answer, as a query key: the tab, and for the state tabs the keyword, filters and cursor ("mine" ignores them). */
+export function prListKey(repo: string, tab: PrTab, filter = "", cursor: string | null = null, filters?: ListFilters): unknown[] {
+  const withFilters = tab !== "mine" && !!filters && hasListFilters(filters);
+  return ["prs", "list", repo, tab, tab === "mine" ? "" : filter.trim(), tab === "mine" ? null : cursor, withFilters ? filters : null];
+}
 
 /**
  * One tab of the PR list for "owner/name". `filter` is the keyword (a number jumps to that PR), `cursor` the previous page's endCursor.
- * Cached 30 s per repo, tab, filter and cursor, so changing tab or filter never shows another key's rows; failures are not cached.
+ * Not cached here: PullRequests.tsx reads it through useQuery under prListKey.
  */
 export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | null = null, filters?: ListFilters): Promise<PrListResult> {
   const withFilters = tab !== "mine" && !!filters && hasListFilters(filters);
-  const key = JSON.stringify([repo, tab, tab === "mine" ? "" : filter.trim(), tab === "mine" ? null : cursor, withFilters ? filters : null]);
-  const hit = prLists.get(key);
-  if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
   const [owner, name] = repo.split("/");
-  const p = (async (): Promise<PrListResult> => {
+  return (async (): Promise<PrListResult> => {
     const reqs = withFilters ? [listFilterQuery(tab as Exclude<PrTab, "mine">, { owner, name, filters: { ...filters, text: filters!.text ?? filter }, after: cursor ?? undefined })] : listQuery(tab, { owner, name, filter, after: cursor ?? undefined });
     const bodies = await Promise.all(reqs.map(graphql));
     const now = Date.now();
@@ -314,13 +317,10 @@ export function listPrs(repo: string, tab: PrTab, filter = "", cursor: string | 
     if (reqs[0].source === "pullRequest") return { ...pageOf({ nodes: [d.repository?.pullRequest] }, now), hasNextPage: false, endCursor: null };
     return pageOf(reqs[0].source === "search" ? d.search : d.repository?.pullRequests, now);
   })();
-  prLists.set(key, { at: Date.now(), p });
-  p.catch(() => prLists.get(key)?.p === p && prLists.delete(key));
-  return p;
 }
 
-/** Drops cached PR pages (Try again). */
-export const invalidatePrs = () => (prLists.clear(), newPrCompares.clear(), newPrTemplates.clear());
+/** Drops cached PR lists and New pull request compares (after a write, or Try again). */
+export const invalidatePrs = () => (dropQueries(["prs"]), newPrCompares.clear(), newPrTemplates.clear());
 
 // ---------- pull request page (PR-5 to PR-9) ----------
 
@@ -624,7 +624,7 @@ const refTtl = (() => {
 })();
 
 /** Drops cached commit lists, pushes, branches and tags (after a write, or Try again). */
-export const invalidateRefs = () => refCaches.forEach((m) => m.clear());
+export const invalidateRefs = () => (refCaches.forEach((m) => m.clear()), dropQueries(["commits"]));
 
 const split = (repo: string) => repo.split("/") as [string, string];
 
@@ -638,8 +638,8 @@ export const listCommits = (repo: string, ref: string, after?: string, path?: st
 /** One page (50) of a ref's history over REST, with the author, date and path filters applied by GitHub. PR, check status and signature come from one
  *  best-effort GraphQL lookup; without it the rows still show. `page` is 1-based; `endCursor` is the next page number. An empty repository (409) or an
  *  unknown ref (422) is an empty list. */
-export const listCommitsRest = (repo: string, ref: string, filters: CommitFilters = {}, page = 1): Promise<CommitsPage> =>
-  refTtl(`commitsRest|${repo}|${ref}|${page}|${JSON.stringify(normalizeCommitFilters({ ...filters, text: undefined }))}`, async () => {
+/** One page of a branch's commits (REST), with PR, status and signature extras from GraphQL when it answers. Not cached here: Commits.tsx reads it through useInfiniteQuery. */
+export const listCommitsRest = async (repo: string, ref: string, filters: CommitFilters = {}, page = 1): Promise<CommitsPage> => {
     let res: Response;
     try {
       res = await request(commitsRestPath(repo, ref, filters, page), "application/vnd.github+json");
@@ -659,7 +659,7 @@ export const listCommitsRest = (repo: string, ref: string, filters: CommitFilter
       }
     }
     return { rows, hasNextPage: next !== undefined, endCursor: next !== undefined ? String(next) : null };
-  });
+};
 
 /** One commit by SHA prefix for the Commit ID box; null when there is none. */
 export async function findCommit(repo: string, sha: string): Promise<CommitRow | null> {
