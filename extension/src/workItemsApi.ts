@@ -5,14 +5,15 @@ import { parseWiqlIds, parseWorkItemId, wiqlTitleQuery, wiqlUrl } from "./lib/wo
 import { parseWorkItems, workItemsUrl, workItemUrl, type WorkItemRef } from "./lib/workItems";
 import { toWorkItemCard, workItemCardUrl, type WorkItemCard } from "./lib/hoverCard";
 
-export interface WorkItemType { color?: string; iconUrl?: string }
+/** A type's colour and icon, and its states' colours by name (hex without "#"), from the types list. */
+export interface WorkItemType { color?: string; iconUrl?: string; states?: Record<string, string> }
 export interface WorkItemsResult { items: WorkItemRef[]; types: Record<string, WorkItemType>; url: (id: number) => string }
 
 // Colour and icon per type name, once per session. ponytail: project-scoped, so an item from another project with a custom type just gets no icon.
 let types: Promise<Record<string, WorkItemType>> | undefined;
 const loadTypes = (org: string, project: string) =>
-  (types ??= get<{ value?: { name: string; color?: string; icon?: { url?: string } }[] }>(`https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_apis/wit/workitemtypes?api-version=7.1`)
-    .then((r) => Object.fromEntries((r.value ?? []).map((t) => [t.name, { color: t.color, iconUrl: t.icon?.url }])))
+  (types ??= get<{ value?: { name: string; color?: string; icon?: { url?: string }; states?: { name: string; color?: string }[] }[] }>(`https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_apis/wit/workitemtypes?api-version=7.1`)
+    .then((r) => Object.fromEntries((r.value ?? []).map((t) => [t.name, { color: t.color, iconUrl: t.icon?.url, states: Object.fromEntries((t.states ?? []).filter((s) => s.color).map((s) => [s.name, s.color!])) }])))
     .catch(() => ((types = undefined), {} as Record<string, WorkItemType>)));
 
 /** One call for all ids. Rejects with connections.ts PermissionError on 401/403; type colours are best effort. */

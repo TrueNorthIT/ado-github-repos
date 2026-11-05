@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Button } from "azure-devops-ui/Button";
 import { Icon } from "azure-devops-ui/Icon";
-import { IdentityPickerDropdown, IdentityType, type IIdentity, type IPeoplePickerProvider } from "azure-devops-ui/IdentityPicker";
+import { IdentityPicker, IdentityPickerDropdown, IdentityType, type IIdentity, type IPeoplePickerProvider } from "azure-devops-ui/IdentityPicker";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
@@ -226,6 +226,136 @@ const toIdentity = (c: Candidate): IIdentity => ({
   signInAddress: c.kind === "team" ? `team ${c.login}` : c.login,
   mailNickname: c.login,
 });
+
+/** The identity pickers' provider: GitHub search, ranked and filtered by lib/reviewerSearch.ts. `known` maps what was offered back to candidates. */
+function usePeopleProvider(repo: string, kind: "reviewers" | "assignees", current: { kind: "user" | "team"; login: string }[], authorLogin?: string) {
+  const known = React.useRef(new Map<string, Candidate>());
+  const provider = React.useMemo<IPeoplePickerProvider>(() => {
+    const search = async (q: string) => {
+      const found = kind === "reviewers" ? await searchReviewers(repo, q) : await searchAssignees(repo, q);
+      const ranked = rankCandidates(found, q, { authorLogin, current });
+      ranked.forEach((c) => known.current.set(ME_ID(c), c));
+      return ranked.map(toIdentity);
+    };
+    return {
+      onFilterIdentities: (q) => search(q).catch(() => []),
+      onEmptyInputFocus: () => search("").catch(() => []),
+      onRequestConnectionInformation: () => ({}),
+      getEntityFromUniqueAttribute: (id) => {
+        const c = known.current.get(id) ?? [...known.current.values()].find((k) => toIdentity(k).signInAddress === id);
+        return c ? toIdentity(c) : (undefined as unknown as IIdentity);
+      },
+    };
+  }, [repo, kind, authorLogin, JSON.stringify(current)]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { provider, known };
+}
+
+/**
+ * The New pull request page's Reviewers / Assignees field, as native's: azure-devops-ui's multi-identity picker, the chosen people as
+ * persona chips inside the field (× removes one), and the search typed after them.
+ */
+export function PeopleField({ repo, kind, chosen, authorLogin, onChange, placeholder, disabled }: {
+  repo: string;
+  kind: "reviewers" | "assignees";
+  chosen: Candidate[];
+  authorLogin?: string;
+  onChange: (next: Candidate[]) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const current = chosen.map((c) => ({ kind: c.kind, login: c.login }));
+  const { provider, known } = usePeopleProvider(repo, kind, current, authorLogin);
+  chosen.forEach((c) => known.current.set(ME_ID(c), c));
+  const selected = React.useMemo(() => chosen.map(toIdentity), [chosen]);
+  const drop = (ids: string[]) => onChange(chosen.filter((c) => !ids.includes(ME_ID(c))));
+  return (
+    <IdentityPicker
+      className={`gh-np-people${disabled ? " disabled" : ""}`}
+      ariaLabel={kind === "reviewers" ? "Reviewers" : "Assignees"}
+      placeholderText={chosen.length ? undefined : placeholder}
+      noResultsFoundText="No matching people"
+      pickerProvider={provider}
+      selectedIdentities={selected}
+      onIdentityAdded={(i) => {
+        const c = known.current.get(i.entityId);
+        if (c && !chosen.some((x) => ME_ID(x) === ME_ID(c))) onChange([...chosen, c]);
+      }}
+      onIdentityRemoved={(i) => drop([i.entityId])}
+      onIdentitiesRemoved={(is) => drop(is.map((i) => i.entityId))}
+    />
+  );
+}
+
+/** The New pull request page's Tags field: GitHub labels as coloured pills inside the field, searched as you type. */
+export function LabelsField({ repo, chosen, onChange }: { repo: string; chosen: LabelOption[]; onChange: (next: LabelOption[]) => void }) {
+  const [items, setItems] = React.useState<LabelOption[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const seq = React.useRef(0);
+  const run = (q: string) => {
+    const mine = ++seq.current;
+    setLoading(true);
+    searchLabels(repo, q).then(
+      (r) => mine === seq.current && (setItems(availableLabels(r, chosen.map((l) => l.id))), setLoading(false)),
+      () => mine === seq.current && (setItems([]), setLoading(false))
+    );
+  };
+  return (
+    <TagPicker<LabelOption>
+      className="gh-np-tags"
+      ariaLabel="Tags"
+      placeholderText={chosen.length ? undefined : "Search tags"}
+      noResultsFoundText="No matching tags"
+      areTagsEqual={(a, b) => a.id === b.id}
+      convertItemToPill={(l) => {
+        const color = parseColor(`#${l.color}`);
+        return { content: l.name, variant: color ? PillVariant.colored : PillVariant.standard, color };
+      }}
+      selectedTags={chosen}
+      suggestions={items}
+      suggestionsLoading={loading}
+      onSearchChanged={run}
+      onEmptyInputFocus={() => run("")}
+      onTagAdded={(l) => !chosen.some((x) => x.id === l.id) && onChange([...chosen, l])}
+      onTagRemoved={(l) => onChange(chosen.filter((x) => x.id !== l.id))}
+      onTagsRemoved={(ls) => onChange(chosen.filter((x) => !ls.some((l) => l.id === x.id)))}
+      renderSuggestionItem={(p) => <div className="gh-pr-suggestion flex-row flex-center"><LabelPill l={p.item} /></div>}
+    />
+  );
+}
+
+/** The New pull request page's Projects field: chosen projects as pills inside the field. */
+export function ProjectsField({ repo, chosen, onChange }: { repo: string; chosen: { id: string; title: string }[]; onChange: (next: { id: string; title: string }[]) => void }) {
+  const [items, setItems] = React.useState<{ id: string; title: string }[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const seq = React.useRef(0);
+  const run = (q: string) => {
+    const mine = ++seq.current;
+    setLoading(true);
+    searchProjects(repo, q, chosen.map((p) => p.id)).then(
+      (r) => mine === seq.current && (setItems(r), setLoading(false)),
+      () => mine === seq.current && (setItems([]), setLoading(false))
+    );
+  };
+  return (
+    <TagPicker<{ id: string; title: string }>
+      className="gh-np-tags"
+      ariaLabel="Projects"
+      placeholderText={chosen.length ? undefined : "Search projects"}
+      noResultsFoundText="No matching projects"
+      areTagsEqual={(a, b) => a.id === b.id}
+      convertItemToPill={(p) => ({ content: p.title })}
+      selectedTags={chosen}
+      suggestions={items}
+      suggestionsLoading={loading}
+      onSearchChanged={run}
+      onEmptyInputFocus={() => run("")}
+      onTagAdded={(p) => !chosen.some((x) => x.id === p.id) && onChange([...chosen, p])}
+      onTagRemoved={(p) => onChange(chosen.filter((x) => x.id !== p.id))}
+      onTagsRemoved={(ps) => onChange(chosen.filter((x) => !ps.some((p) => p.id === x.id)))}
+      renderSuggestionItem={(p) => <div className="gh-pr-suggestion flex-row flex-center"><span className="text-ellipsis">{p.item.title}</span></div>}
+    />
+  );
+}
 
 /** Add reviewers (users and teams) or assignees (users), through azure-devops-ui's identity picker backed by GitHub search (ranked and filtered by lib/reviewerSearch.ts). */
 export function PeopleAdd({ repo, kind, current, authorLogin, onPick, onClose, inline, placeholder }: {

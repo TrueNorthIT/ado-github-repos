@@ -282,7 +282,7 @@ export function useWorkItems(ids: number[], version = 0): Wi {
   return wi;
 }
 
-function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
+export function TypeIcon({ type, r }: { type?: string; r: WorkItemsResult }) {
   const t = (type && r.types[type]) || {};
   const [bad, setBad] = React.useState(false);
   const color = t.color ? `#${t.color}` : "rgba(var(--palette-neutral-30, 136, 136, 136), 1)";

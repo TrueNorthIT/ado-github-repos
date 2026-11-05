@@ -49,11 +49,14 @@ export interface CommentBoxProps {
   collapsible?: boolean;
   rows?: number;
   autoFocus?: boolean;
+  /** Native's New pull request layout: the text first, then `footer` (counter, hints), then the toolbar. */
+  toolbarBelow?: boolean;
+  footer?: React.ReactNode;
 }
 
 let boxSerial = 0;
 
-export function CommentBox({ value, set, label, placeholder, disabled = false, submit, repo, participants, originalLines, collapsible = false, rows = 4, autoFocus }: CommentBoxProps) {
+export function CommentBox({ value, set, label, placeholder, disabled = false, submit, repo, participants, originalLines, collapsible = false, rows = 4, autoFocus, toolbarBelow = false, footer }: CommentBoxProps) {
   const ta = React.useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   const [within, setWithin] = React.useState(false);
   const open = !collapsible || within || !!value;
@@ -140,29 +143,30 @@ export function CommentBox({ value, set, label, placeholder, disabled = false, s
   }, [listOpen, active, id]);
 
   const buttons = originalLines?.length ? [...BUTTONS, SUGGESTION] : BUTTONS;
+  const toolbar = (
+    <div className={`gh-md-toolbar flex-row flex-center${toolbarBelow ? " gh-md-toolbar-below" : ""}`} role="toolbar" aria-label="Formatting" onMouseDown={(e) => e.preventDefault() /* keep the selection and focus in the text */}>
+      {buttons.map((b) => (
+        <Button
+          key={b.action}
+          subtle
+          className="gh-md-button"
+          iconProps={b.icon ? { iconName: b.icon } : undefined}
+          text={b.text}
+          ariaLabel={b.label}
+          tooltipProps={{ text: b.label }}
+          disabled={disabled}
+          onClick={() => run(b.action)}
+        />
+      ))}
+    </div>
+  );
   return (
     <div
       className={`gh-box flex-column flex-grow ${open ? "gh-box-open" : ""}`}
       onFocus={() => setWithin(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setWithin(false)}
     >
-      {open && (
-        <div className="gh-md-toolbar flex-row flex-center" role="toolbar" aria-label="Formatting" onMouseDown={(e) => e.preventDefault() /* keep the selection and focus in the text */}>
-          {buttons.map((b) => (
-            <Button
-              key={b.action}
-              subtle
-              className="gh-md-button"
-              iconProps={b.icon ? { iconName: b.icon } : undefined}
-              text={b.text}
-              ariaLabel={b.label}
-              tooltipProps={{ text: b.label }}
-              disabled={disabled}
-              onClick={() => run(b.action)}
-            />
-          ))}
-        </div>
-      )}
+      {open && !toolbarBelow && toolbar}
       <TextField
         containerClassName="gh-feed-field flex-grow"
         inputElement={ta}
@@ -231,6 +235,8 @@ export function CommentBox({ value, set, label, placeholder, disabled = false, s
           ))}
         </ul>
       )}
+      {toolbarBelow && footer}
+      {open && toolbarBelow && toolbar}
       <span className="screen-reader-only" role="status">{listOpen ? `${ranked.length} ${ranked.length === 1 ? "match" : "matches"}. Use the arrow keys, then Enter or Tab to insert.` : ""}</span>
     </div>
   );

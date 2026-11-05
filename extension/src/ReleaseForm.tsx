@@ -15,12 +15,11 @@ import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextField } from "azure-devops-ui/TextField";
-import { Markdown } from "./Browser";
 import { CommentBox } from "./CommentBox";
-import { graphql, invalidateRefs, listAllBranches, listAllTags, renderMarkdown, restJson, restSend } from "./githubBrowse";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { graphql, invalidateRefs, listAllBranches, listAllTags, restJson, restSend } from "./githubBrowse";
 import { setEditGuard } from "./hostNav";
 import { emptyForm, formButtons, formFromRelease, latestChecked, needsOverwriteConfirm, releaseErrorText, sameForm } from "./lib/releaseFormState";
-import { prepareMarkdownHtml, type PreparedMarkdown } from "./lib/markdown";
 import {
   defaultPreviousTag, deleteAssetRequest, formatBytes, generateNotesRequest, getReleaseRequest, isNewTag, releaseEditUrl, releaseForTag, releasesQuery, restAssetIds,
   saveReleaseRequest, toReleasesPage, validateReleaseForm, type Release, type ReleaseAsset, type ReleaseForm as Form,
@@ -70,25 +69,6 @@ async function loadAll(repo: string, mode: "new" | "edit", tag: string | undefin
   return out;
 }
 
-function Preview({ repo, text }: { repo: string; text: string }) {
-  const [p, setP] = React.useState<PreparedMarkdown | "failed" | undefined>();
-  React.useEffect(() => {
-    setP(undefined);
-    if (!text.trim()) return;
-    let dead = false;
-    renderMarkdown(repo, text).then(
-      (html) => !dead && setP(prepareMarkdownHtml(html, { owner: repo.split("/")[0], name: repo.split("/")[1], ref: "HEAD", dir: "" })),
-      () => !dead && setP("failed")
-    );
-    return () => { dead = true; };
-  }, [repo, text]);
-  const plain = (t: string, secondary = false) => <div className={secondary ? "secondary-text" : undefined} style={{ padding: 12, whiteSpace: "pre-wrap" }}>{t}</div>;
-  return (
-    <div className="gh-rf-preview" aria-live="polite">
-      {!text.trim() ? plain("Nothing to preview", true) : p === "failed" ? plain(text) : !p ? plain("Loading", true) : <Markdown prepared={p} repo={repo} refName="HEAD" go={noop} />}
-    </div>
-  );
-}
 
 export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: ReleaseFormProps) {
   const [loaded, setLoaded] = React.useState<Loaded>();
@@ -246,7 +226,7 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
         </div>
         {tab === "write"
           ? <CommentBox value={form.body} set={(v) => set({ body: v })} label="Release notes" placeholder="Describe this release" submit={noop} repo={repo} rows={14} disabled={working} />
-          : <Preview repo={repo} text={form.body} />}
+          : <MarkdownPreview repo={repo} text={form.body} />}
       </FormItem>
       <div className="gh-rf-checks">
         <Checkbox label="Set as a pre-release" checked={form.prerelease} onChange={(_e, v) => set({ prerelease: v })} disabled={working} />

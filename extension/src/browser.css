@@ -609,6 +609,23 @@
 .gh-np-group-action { position: absolute; right: 0; top: -6px; z-index: 1; } /* beside the field's label, as native's "Add commit messages" and "Clear all" */
 .gh-np-label { gap: 8px; }
 .gh-np-picked { margin-top: 8px; }
+.gh-np-people, .gh-np-tags { width: 100%; }
+/* Description, in native's order: text, counter (right), hints, toolbar, then the live preview. */
+.gh-np-desc-foot { gap: 4px; margin-top: 4px; }
+.gh-np-count { align-self: flex-end; }
+.gh-np-over { color: var(--status-error-foreground, rgba(205, 74, 69, 1)); }
+.gh-np-hints { justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.gh-np-hints > span { gap: 6px; }
+.gh-md-toolbar-below { margin-top: 4px; }
+.gh-md-live { padding: 8px 0 0; }
+.gh-md-live .gh-markdown { margin: 0; padding: 4px 12px; } /* the README view's margins would float the preview away from the text it previews */
+.gh-md-live .gh-markdown > :last-child { margin-bottom: 0; }
+.gh-np-wi { padding: 6px 0; }
+.gh-np-wi-text { gap: 2px; min-width: 0; }
+.gh-np-wi-line1 { gap: 8px; min-width: 0; }
+.gh-np-wi-line2 { gap: 6px; padding-left: 24px; }
+.gh-np-wi-state { gap: 4px; }
+.gh-np-wi-dot { font-size: 8px; }
 .gh-np-chosen { min-height: 32px; }
 .gh-np-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
 .gh-np-actions { gap: 16px; margin-top: 4px; justify-content: flex-end; }

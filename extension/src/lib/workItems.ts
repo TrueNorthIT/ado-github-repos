@@ -30,10 +30,12 @@ export interface WorkItemRef {
   title?: string;
   state?: string;
   type?: string;
+  /** System.ChangedDate (ISO), for "Updated …" on the New pull request page. */
+  changed?: string;
 }
 
 export const workItemsUrl = (org: string, ids: number[]) =>
-  `https://dev.azure.com/${encodeURIComponent(org)}/_apis/wit/workitems?ids=${ids.join(",")}&fields=System.Title,System.State,System.WorkItemType&errorPolicy=omit&api-version=7.1`;
+  `https://dev.azure.com/${encodeURIComponent(org)}/_apis/wit/workitems?ids=${ids.join(",")}&fields=System.Title,System.State,System.WorkItemType,System.ChangedDate&errorPolicy=omit&api-version=7.1`;
 
 export const workItemUrl = (org: string, project: string, id: number) =>
   `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
@@ -46,7 +48,7 @@ export function parseWorkItems(ids: number[], body: { value?: ({ id: number; fie
   return ids.map((id) => {
     const w = byId.get(id);
     if (!w) return { id, found: false };
-    return { id, found: true, title: str(w.fields?.["System.Title"]), state: str(w.fields?.["System.State"]), type: str(w.fields?.["System.WorkItemType"]) };
+    return { id, found: true, title: str(w.fields?.["System.Title"]), state: str(w.fields?.["System.State"]), type: str(w.fields?.["System.WorkItemType"]), changed: str(w.fields?.["System.ChangedDate"]) };
   });
 }
 

@@ -25,8 +25,12 @@ import { ErrorView, hubClick } from "./Browser";
 import { CommentBox } from "./CommentBox";
 import { FilesBar } from "./PrFilesBar";
 import { FilesView } from "./PrFiles";
-import { LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButton, WorkItemsAdd, dueText } from "./PrEdit";
-import { WorkItemRow, useWorkItems } from "./PrPage";
+import { LabelsField, MilestoneAdd, PeopleField, ProjectsField, RemoveButton, WorkItemsAdd, dueText } from "./PrEdit";
+import { TypeIcon, useWorkItems } from "./PrPage";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { RelDate } from "./RelDate";
+import type { WorkItemsResult } from "./workItemsApi";
+import type { WorkItemRef } from "./lib/workItems";
 import { BranchBar, useDefaultBranch } from "./RepoHub";
 import { actionErrorText, actionStore } from "./actionStore";
 import { getCompareFiles, getForkNewPrCompare, getNewPrCompare, getPrTemplates, getViewerLogin, invalidatePrs, listForks, mutate } from "./githubBrowse";
@@ -120,6 +124,36 @@ function CommitsPreview({ repo, compare }: { repo: string; compare: NewPrCompare
   );
 }
 
+/** GitHub refuses a pull request body longer than this. */
+const MAX_BODY_LENGTH = 65536;
+
+/** A work item to link, as native's New pull request lists it: type icon, "Type ID: title" linking to the item, "Updated …, ● State", and ×. */
+function LinkedWorkItem({ w, r, onRemove }: { w: WorkItemRef; r: WorkItemsResult; onRemove: () => void }) {
+  const remove = <RemoveButton label={`Remove work item ${w.id}`} onClick={onRemove} />;
+  if (!w.found) return <li className="gh-pr-row flex-row flex-center gh-np-wi"><span className="secondary-text gh-pr-grow">AB#{w.id}: not found or no access</span>{remove}</li>;
+  const stateColor = w.type && w.state ? r.types[w.type]?.states?.[w.state] : undefined;
+  return (
+    <li className="gh-pr-row flex-row flex-center gh-np-wi">
+      <div className="flex-column gh-pr-grow gh-np-wi-text">
+        <span className="flex-row flex-center gh-np-wi-line1">
+          <TypeIcon type={w.type} r={r} />
+          <Link className="text-ellipsis" removeUnderline href={r.url(w.id)} target="_blank" rel="noopener noreferrer">{w.type ? `${w.type} ` : ""}{w.id}: {w.title ?? ""}</Link>
+        </span>
+        <span className="flex-row flex-center secondary-text gh-np-wi-line2">
+          {w.changed && <span>Updated <RelDate date={w.changed} />,</span>}
+          {w.state && (
+            <span className="flex-row flex-center gh-np-wi-state">
+              <Icon iconName="CircleFill" className="gh-np-wi-dot" style={stateColor ? { color: `#${stateColor}` } : undefined} ariaHidden />
+              {w.state}
+            </span>
+          )}
+        </span>
+      </div>
+      {remove}
+    </li>
+  );
+}
+
 // ---------- the page ----------
 
 export interface NewPullRequestProps {
@@ -191,7 +225,8 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   const setBody = (v: string) => { touched.current.desc = true; setDesc(v); };
 
   const forkMissing = headRepo && forksLoad.t === "ready" && !fork ? `You can't see the fork ${headRepo}, so a pull request can't be created from it.` : null;
-  const blockers = [...createBlockers({ title, source: source && headOwner ? `${headOwner}:${source}` : source, target, compare }), ...(forkMissing ? [forkMissing] : headRepo && !fork ? [CHECKING_MESSAGE] : [])];
+  const tooLong = desc.length > MAX_BODY_LENGTH ? [`The description is longer than GitHub allows (${MAX_BODY_LENGTH} characters).`] : [];
+  const blockers = [...tooLong, ...createBlockers({ title, source: source && headOwner ? `${headOwner}:${source}` : source, target, compare }), ...(forkMissing ? [forkMissing] : headRepo && !fork ? [CHECKING_MESSAGE] : [])];
   const [running, setRunning] = React.useState(false);
   const [failed, setFailed] = React.useState<string>();
   const send = async (req: Parameters<typeof mutate>[0]) => {
@@ -247,20 +282,6 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
     setBody(desc.trim() ? `${desc.replace(/\s+$/, "")}\n\n${lines}` : lines);
   };
 
-  const reviewerRow = (c: Candidate) => (
-    <li key={`${c.kind}:${c.id}`} className="gh-pr-row flex-row flex-center">
-      {c.kind === "team" ? (
-        <><VssPersona imageUrl={c.avatarUrl} displayName={person(c)} size="small" suppressPersonaCard showInitialsOnImageError /><span className="gh-pr-grow text-ellipsis">{person(c)}</span></>
-      ) : (
-        <PersonHover className="gh-pr-grow" login={c.login} name={c.name ?? undefined} avatarUrl={c.avatarUrl}>
-          <VssPersona imageUrl={c.avatarUrl} displayName={person(c)} size="small" suppressPersonaCard showInitialsOnImageError />
-          <span className="gh-pr-grow text-ellipsis">{person(c)}</span>
-        </PersonHover>
-      )}
-      {c.kind === "team" && <span className="secondary-text body-s">Team</span>}
-      <RemoveButton label={`Remove ${c.kind === "team" ? "team" : "reviewer"} ${person(c)}`} onClick={() => setReviewers((l) => l.filter((x) => x.id !== c.id))} />
-    </li>
-  );
   const none = () => undefined; // the inline pickers stay open, so there is nothing to close
 
   const overview = (
@@ -287,12 +308,31 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
       <div className="gh-np-group">
         <Button className="gh-np-group-action" subtle iconProps={{ iconName: "Paste" }} text="Add commit messages" disabled={!compare?.commits.length || running} onClick={addCommitMessages} />
         <FormItem label="Description" className="gh-np-field">
-          <CommentBox value={desc} set={setBody} label="Description" placeholder="Describe the code that is being reviewed" submit={() => void create(false)} repo={repo} rows={8} disabled={running} />
+          <CommentBox
+            value={desc}
+            set={setBody}
+            label="Description"
+            placeholder="Describe the code that is being reviewed"
+            submit={() => void create(false)}
+            repo={repo}
+            rows={6}
+            disabled={running}
+            toolbarBelow
+            footer={
+              <div className="gh-np-desc-foot flex-column">
+                <span className={`gh-np-count body-s${desc.length > MAX_BODY_LENGTH ? " gh-np-over" : " secondary-text"}`}>{desc.length}/{MAX_BODY_LENGTH}</span>
+                <div className="gh-np-hints flex-row flex-center body-s">
+                  <span className="flex-row flex-center"><Icon iconName="Info" className="secondary-text" ariaHidden /><Link removeUnderline href="https://docs.github.com/get-started/writing-on-github" target="_blank" rel="noopener noreferrer">Markdown supported.</Link></span>
+                  <span className="flex-row flex-center secondary-text"><Icon iconName="Info" ariaHidden />Type AB# and an ID to link a work item.</span>
+                </div>
+              </div>
+            }
+          />
+          <MarkdownPreview repo={repo} text={desc} delay={600} live />
         </FormItem>
       </div>
       <FormItem label="Reviewers" className="gh-np-field">
-        <PeopleAdd inline repo={repo} kind="reviewers" placeholder="Search users and teams to add as reviewers" authorLogin={viewer} current={reviewers.map((r) => ({ kind: r.kind, login: r.login }))} onClose={none} onPick={(c) => setReviewers((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))} />
-        {reviewers.length > 0 && <ul className="gh-pr-list gh-np-picked">{reviewers.map(reviewerRow)}</ul>}
+        <PeopleField repo={repo} kind="reviewers" chosen={reviewers} onChange={setReviewers} authorLogin={viewer} placeholder="Search users and teams to add as reviewers" />
       </FormItem>
       <div className="gh-np-group">
         {workItemIds.length > 0 && <Button className="gh-np-group-action" subtle text="Clear all" disabled={running} onClick={() => setBody(workItemIds.reduce((d, id) => removeWorkItemFromBody(d, id), desc))} />}
@@ -302,30 +342,16 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
             wi.t === "loading" ? <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />
               : wi.t === "denied" ? <span className="secondary-text">Work items need the extension's work item permission.</span>
               : wi.t === "error" ? <span className="secondary-text">Work items could not be loaded.</span>
-              : <ul className="gh-pr-list gh-np-picked">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={{ removable: true, pinned: false, busy: false, onRemove: () => setBody(removeWorkItemFromBody(desc, w.id)) }} />)}</ul>
+              : <ul className="gh-pr-list gh-np-picked">{wi.r.items.map((w) => <LinkedWorkItem key={w.id} w={w} r={wi.r} onRemove={() => setBody(removeWorkItemFromBody(desc, w.id))} />)}</ul>
           )}
         </FormItem>
       </div>
       <FormItem label="Tags" className="gh-np-field">
-        <LabelsAdd inline repo={repo} applied={labels.map((l) => l.id)} onClose={none} onPick={(l) => setLabels((x) => (x.some((y) => y.id === l.id) ? x : [...x, l]))} />
-        {labels.length > 0 && <div className="flex-row flex-wrap gh-pr-labels gh-np-picked">{labels.map((l) => <LabelPill key={l.id} l={l} onRemove={() => setLabels((x) => x.filter((y) => y.id !== l.id))} />)}</div>}
+        <LabelsField repo={repo} chosen={labels} onChange={setLabels} />
       </FormItem>
       {/* GitHub's own fields, which native ADO has no counterpart for, after native's three. */}
       <FormItem label="Assignees" className="gh-np-field">
-        <PeopleAdd inline repo={repo} kind="assignees" placeholder="Search users to assign" current={assignees.map((a) => ({ kind: "user" as const, login: a.login }))} onClose={none} onPick={(c) => setAssignees((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))} />
-        {assignees.length > 0 && (
-          <ul className="gh-pr-list gh-np-picked">
-            {assignees.map((a) => (
-              <li key={a.id} className="gh-pr-row flex-row flex-center">
-                <PersonHover className="gh-pr-grow" login={a.login} name={a.name ?? undefined} avatarUrl={a.avatarUrl}>
-                  <VssPersona imageUrl={a.avatarUrl} displayName={person(a)} size="small" suppressPersonaCard showInitialsOnImageError />
-                  <span className="gh-pr-grow text-ellipsis">{person(a)}</span>
-                </PersonHover>
-                <RemoveButton label={`Remove assignee ${person(a)}`} onClick={() => setAssignees((l) => l.filter((x) => x.id !== a.id))} />
-              </li>
-            ))}
-          </ul>
-        )}
+        <PeopleField repo={repo} kind="assignees" chosen={assignees} onChange={setAssignees} placeholder="Search users to assign" />
       </FormItem>
       <div className="gh-np-pair">
         <FormItem label="Milestone" className="gh-np-field">
@@ -338,18 +364,7 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
           ) : <MilestoneAdd inline repo={repo} onClose={none} onPick={setMilestone} />}
         </FormItem>
         <FormItem label="Projects" className="gh-np-field">
-          <ProjectsAdd inline repo={repo} attached={projects.map((p) => p.id)} onClose={none} onPick={(p) => setProjects((l) => (l.some((x) => x.id === p.id) ? l : [...l, p]))} />
-          {projects.length > 0 && (
-            <ul className="gh-pr-list gh-np-picked">
-              {projects.map((p) => (
-                <li key={p.id} className="gh-pr-row flex-row flex-center">
-                  <Icon iconName="ProjectCollection" className="secondary-text" ariaHidden />
-                  <span className="gh-pr-grow text-ellipsis">{p.title}</span>
-                  <RemoveButton label={`Remove from project ${p.title}`} onClick={() => setProjects((l) => l.filter((x) => x.id !== p.id))} />
-                </li>
-              ))}
-            </ul>
-          )}
+          <ProjectsField repo={repo} chosen={projects} onChange={setProjects} />
         </FormItem>
       </div>
       {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}

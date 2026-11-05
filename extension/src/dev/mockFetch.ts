@@ -52,7 +52,7 @@ function mockHistory(path: string) {
 }
 
 const icon = (c: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="2" fill="#${c}"/></svg>`)}`;
-const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item", "009CCC"]].map(([name, color]) => ({ name, color, icon: { url: icon(color) } }));
+const WI_TYPES = [["Bug", "CC293D"], ["Task", "F2CB1D"], ["Product Backlog Item", "009CCC"]].map(([name, color]) => ({ name, color, icon: { url: icon(color) }, states: WI_STATES[name] }));
 
 function graphql(init: RequestInit | undefined, sc: string): Response {
   if (sc === "rateLimit" || sc === "commitsFail") return status(403, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 900) });
@@ -253,7 +253,7 @@ async function handle(u: URL, init: RequestInit | undefined, sc: string): Promis
   if (u.hostname === "dev.azure.com" && /\/_apis\/wit\/workitems$/.test(u.pathname)) {
     if (sc === "workItemsDenied") return status(403);
     const ids = (u.searchParams.get("ids") ?? "").split(",").map(Number);
-    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item", ...wiCardFields(id) } } : null)) });
+    return json({ count: ids.length, value: ids.map((id) => (id >= 1000 && id < 1100 ? { id, fields: { "System.Title": WI_CATALOG[id] ?? `Work item ${id}`, "System.State": WI_OVERRIDE.get(id) ?? (id === 1000 ? "Active" : id === 1001 ? "In Progress" : id % 2 ? "Committed" : "Done"), "System.WorkItemType": id === 1000 ? "Bug" : id === 1001 ? "Task" : "Product Backlog Item", "System.ChangedDate": new Date(Date.now() - (id - 990) * 86400e3).toISOString(), ...wiCardFields(id) } } : null)) });
   }
   if (u.pathname === "/api/auth/refresh") return json(fakeTokens());
   // The organisation's projects (the My work tab scans them all): "Platform" also connects customer-portal, so that repository is in two.
