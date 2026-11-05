@@ -229,7 +229,6 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
     const r = v.releases.find((x) => x.tagName === detailTag);
     body = (
       <>
-        <div><Button iconProps={{ iconName: "Back" }} onClick={back}>All releases</Button></div>
         {r ? <ReleaseCard repo={repo} release={r} props={props} detail canWrite={canWrite} onDelete={setDel} /> : <ZeroData iconProps={{ iconName: "Tag" }} imageAltText="" primaryText="Release not found" secondaryText={`There is no release for ${detailTag}.`} />}
       </>
     );
@@ -282,7 +281,15 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
 
   return (
     <>
-      <Header className="gh-hub-header gh-act-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={detailTag ? draftButton : [...draftButton, searchItem]}>
+      <Header
+        className="gh-hub-header gh-act-header"
+        title="Tags & Releases"
+        titleSize={TitleSize.Large}
+        titleAriaLevel={1}
+        // A release's own page goes back with the Header's back button, as the PR, Branch policies and alert pages do.
+        backButtonProps={detailTag ? { iconProps: { iconName: "Back" }, ariaLabel: "Back to releases", tooltipProps: { text: "Back to releases" }, onClick: back } : undefined}
+        commandBarItems={detailTag ? draftButton : [...draftButton, searchItem]}
+      >
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r, tagTab: "releases" }))}
       </Header>
       <TagTabs repo={repo} tab="releases" go={go} />
