@@ -601,7 +601,17 @@
 .gh-np-branches .gh-topbar { padding: 0; }
 .gh-np-body { display: flex; flex-direction: column; gap: 16px; }
 .gh-np-field { margin-bottom: 4px; }
-.gh-np-actions { gap: 12px; margin-top: 4px; }
+/* Overview, as native's: one card (native's is 960px wide at most) with the fields stacked and Create at its foot, right-aligned. */
+.gh-np-card { max-width: 960px; }
+.gh-np-form { gap: 20px; min-width: 0; padding: 8px 4px; }
+.gh-np-form .gh-pr-add { width: 100%; gap: 0; margin: 0; } /* no Cancel beside the inline pickers; the identity picker brings two empty siblings that the gap would push it off the right edge for */
+.gh-np-group { position: relative; }
+.gh-np-group-action { position: absolute; right: 0; top: -6px; z-index: 1; } /* beside the field's label, as native's "Add commit messages" and "Clear all" */
+.gh-np-label { gap: 8px; }
+.gh-np-picked { margin-top: 8px; }
+.gh-np-chosen { min-height: 32px; }
+.gh-np-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+.gh-np-actions { gap: 16px; margin-top: 4px; justify-content: flex-end; }
 .gh-np-checking { min-height: 24px; }
 .gh-np-note { padding: 8px 4px 0; }
 .gh-np-preview { margin-top: 8px; }

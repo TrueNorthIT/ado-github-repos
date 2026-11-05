@@ -1,4 +1,5 @@
-// The New pull request page (batch 5): branches, title, description, the right-hand panels, Create, and the Files / Commits preview.
+// The New pull request page (batch 5), laid out as native's: branches, then Overview / Files / Commits tabs; Overview is one card with
+// title, description, reviewers, work items and tags (then GitHub's assignees, milestone and projects), and Create at its foot.
 // The logic is in lib/newPr.ts, prTemplates.ts, branchWorkItems.ts, createPrPlan.ts and newPrHash.ts; this file draws it and wires it to the GitHub data layer.
 import * as React from "react";
 import { PersonHover } from "./HoverCard";
@@ -11,6 +12,7 @@ import { Header, TitleSize } from "azure-devops-ui/Header";
 import { Icon } from "azure-devops-ui/Icon";
 import { Link } from "azure-devops-ui/Link";
 import { MessageCard, MessageCardSeverity } from "azure-devops-ui/MessageCard";
+import { Pill, PillSize, PillVariant } from "azure-devops-ui/Pill";
 import { Spinner, SpinnerSize } from "azure-devops-ui/Spinner";
 import { SplitButton } from "azure-devops-ui/SplitButton";
 import { Table, TwoLineTableCell, type ITableColumn } from "azure-devops-ui/Table";
@@ -18,12 +20,13 @@ import { Tab, TabBar, TabSize } from "azure-devops-ui/Tabs";
 import { TextField, TextFieldWidth } from "azure-devops-ui/TextField";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { VssPersona } from "azure-devops-ui/VssPersona";
+import { ZeroData } from "azure-devops-ui/ZeroData";
 import { ErrorView, hubClick } from "./Browser";
 import { CommentBox } from "./CommentBox";
 import { FilesBar } from "./PrFilesBar";
 import { FilesView } from "./PrFiles";
-import { LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButton, WorkItemsAdd, addItem, dueText } from "./PrEdit";
-import { Section, Well, WorkItemRow, useWorkItems } from "./PrPage";
+import { LabelPill, LabelsAdd, MilestoneAdd, PeopleAdd, ProjectsAdd, RemoveButton, WorkItemsAdd, dueText } from "./PrEdit";
+import { WorkItemRow, useWorkItems } from "./PrPage";
 import { BranchBar, useDefaultBranch } from "./RepoHub";
 import { actionErrorText, actionStore } from "./actionStore";
 import { getCompareFiles, getForkNewPrCompare, getNewPrCompare, getPrTemplates, getViewerLogin, invalidatePrs, listForks, mutate } from "./githubBrowse";
@@ -178,7 +181,6 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   const [assignees, setAssignees] = React.useState<Candidate[]>([]);
   const [milestone, setMilestone] = React.useState<MilestoneOption | null>(null);
   const [projects, setProjects] = React.useState<{ id: string; title: string }[]>([]);
-  const [adding, setAdding] = React.useState<"" | "reviewers" | "labels" | "workItems" | "assignees" | "milestone" | "projects">("");
   const [viewer, setViewer] = React.useState<string>();
   React.useEffect(() => { if (signedIn) getViewerLogin().then(setViewer, () => {}); }, [signedIn]);
   const [autoOn, setAutoOn] = React.useState(false);
@@ -227,12 +229,23 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
   };
 
   const swap = () => { setSource(target); setTarget(source); };
-  const back = () => go({ repo, view: "prs" });
   const reasons = blockers.join("\n");
-  const [tab, setTab] = React.useState<"files" | "commits">("files");
+  // Native's tabs: Overview (the form), Files and Commits (what the pull request would bring in).
+  const [tab, setTab] = React.useState<"overview" | "files" | "commits">("overview");
   const notes = blockers.filter((b) => b !== NO_TITLE_MESSAGE && b !== CHECKING_MESSAGE && b !== NO_SOURCE_MESSAGE && b !== NO_TARGET_MESSAGE); // those two are plain: the empty picker says it
   const existing = compare?.existingPr;
   const canAuto = !!compare?.autoMergeAllowed;
+  const changes = !!(compare && pair && compare.ahead > 0);
+  const headRef = pair ? (headOwner ? `${headOwner}:${pair.head}` : pair.head) : "";
+  // The Files tab's count, as native shows it before the tab is opened. getCompareFiles is cached, so the tab reuses this answer.
+  const filesLoad = useLoad(changes ? `files|${repo}|${pair!.base}|${headRef}|${signedIn}` : null, () => getCompareFiles(repo, pair!.base, headRef));
+  const fileCount = filesLoad.t === "ready" ? filesLoad.v.files.length : undefined;
+  // Native's "Add commit messages": the commits' subjects appended to the description as a list.
+  const addCommitMessages = () => {
+    if (!compare?.commits.length) return;
+    const lines = compare.commits.map((c) => `- ${c.subject}`).join("\n");
+    setBody(desc.trim() ? `${desc.replace(/\s+$/, "")}\n\n${lines}` : lines);
+  };
 
   const reviewerRow = (c: Candidate) => (
     <li key={`${c.kind}:${c.id}`} className="gh-pr-row flex-row flex-center">
@@ -248,19 +261,134 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
       <RemoveButton label={`Remove ${c.kind === "team" ? "team" : "reviewer"} ${person(c)}`} onClick={() => setReviewers((l) => l.filter((x) => x.id !== c.id))} />
     </li>
   );
-  const close = () => setAdding("");
-  // Reviewers keeps a labelled "Add" as native does; the other panels get a bare "+" with the label as its tooltip.
-  const addBtn = (what: typeof adding, text = "Add") => addItem(() => setAdding(what), false, text, what === "reviewers");
+  const none = () => undefined; // the inline pickers stay open, so there is nothing to close
+
+  const overview = (
+    <Card className="gh-np-card">
+      <div className="gh-np-form flex-column flex-grow">
+      <FormItem label="Title" className="gh-np-field">
+        <TextField ariaLabel="Title" value={title} maxLength={MAX_TITLE_LENGTH} width={TextFieldWidth.auto} placeholder="Title" onChange={(_e, v) => { touched.current.title = true; setTitle(v); }} />
+      </FormItem>
+      {templates && templates.length > 1 && (
+        <FormItem label="Template" className="gh-np-field">
+          <Dropdown<number>
+            ariaLabel={`Pull request template: ${baseName(templates[tplIdx]?.path ?? "")}`}
+            placeholder={baseName(templates[tplIdx]?.path ?? "")}
+            items={templates.map((t, i) => ({ id: String(i), text: baseName(t.path) }))}
+            onSelect={(_e, item) => {
+              const i = Number(item.id);
+              setTplIdx(i);
+              touched.current.desc = false;
+              if (compare) setDesc(describe(compare, templates[i].text));
+            }}
+          />
+        </FormItem>
+      )}
+      <div className="gh-np-group">
+        <Button className="gh-np-group-action" subtle iconProps={{ iconName: "Paste" }} text="Add commit messages" disabled={!compare?.commits.length || running} onClick={addCommitMessages} />
+        <FormItem label="Description" className="gh-np-field">
+          <CommentBox value={desc} set={setBody} label="Description" placeholder="Describe the code that is being reviewed" submit={() => void create(false)} repo={repo} rows={8} disabled={running} />
+        </FormItem>
+      </div>
+      <FormItem label="Reviewers" className="gh-np-field">
+        <PeopleAdd inline repo={repo} kind="reviewers" placeholder="Search users and teams to add as reviewers" authorLogin={viewer} current={reviewers.map((r) => ({ kind: r.kind, login: r.login }))} onClose={none} onPick={(c) => setReviewers((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))} />
+        {reviewers.length > 0 && <ul className="gh-pr-list gh-np-picked">{reviewers.map(reviewerRow)}</ul>}
+      </FormItem>
+      <div className="gh-np-group">
+        {workItemIds.length > 0 && <Button className="gh-np-group-action" subtle text="Clear all" disabled={running} onClick={() => setBody(workItemIds.reduce((d, id) => removeWorkItemFromBody(d, id), desc))} />}
+        <FormItem label={<span className="flex-row flex-center gh-np-label">Work items to link{workItemIds.length > 0 && <Pill containsCount size={PillSize.compact} variant={PillVariant.standard}>{workItemIds.length}</Pill>}</span>} className="gh-np-field">
+          <WorkItemsAdd inline linked={workItemIds} placeholder="Search work items by ID or title" onClose={none} onPick={(w) => setBody(prefillWorkItems(desc, [w.id]))} />
+          {workItemIds.length > 0 && (
+            wi.t === "loading" ? <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />
+              : wi.t === "denied" ? <span className="secondary-text">Work items need the extension's work item permission.</span>
+              : wi.t === "error" ? <span className="secondary-text">Work items could not be loaded.</span>
+              : <ul className="gh-pr-list gh-np-picked">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={{ removable: true, pinned: false, busy: false, onRemove: () => setBody(removeWorkItemFromBody(desc, w.id)) }} />)}</ul>
+          )}
+        </FormItem>
+      </div>
+      <FormItem label="Tags" className="gh-np-field">
+        <LabelsAdd inline repo={repo} applied={labels.map((l) => l.id)} onClose={none} onPick={(l) => setLabels((x) => (x.some((y) => y.id === l.id) ? x : [...x, l]))} />
+        {labels.length > 0 && <div className="flex-row flex-wrap gh-pr-labels gh-np-picked">{labels.map((l) => <LabelPill key={l.id} l={l} onRemove={() => setLabels((x) => x.filter((y) => y.id !== l.id))} />)}</div>}
+      </FormItem>
+      {/* GitHub's own fields, which native ADO has no counterpart for, after native's three. */}
+      <FormItem label="Assignees" className="gh-np-field">
+        <PeopleAdd inline repo={repo} kind="assignees" placeholder="Search users to assign" current={assignees.map((a) => ({ kind: "user" as const, login: a.login }))} onClose={none} onPick={(c) => setAssignees((l) => (l.some((x) => x.id === c.id) ? l : [...l, c]))} />
+        {assignees.length > 0 && (
+          <ul className="gh-pr-list gh-np-picked">
+            {assignees.map((a) => (
+              <li key={a.id} className="gh-pr-row flex-row flex-center">
+                <PersonHover className="gh-pr-grow" login={a.login} name={a.name ?? undefined} avatarUrl={a.avatarUrl}>
+                  <VssPersona imageUrl={a.avatarUrl} displayName={person(a)} size="small" suppressPersonaCard showInitialsOnImageError />
+                  <span className="gh-pr-grow text-ellipsis">{person(a)}</span>
+                </PersonHover>
+                <RemoveButton label={`Remove assignee ${person(a)}`} onClick={() => setAssignees((l) => l.filter((x) => x.id !== a.id))} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </FormItem>
+      <div className="gh-np-pair">
+        <FormItem label="Milestone" className="gh-np-field">
+          {milestone ? (
+            <div className="gh-pr-row flex-row flex-center gh-np-chosen">
+              <Icon iconName="Flag" className="secondary-text" ariaHidden />
+              <span className="gh-pr-grow flex-column"><span className="text-ellipsis">{milestone.title}</span><span className="secondary-text body-s">{dueText(milestone.dueOn)}</span></span>
+              <RemoveButton label={`Clear milestone ${milestone.title}`} onClick={() => setMilestone(null)} />
+            </div>
+          ) : <MilestoneAdd inline repo={repo} onClose={none} onPick={setMilestone} />}
+        </FormItem>
+        <FormItem label="Projects" className="gh-np-field">
+          <ProjectsAdd inline repo={repo} attached={projects.map((p) => p.id)} onClose={none} onPick={(p) => setProjects((l) => (l.some((x) => x.id === p.id) ? l : [...l, p]))} />
+          {projects.length > 0 && (
+            <ul className="gh-pr-list gh-np-picked">
+              {projects.map((p) => (
+                <li key={p.id} className="gh-pr-row flex-row flex-center">
+                  <Icon iconName="ProjectCollection" className="secondary-text" ariaHidden />
+                  <span className="gh-pr-grow text-ellipsis">{p.title}</span>
+                  <RemoveButton label={`Remove from project ${p.title}`} onClick={() => setProjects((l) => l.filter((x) => x.id !== p.id))} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </FormItem>
+      </div>
+      {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}
+      <div className="gh-np-actions flex-row flex-center flex-wrap">
+        {running && <Spinner size={SpinnerSize.small} label="Creating…" />}
+        {canAuto && (
+          <>
+            <Checkbox label="Set auto-complete" checked={autoOn} onChange={(_e, v) => setAutoOn(v)} />
+            {autoOn && (
+              <Dropdown<MergeMethod>
+                ariaLabel={`Merge type: ${METHODS.find((m) => m.id === method)!.text}`}
+                placeholder={METHODS.find((m) => m.id === method)!.text}
+                items={METHODS}
+                onSelect={(_e, item) => setMethod(item.id as MergeMethod)}
+                renderExpandable={(p) => <DropdownExpandableButton {...p} />}
+              />
+            )}
+          </>
+        )}
+        <SplitButton
+          primary
+          className="gh-split"
+          buttonProps={{ text: "Create", onClick: () => void create(false), disabled: !!blockers.length || running, tooltipProps: reasons ? { text: reasons } : undefined }}
+          menuButtonProps={{
+            ariaLabel: "More create options",
+            disabled: !!blockers.length || running,
+            contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: "gh-create-menu", items: [{ id: "draft", text: "Create as draft", iconProps: { iconName: "Edit" }, onActivate: () => void create(true) }] } },
+          }}
+        />
+      </div>
+      </div>
+    </Card>
+  );
+
+  const nothingYet = <ZeroData iconProps={{ iconName: "BranchCompare" }} imageAltText="" primaryText="No changes to show" secondaryText="Choose a source branch with commits the target doesn't have." />;
 
   return (
     <>
-      <Header
-        className="gh-pr-header"
-        title="New pull request"
-        titleSize={TitleSize.Large}
-        titleAriaLevel={1}
-        backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: "Back to pull requests", tooltipProps: { text: "Back to pull requests" }, onClick: back }}
-      />
+      <Header className="gh-pr-header" title="New pull request" titleSize={TitleSize.Large} titleAriaLevel={1} />
       <div className="gh-np-branches flex-row flex-center flex-wrap">
         {(forks.length > 0 || headRepo) && (
           <Dropdown
@@ -282,6 +410,11 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
         <BranchBar repo={repo} current={target ?? ""} defaultBranch={def.defaultBranch} onPick={setTarget} />
         <Button subtle iconProps={{ iconName: "Switch" }} ariaLabel="Swap source and target" tooltipProps={{ text: headRepo ? "The source is in a fork, so it can't become the target" : "Swap source and target" }} disabled={(!source && !target) || !!headRepo} onClick={swap} />
       </div>
+      <TabBar ariaLabel="New pull request" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as typeof tab)} tabSize={TabSize.Tall} disableSticky>
+        <Tab id="overview" name="Overview" />
+        <Tab id="files" name="Files" badgeCount={changes ? fileCount : undefined} />
+        <Tab id="commits" name="Commits" badgeCount={changes ? compare!.commitCount : undefined} />
+      </TabBar>
       <div className="page-content page-content-top gh-np-body">
         {existing && pair && (
           <MessageCard severity={MessageCardSeverity.Info}>
@@ -292,138 +425,10 @@ export function NewPullRequest({ repo, entry, go, signedIn, signIn, busy }: NewP
         {notes.filter((n) => !(existing && n.startsWith("Pull request #"))).map((n) => <MessageCard key={n} severity={MessageCardSeverity.Warning}>{n}</MessageCard>)}
         {cmpLoad.t === "loading" && <div className="gh-np-checking flex-row flex-center secondary-text" role="status"><Spinner size={SpinnerSize.small} label="Checking…" /></div>}
         {cmpLoad.t === "error" && <ErrorView err={cmpLoad.err} signIn={signIn} busy={busy} retry={() => { invalidatePrs(); setReload((n) => n + 1); }} subject="compare these branches" permission="Pull requests" />}
-
-        <div className="gh-pr-overview">
-          <div className="gh-pr-main gh-np-form">
-            <FormItem label="Title" className="gh-np-field">
-              <TextField
-                ariaLabel="Title"
-                value={title}
-                maxLength={MAX_TITLE_LENGTH}
-                width={TextFieldWidth.auto}
-                placeholder="Title"
-                onChange={(_e, v) => { touched.current.title = true; setTitle(v); }}
-              />
-            </FormItem>
-            {templates && templates.length > 1 && (
-              <FormItem label="Template" className="gh-np-field">
-                <Dropdown<number>
-                  ariaLabel={`Pull request template: ${baseName(templates[tplIdx]?.path ?? "")}`}
-                  placeholder={baseName(templates[tplIdx]?.path ?? "")}
-                  items={templates.map((t, i) => ({ id: String(i), text: baseName(t.path) }))}
-                  onSelect={(_e, item) => {
-                    const i = Number(item.id);
-                    setTplIdx(i);
-                    touched.current.desc = false;
-                    if (compare) setDesc(describe(compare, templates[i].text));
-                  }}
-                />
-              </FormItem>
-            )}
-            <FormItem label="Description" className="gh-np-field">
-              <CommentBox value={desc} set={setBody} label="Description" placeholder="Add a description" submit={() => void create(false)} repo={repo} rows={10} disabled={running} />
-            </FormItem>
-            {failed && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setFailed(undefined)}>{failed}</MessageCard>}
-            <div className="gh-np-actions flex-row flex-center flex-wrap">
-              <SplitButton
-                primary
-                className="gh-split"
-                buttonProps={{ text: "Create", onClick: () => void create(false), disabled: !!blockers.length || running, tooltipProps: reasons ? { text: reasons } : undefined }}
-                menuButtonProps={{
-                  ariaLabel: "More create options",
-                  disabled: !!blockers.length || running,
-                  contextualMenuProps: { className: "gh-vote-callout", menuProps: { id: "gh-create-menu", items: [{ id: "draft", text: "Create as draft", iconProps: { iconName: "Edit" }, onActivate: () => void create(true) }] } },
-                }}
-              />
-              {running && <Spinner size={SpinnerSize.small} label="Creating…" />}
-              {canAuto && (
-                <>
-                  <Checkbox label="Auto-complete" checked={autoOn} onChange={(_e, v) => setAutoOn(v)} />
-                  {autoOn && (
-                    <Dropdown<MergeMethod>
-                      ariaLabel={`Merge type: ${METHODS.find((m) => m.id === method)!.text}`}
-                      placeholder={METHODS.find((m) => m.id === method)!.text}
-                      items={METHODS}
-                      onSelect={(_e, item) => setMethod(item.id as MergeMethod)}
-                      renderExpandable={(p) => <DropdownExpandableButton {...p} />}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="gh-pr-aside">
-            <Section title="Reviewers" commandBarItems={addBtn("reviewers")}>
-              {adding === "reviewers" && (
-                <PeopleAdd repo={repo} kind="reviewers" authorLogin={viewer} current={reviewers.map((r) => ({ kind: r.kind, login: r.login }))} onClose={close} onPick={(c) => (close(), setReviewers((l) => [...l, c]))} />
-              )}
-              {reviewers.length ? <ul className="gh-pr-list">{reviewers.map(reviewerRow)}</ul> : <Well>No reviewers</Well>}
-            </Section>
-            <Section title="Work items" commandBarItems={addBtn("workItems")}>
-              {adding === "workItems" && <WorkItemsAdd linked={workItemIds} onClose={close} onPick={(w) => (close(), setBody(prefillWorkItems(desc, [w.id])))} />}
-              {!workItemIds.length ? <Well>No work items</Well>
-                : wi.t === "loading" ? <Spinner size={SpinnerSize.small} ariaLabel="Loading work items" />
-                : wi.t === "denied" ? <span className="secondary-text">Work items need the extension's work item permission.</span>
-                : wi.t === "error" ? <span className="secondary-text">Work items could not be loaded.</span>
-                : <ul className="gh-pr-list">{wi.r.items.map((w) => <WorkItemRow key={w.id} w={w} r={wi.r} remove={{ removable: true, pinned: false, busy: false, onRemove: () => setBody(removeWorkItemFromBody(desc, w.id)) }} />)}</ul>}
-            </Section>
-            <Section title="Tags" commandBarItems={addBtn("labels")}>
-              {adding === "labels" && <LabelsAdd repo={repo} applied={labels.map((l) => l.id)} onClose={close} onPick={(l) => (close(), setLabels((x) => [...x, l]))} />}
-              {labels.length ? <div className="flex-row flex-wrap gh-pr-labels">{labels.map((l) => <LabelPill key={l.id} l={l} onRemove={() => setLabels((x) => x.filter((y) => y.id !== l.id))} />)}</div> : <Well>No tags</Well>}
-            </Section>
-            <Section title="Assignees" commandBarItems={addBtn("assignees")}>
-              {adding === "assignees" && <PeopleAdd repo={repo} kind="assignees" current={assignees.map((a) => ({ kind: "user" as const, login: a.login }))} onClose={close} onPick={(c) => (close(), setAssignees((l) => [...l, c]))} />}
-              {assignees.length ? (
-                <ul className="gh-pr-list">
-                  {assignees.map((a) => (
-                    <li key={a.id} className="gh-pr-row flex-row flex-center">
-                      <PersonHover className="gh-pr-grow" login={a.login} name={a.name ?? undefined} avatarUrl={a.avatarUrl}>
-                        <VssPersona imageUrl={a.avatarUrl} displayName={person(a)} size="small" suppressPersonaCard showInitialsOnImageError />
-                        <span className="gh-pr-grow text-ellipsis">{person(a)}</span>
-                      </PersonHover>
-                      <RemoveButton label={`Remove assignee ${person(a)}`} onClick={() => setAssignees((l) => l.filter((x) => x.id !== a.id))} />
-                    </li>
-                  ))}
-                </ul>
-              ) : <Well>No assignees</Well>}
-            </Section>
-            <Section title="Milestone" commandBarItems={addBtn("milestone", milestone ? "Change" : "Add")}>
-              {adding === "milestone" && <MilestoneAdd repo={repo} onClose={close} onPick={(m) => (close(), setMilestone(m))} />}
-              {milestone ? (
-                <div className="gh-pr-row flex-row flex-center">
-                  <Icon iconName="Flag" className="secondary-text" ariaHidden />
-                  <span className="gh-pr-grow flex-column"><span className="text-ellipsis">{milestone.title}</span><span className="secondary-text body-s">{dueText(milestone.dueOn)}</span></span>
-                  <RemoveButton label={`Clear milestone ${milestone.title}`} onClick={() => setMilestone(null)} />
-                </div>
-              ) : <Well>No milestone</Well>}
-            </Section>
-            <Section title="Projects" commandBarItems={addBtn("projects")}>
-              {adding === "projects" && <ProjectsAdd repo={repo} attached={projects.map((p) => p.id)} onClose={close} onPick={(p) => (close(), setProjects((l) => [...l, p]))} />}
-              {projects.length ? (
-                <ul className="gh-pr-list">
-                  {projects.map((p) => (
-                    <li key={p.id} className="gh-pr-row flex-row flex-center">
-                      <Icon iconName="ProjectCollection" className="secondary-text" ariaHidden />
-                      <span className="gh-pr-grow text-ellipsis">{p.title}</span>
-                      <RemoveButton label={`Remove from project ${p.title}`} onClick={() => setProjects((l) => l.filter((x) => x.id !== p.id))} />
-                    </li>
-                  ))}
-                </ul>
-              ) : <Well>No projects</Well>}
-            </Section>
-          </div>
-        </div>
-
-        {compare && pair && compare.ahead > 0 && (
-          <div className="gh-np-preview">
-            <TabBar ariaLabel="Changes in this pull request" selectedTabId={tab} onSelectedTabChanged={(id) => setTab(id as "files" | "commits")} tabSize={TabSize.Tall} disableSticky>
-              <Tab id="files" name="Files" />
-              <Tab id="commits" name="Commits" badgeCount={compare.commitCount} />
-            </TabBar>
-            {tab === "files" ? <FilesPreview repo={repo} base={pair.base} head={headOwner ? `${headOwner}:${pair.head}` : pair.head} headOid={compare.headOid ?? pair.head} signIn={signIn} busy={busy} /> : <CommitsPreview repo={repo} compare={compare} />}
-          </div>
-        )}
+        {tab === "overview" ? overview
+          : !changes ? nothingYet
+          : tab === "files" ? <FilesPreview repo={repo} base={pair!.base} head={headRef} headOid={compare!.headOid ?? pair!.head} signIn={signIn} busy={busy} />
+          : <CommitsPreview repo={repo} compare={compare!} />}
       </div>
     </>
   );

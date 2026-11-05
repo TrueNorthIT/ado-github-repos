@@ -82,7 +82,7 @@ export function RemoveButton({ label, onClick, disabled, reason }: { label: stri
  * A search box with a list of suggestions (azure-devops-ui TagPicker used as a picker: nothing is kept selected here, picking an item writes it and closes the box).
  * Esc closes it. `search` runs on every change and an empty box lists the defaults.
  */
-export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeholder, ariaLabel, noResults }: {
+export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeholder, ariaLabel, noResults, inline }: {
   search: (q: string) => Promise<T[]>;
   itemKey: (t: T) => string;
   render: (t: T) => React.ReactNode;
@@ -91,12 +91,14 @@ export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeho
   placeholder: string;
   ariaLabel: string;
   noResults: string;
+  /** An always-open field in a form (the New pull request page): no Cancel and no focus grab. */
+  inline?: boolean;
 }) {
   const [items, setItems] = React.useState<T[]>([]);
   const [loading, setLoading] = React.useState(false);
   const seq = React.useRef(0);
   const box = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => void setTimeout(() => box.current?.querySelector("input")?.focus(), 200), []); // after the menu button gives focus back
+  React.useEffect(() => { if (!inline) setTimeout(() => box.current?.querySelector("input")?.focus(), 200); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- after the menu button gives focus back
   const run = React.useCallback((q: string) => {
     const mine = ++seq.current;
     setLoading(true);
@@ -123,7 +125,7 @@ export function AddSearch<T>({ search, itemKey, render, onPick, onClose, placeho
         onTagRemoved={() => {}}
         renderSuggestionItem={(p) => <div className="gh-pr-suggestion flex-row flex-center">{render(p.item)}</div>}
       />
-      <Button subtle text="Cancel" onClick={onClose} />
+      {!inline && <Button subtle text="Cancel" onClick={onClose} />}
     </div>
   );
 }
@@ -226,13 +228,15 @@ const toIdentity = (c: Candidate): IIdentity => ({
 });
 
 /** Add reviewers (users and teams) or assignees (users), through azure-devops-ui's identity picker backed by GitHub search (ranked and filtered by lib/reviewerSearch.ts). */
-export function PeopleAdd({ repo, kind, current, authorLogin, onPick, onClose }: {
+export function PeopleAdd({ repo, kind, current, authorLogin, onPick, onClose, inline, placeholder }: {
   repo: string;
   kind: "reviewers" | "assignees";
   current: { kind: "user" | "team"; login: string }[];
   authorLogin?: string;
   onPick: (c: Candidate) => void;
   onClose: () => void;
+  inline?: boolean;
+  placeholder?: string;
 }) {
   // what the picker was offered, so onChange can hand back the real candidate for the identity it returns
   const known = React.useRef(new Map<string, Candidate>());
@@ -254,22 +258,26 @@ export function PeopleAdd({ repo, kind, current, authorLogin, onPick, onClose }:
       },
     };
   }, [repo, kind, authorLogin, JSON.stringify(current)]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Inline, the picker stays open for the next person, so it starts empty again after each pick (remounted).
+  const [round, setRound] = React.useState(0);
   return (
     <div className="gh-pr-add flex-row flex-center" onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <IdentityPickerDropdown
+        key={round}
         className="flex-grow"
         ariaLabel={kind === "reviewers" ? "Add reviewer" : "Add assignee"}
-        placeholder={kind === "reviewers" ? "Search users and teams" : "Search users"}
+        placeholder={placeholder ?? (kind === "reviewers" ? "Search users and teams" : "Search users")}
         noResultsFoundText="No matching people"
-        autoFocus
+        autoFocus={!inline}
         pickerProvider={provider}
         value={undefined}
         onChange={(i) => {
           const c = i && known.current.get(i.entityId);
           if (c) onPick(c);
+          if (c && inline) setRound((n) => n + 1);
         }}
       />
-      <Button subtle text="Cancel" onClick={onClose} />
+      {!inline && <Button subtle text="Cancel" onClick={onClose} />}
     </div>
   );
 }
@@ -289,16 +297,16 @@ export function LabelPill({ l, onRemove, disabled }: { l: LabelOption; onRemove?
   );
 }
 
-export function LabelsAdd({ repo, applied, onPick, onClose }: { repo: string; applied: string[]; onPick: (l: LabelOption) => void; onClose: () => void }) {
+export function LabelsAdd({ repo, applied, onPick, onClose, inline }: { repo: string; applied: string[]; onPick: (l: LabelOption) => void; onClose: () => void; inline?: boolean }) {
   const search = React.useCallback(async (q: string) => availableLabels(await searchLabels(repo, q), applied), [repo, applied.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <AddSearch<LabelOption> search={search} itemKey={(l) => l.id} render={(l) => <LabelPill l={l} />} onPick={onPick} onClose={onClose} placeholder="Search tags" ariaLabel="Add tag" noResults="No matching tags" />
+    <AddSearch<LabelOption> search={search} itemKey={(l) => l.id} render={(l) => <LabelPill l={l} />} onPick={onPick} onClose={onClose} inline={inline} placeholder="Search tags" ariaLabel="Add tag" noResults="No matching tags" />
   );
 }
 
 // ---------- ED-4: work items ----------
 
-export function WorkItemsAdd({ linked, onPick, onClose }: { linked: number[]; onPick: (w: WorkItemRef) => void; onClose: () => void }) {
+export function WorkItemsAdd({ linked, onPick, onClose, inline, placeholder }: { linked: number[]; onPick: (w: WorkItemRef) => void; onClose: () => void; inline?: boolean; placeholder?: string }) {
   const search = React.useCallback(async (q: string) => (await searchWorkItems(q)).filter((w) => !linked.includes(w.id)), [linked.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <AddSearch<WorkItemRef>
@@ -307,7 +315,8 @@ export function WorkItemsAdd({ linked, onPick, onClose }: { linked: number[]; on
       render={(w) => <span className="text-ellipsis"><span className="secondary-text">{w.type} #{w.id}</span> {w.title}</span>}
       onPick={onPick}
       onClose={onClose}
-      placeholder="Work item id or title"
+      inline={inline}
+      placeholder={placeholder ?? "Work item id or title"}
       ariaLabel="Add work item"
       noResults="No matching work items"
     />
@@ -321,7 +330,7 @@ export const workItemInBody = (node: PrEditNode | undefined, id: number) => !!no
 
 export const dueText = (d: Date | null) => (d ? `Due ${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}` : "No due date");
 
-export function MilestoneAdd({ repo, onPick, onClose }: { repo: string; onPick: (m: MilestoneOption) => void; onClose: () => void }) {
+export function MilestoneAdd({ repo, onPick, onClose, inline }: { repo: string; onPick: (m: MilestoneOption) => void; onClose: () => void; inline?: boolean }) {
   const search = React.useCallback((q: string) => searchMilestones(repo, q), [repo]);
   return (
     <AddSearch<MilestoneOption>
@@ -330,6 +339,7 @@ export function MilestoneAdd({ repo, onPick, onClose }: { repo: string; onPick: 
       render={(m) => <span className="text-ellipsis">{m.title} <span className="secondary-text">{dueText(m.dueOn)}</span></span>}
       onPick={onPick}
       onClose={onClose}
+      inline={inline}
       placeholder="Search open milestones"
       ariaLabel="Set milestone"
       noResults="No matching milestones"
@@ -337,10 +347,10 @@ export function MilestoneAdd({ repo, onPick, onClose }: { repo: string; onPick: 
   );
 }
 
-export function ProjectsAdd({ repo, attached, onPick, onClose }: { repo: string; attached: string[]; onPick: (p: { id: string; title: string }) => void; onClose: () => void }) {
+export function ProjectsAdd({ repo, attached, onPick, onClose, inline }: { repo: string; attached: string[]; onPick: (p: { id: string; title: string }) => void; onClose: () => void; inline?: boolean }) {
   const search = React.useCallback((q: string) => searchProjects(repo, q, attached), [repo, attached.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <AddSearch<{ id: string; title: string; url: string }> search={search} itemKey={(p) => p.id} render={(p) => <span className="text-ellipsis">{p.title}</span>} onPick={onPick} onClose={onClose} placeholder="Search projects" ariaLabel="Add to project" noResults="No matching projects" />
+    <AddSearch<{ id: string; title: string; url: string }> search={search} itemKey={(p) => p.id} render={(p) => <span className="text-ellipsis">{p.title}</span>} onPick={onPick} onClose={onClose} inline={inline} placeholder="Search projects" ariaLabel="Add to project" noResults="No matching projects" />
   );
 }
 
