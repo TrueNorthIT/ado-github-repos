@@ -208,7 +208,8 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
   const refresh = () => (invalidateReleases(), setReload((n) => n + 1));
   const draft = () => go({ repo, tagTab: "releases", releaseForm: "new" });
   const back = () => go({ repo, tagTab: "releases" });
-  const detailTag = state.release && !state.releaseForm ? state.release : undefined;
+  // The form is a panel over the page: over the release being edited, else over the list (a new release's `release` is only the tag to preset).
+  const detailTag = state.release && state.releaseForm !== "new" ? state.release : undefined;
   const form = state.releaseForm;
   const closeDel = () => { if (!writes.busy) { setDel(null); writes.clearError(); } };
   const doDelete = (r: Release) => void writes.run(() => deleteRelease(repo, r.databaseId), () => { setDel(null); setNotice(`Deleted release ${r.name}. The tag ${r.tagName} is still there.`); if (detailTag) back(); refresh(); });
@@ -220,18 +221,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
   };
 
   let body: React.ReactNode;
-  if (form) {
-    body = (
-      <ReleaseForm
-        repo={repo}
-        mode={form}
-        tag={state.release}
-        signedIn={signedIn}
-        onDone={(tag) => { invalidateReleases(); go({ repo, tagTab: "releases", release: tag }); }}
-        onCancel={() => go(form === "edit" && state.release ? { repo, tagTab: "releases", release: state.release } : { repo, tagTab: "releases" })}
-      />
-    );
-  } else if (data.t === "error") {
+  if (data.t === "error") {
     body = <ErrorView err={data.err} signIn={() => void props.signIn()} busy={props.busy} retry={refresh} subject="see this repository's releases" permission="Contents" />;
   } else if (!v) {
     body = <Loading label="Loading releases" />;
@@ -292,7 +282,7 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
 
   return (
     <>
-      <Header className="gh-hub-header gh-act-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={form || detailTag ? draftButton : [...draftButton, searchItem]}>
+      <Header className="gh-hub-header gh-act-header" title="Tags & Releases" titleSize={TitleSize.Large} titleAriaLevel={1} commandBarItems={detailTag ? draftButton : [...draftButton, searchItem]}>
         {titleSwitcher(repo, openSwitch, (r) => go({ repo: r, tagTab: "releases" }))}
       </Header>
       <TagTabs repo={repo} tab="releases" go={go} />
@@ -301,6 +291,16 @@ export function ReleasesTab({ repo, props }: { repo: string; props: HubProps }) 
         {writes.error && !del && <MessageCard severity={MessageCardSeverity.Error} onDismiss={writes.clearError}>{writes.error}</MessageCard>}
         {body}
       </div>
+      {form && (
+        <ReleaseForm
+          repo={repo}
+          mode={form}
+          tag={state.release}
+          signedIn={signedIn}
+          onDone={(tag) => { invalidateReleases(); go({ repo, tagTab: "releases", release: tag }); }}
+          onCancel={() => go(form === "edit" && state.release ? { repo, tagTab: "releases", release: state.release } : { repo, tagTab: "releases" })}
+        />
+      )}
       {del && <ConfirmDeleteDialog what="release" name={del.name} busy={writes.busy} error={writes.error} clearError={writes.clearError} confirm={() => doDelete(del)} close={closeDel} />}
     </>
   );

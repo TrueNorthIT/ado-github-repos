@@ -6,7 +6,8 @@ import { Checkbox } from "azure-devops-ui/Checkbox";
 import { Dialog } from "azure-devops-ui/Dialog";
 import { Dropdown } from "azure-devops-ui/Dropdown";
 import { FormItem } from "azure-devops-ui/FormItem";
-import { Header, TitleSize } from "azure-devops-ui/Header";
+import { ContentSize } from "azure-devops-ui/Callout";
+import { Panel } from "azure-devops-ui/Panel";
 import { Link } from "azure-devops-ui/Link";
 import { SimpleTableCell, Table } from "azure-devops-ui/Table";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
@@ -135,24 +136,22 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
     if (dirty) setAsk({ ...DISCARD, run: leave });
     else leave();
   };
-  const header = (
-    <Header
-      title={mode === "new" ? "Draft a new release" : "Edit release"}
-      titleSize={TitleSize.Large}
-      titleAriaLevel={1}
-      backButtonProps={{ iconProps: { iconName: "Back" }, ariaLabel: "Back to releases", tooltipProps: { text: "Back to releases" }, onClick: cancel }}
-    />
+  // A side panel over the releases list (or the release being edited), as native ADO's create and edit forms are. The address still
+  // carries releaseForm, so a link or a refresh opens it again. Dismissing it is Cancel: a changed form asks first.
+  const title = mode === "new" ? "Draft a new release" : "Edit release";
+  const shell = (children: React.ReactNode, footer: { text: string; primary?: boolean; onClick: () => void; disabled?: boolean }[], dismiss: () => void) => (
+    <Panel titleProps={{ text: title }} description={repo} size={ContentSize.Large} onDismiss={dismiss} showSeparator footerButtonProps={footer}>
+      <div className="gh-rf">{children}</div>
+    </Panel>
   );
 
   if (!signedIn || loadError || !form || !loaded) {
-    return (
-      <div className="page-content page-content-top gh-rf">
-        {header}
-        {!signedIn ? <MessageCard severity={MessageCardSeverity.Warning}>Sign in to GitHub to draft or edit releases.</MessageCard>
-          : loadError ? <MessageCard severity={MessageCardSeverity.Error}>{loadError}</MessageCard>
-          : <div className="flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading" /></div>}
-        {(!signedIn || loadError) && <div><Button text="Back to releases" onClick={onCancel} /></div>}
-      </div>
+    return shell(
+      !signedIn ? <MessageCard severity={MessageCardSeverity.Warning}>Sign in to GitHub to draft or edit releases.</MessageCard>
+        : loadError ? <MessageCard severity={MessageCardSeverity.Error}>{loadError}</MessageCard>
+        : <div className="flex-row justify-center"><Spinner size={SpinnerSize.large} ariaLabel="Loading the release form" /></div>,
+      [{ text: "Close", onClick: onCancel }],
+      onCancel
     );
   }
 
@@ -208,9 +207,8 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
     setBusy(null);
   };
 
-  return (
-    <div className="page-content page-content-top gh-rf">
-      {header}
+  return shell(
+    <>
       {error && <MessageCard severity={MessageCardSeverity.Error} onDismiss={() => setError(undefined)}>{error}</MessageCard>}
       <div className="gh-rf-row">
         <div className="gh-rf-grow">
@@ -281,17 +279,17 @@ export function ReleaseForm({ repo, mode, tag, signedIn, onDone, onCancel }: Rel
         {loaded.assetError && <MessageCard severity={MessageCardSeverity.Warning}>{loaded.assetError}</MessageCard>}
         {mode === "edit" && release && <Link href={releaseEditUrl(repo, release.tagName)} target="_blank" rel="noopener noreferrer">Attach files on GitHub</Link>}
       </FormItem>
-      <div className="gh-rf-actions">
-        <Button primary text={buttons.primary} onClick={() => void save(false)} disabled={invalid || working} />
-        {buttons.saveDraft && <Button text="Save draft" onClick={() => void save(true)} disabled={invalid || working} />}
-        <Button text="Cancel" onClick={cancel} disabled={working} />
-        {(busy === "draft" || busy === "publish") && <Spinner size={SpinnerSize.small} label="Saving…" />}
-      </div>
       {ask && (
         <Dialog titleProps={{ text: ask.title }} onDismiss={() => setAsk(null)} footerButtonProps={[{ text: "Keep editing", onClick: () => setAsk(null) }, { text: ask.confirm, primary: true, onClick: () => { const run = ask.run; setAsk(null); run(); } }]}>
           {ask.text}
         </Dialog>
       )}
-    </div>
+    </>,
+    [
+      { text: "Cancel", onClick: cancel, disabled: working },
+      ...(buttons.saveDraft ? [{ text: busy === "draft" ? "Saving…" : "Save draft", onClick: () => void save(true), disabled: invalid || working }] : []),
+      { text: busy === "publish" ? "Saving…" : buttons.primary, primary: true, onClick: () => void save(false), disabled: invalid || working },
+    ],
+    working ? () => undefined : cancel
   );
 }

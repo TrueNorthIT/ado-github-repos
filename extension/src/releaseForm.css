@@ -8,4 +8,3 @@
 .gh-rf-preview { min-height: 160px; border: 1px solid rgba(var(--palette-neutral-20, 234, 234, 234), 1); }
 .gh-rf-checks { display: flex; flex-direction: column; gap: 8px; }
 .gh-rf-asset-table { border: 1px solid rgba(var(--palette-neutral-10, 218, 218, 218), 1); border-radius: 4px; }
-.gh-rf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
