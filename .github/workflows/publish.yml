@@ -124,15 +124,24 @@ jobs:
             -d "{\"publisherName\":\"$publisher\"}" | jq -r .credential)
           [ -n "$credential" ] && [ "$credential" != "null" ] || { echo "::error::Marketplace token exchange returned no credential"; exit 1; }
           echo "::add-mask::$credential"
-          npx --no-install tfx extension publish --vsix "$GITHUB_WORKSPACE/$VSIX" --auth-type pat --token "$credential" --no-prompt --no-wait-validation
+          # A re-run after the upload went through (e.g. 0.44.0: published, then the validation poll timed out) finds the version already there:
+          # carry on to the validation check rather than fail, so the tag and release still get made.
+          if ! out=$(npx --no-install tfx extension publish --vsix "$GITHUB_WORKSPACE/$VSIX" --auth-type pat --token "$credential" --no-prompt --no-wait-validation 2>&1); then
+            echo "$out"
+            echo "$out" | grep -qi "version number must increase" || exit 1
+            echo "This version is already on the Marketplace: checking its validation"
+          else
+            echo "$out"
+          fi
           # Marketplace validation can outlast tfx's own ~4 min wait (it took ~4.5 min for 0.7.0), so poll for up to 20 min.
+          # A poll that gets no answer (the Marketplace timed out) counts as pending; only a real non-pending status fails.
           version=$(node -p "require('./vss-extension.json').version")
           for i in $(seq 1 40); do
             status=$(npx --no-install tfx extension isvalid --publisher "$publisher" --extension-id github-repos --version "$version" \
-              --service-url https://marketplace.visualstudio.com/ --auth-type pat --token "$credential" --no-prompt --json | jq -r .status)
-            echo "Validation: $status"
+              --service-url https://marketplace.visualstudio.com/ --auth-type pat --token "$credential" --no-prompt --json 2>/dev/null | jq -r .status 2>/dev/null || true)
+            echo "Validation: ${status:-no answer}"
             [ "$status" = "success" ] && exit 0
-            [ "$status" = "pending" ] || { echo "::error::Marketplace validation failed ($status)"; exit 1; }
+            [ -z "$status" ] || [ "$status" = "null" ] || [ "$status" = "pending" ] || { echo "::error::Marketplace validation failed ($status)"; exit 1; }
             sleep 30
           done
           echo "::error::Validation still pending after 20 min; check the Marketplace"; exit 1
