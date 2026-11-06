@@ -17,7 +17,12 @@ import { keyStartsWith, onDropQueries, queryClient } from "./queryClient";
 const DB = "gh-repos-query-cache";
 const STORE = "clients";
 export const PERSIST_MAX_AGE = 24 * 60 * 60_000;
-const SAVE_DELAY_MS = 1000;
+/**
+ * How soon after a change the record is written. Short, and not reset by later changes: ADO tears a hub's frame down the moment you switch
+ * hubs, so a save that waited for the cache to go quiet (it was a second, restarted by every fetch and hover card) often never happened on a
+ * slower page such as Tags, and the next visit started cold.
+ */
+const SAVE_DELAY_MS = 250;
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((ok, fail) => {
@@ -106,20 +111,30 @@ function update(id: string, change: (stored: PersistedClient | undefined) => Per
 }
 
 /**
- * A persister for one record. Saves wait for the cache to settle a second, so a burst of results is one write, and merge into the record
- * (mergeClients). Every failure is swallowed: storage blocked or full means no persistence, never a broken page.
+ * A persister for one record. A change is written at most SAVE_DELAY_MS later, with the latest state then (a burst of results is one write),
+ * merged into the record (mergeClients); `flush` writes a pending change at once (the frame is going). Every failure is swallowed: storage
+ * blocked or full means no persistence, never a broken page.
  */
-export function idbPersister(id: string): Persister & { forget: (prefix: QueryKey) => Promise<void> } {
+export function idbPersister(id: string): Persister & { forget: (prefix: QueryKey) => Promise<void>; flush: () => void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let latest: PersistedClient | undefined;
+  const save = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    const client = latest;
+    latest = undefined;
+    if (client) void update(id, (stored) => mergeClients(stored, client));
+  };
   return {
     persistClient: (client: PersistedClient) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => void update(id, (stored) => mergeClients(stored, client)), SAVE_DELAY_MS);
+      latest = client;
+      timer ??= setTimeout(save, SAVE_DELAY_MS);
     },
+    flush: save,
     /** Drops the saved reads under `prefix` (dropQueries: after a write, or Try again). */
     forget: (prefix: QueryKey) => update(id, (stored) => stored && { ...stored, clientState: { ...stored.clientState, queries: stored.clientState.queries.filter((q) => !keyStartsWith(q.queryKey, prefix)) } }),
     restoreClient: () => tx<PersistedClient>("readonly", (s) => s.get(id)).catch(() => undefined),
-    removeClient: () => { clearTimeout(timer); return tx("readwrite", (s) => void s.delete(id)).then(() => undefined, () => undefined); },
+    removeClient: () => { clearTimeout(timer); timer = undefined; latest = undefined; return tx("readwrite", (s) => void s.delete(id)).then(() => undefined, () => undefined); },
   };
 }
 
@@ -157,6 +172,9 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     if (!id || typeof indexedDB === "undefined") return undefined;
     const p = idbPersister(id);
     onDropQueries((key) => void p.forget(key));
+    // Switching hubs hides, then removes, this frame: write what is pending rather than lose it with the frame.
+    addEventListener("pagehide", p.flush);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") p.flush(); });
     return p;
   }, [id]);
   if (!persister) return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -169,6 +187,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         buster: version(),
         dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
       }}
+      onSuccess={() => console.info(`[query cache] restored ${queryClient.getQueryCache().getAll().filter((q) => q.state.dataUpdatedAt > 0).length} saved reads`)}
     >
       {children}
     </PersistQueryClientProvider>

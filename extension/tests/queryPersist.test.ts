@@ -16,13 +16,14 @@ afterEach(async () => {
 });
 
 describe("idbPersister", () => {
-  it("saves a second after the last change, as one write, and restores it with Dates intact", async () => {
+  it("writes a quarter of a second after the first change, with the latest state, and later changes don't put it off", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const p = idbPersister("org|user|hub");
     const when = new Date("2026-11-05T10:00:00Z");
     p.persistClient(client([{ n: 1 }]));
+    await vi.advanceTimersByTimeAsync(200);
     p.persistClient(client([{ n: 2, at: when }]));
-    await vi.advanceTimersByTimeAsync(999);
+    await vi.advanceTimersByTimeAsync(49);
     expect(await saved("org|user|hub")).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
     vi.useRealTimers();
@@ -30,6 +31,16 @@ describe("idbPersister", () => {
     const rows = (await saved("org|user|hub"))!.clientState.queries[0].state.data as { n: number; at: Date }[];
     expect(rows).toEqual([{ n: 2, at: when }]);
     expect(rows[0].at).toBeInstanceOf(Date);
+  });
+
+  it("flush writes a pending change at once (the frame is going), and nothing when none is pending", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const p = idbPersister("org|user|tags");
+    p.flush();
+    p.persistClient(client(["tags"]));
+    p.flush();
+    vi.useRealTimers();
+    await vi.waitFor(async () => expect((await saved("org|user|tags"))?.clientState.queries[0].state.data).toEqual(["tags"]));
   });
 
   it("keeps one record per id, and removeClient drops only its own", async () => {
