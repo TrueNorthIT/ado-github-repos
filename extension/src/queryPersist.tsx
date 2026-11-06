@@ -50,6 +50,16 @@ type SavedQuery = PersistedClient["clientState"]["queries"][number];
  * The record after a save: this frame's reads over the stored ones (the newer read of a key wins), less any older than PERSIST_MAX_AGE.
  * A stored record from another extension version is replaced, not merged.
  */
+/**
+ * An infinite list ("Load more") is saved with its first page only: on a revisit TanStack re-reads every page it holds, one after another,
+ * so five pages loaded once would be five requests (each with its GraphQL extras) every time the hub opens.
+ */
+export function firstPageOnly(q: SavedQuery): SavedQuery {
+  const d = q.state.data as { pages?: unknown[]; pageParams?: unknown[] } | undefined;
+  if (!d || !Array.isArray(d.pages) || !Array.isArray(d.pageParams) || d.pages.length <= 1) return q;
+  return { ...q, state: { ...q.state, data: { pages: d.pages.slice(0, 1), pageParams: d.pageParams.slice(0, 1) } } };
+}
+
 export function mergeClients(stored: PersistedClient | undefined, mine: PersistedClient, now = Date.now()): PersistedClient {
   const byHash = new Map<string, SavedQuery>();
   const keep = (q: SavedQuery) => {
@@ -58,8 +68,30 @@ export function mergeClients(stored: PersistedClient | undefined, mine: Persiste
     if (!had || had.state.dataUpdatedAt <= q.state.dataUpdatedAt) byHash.set(q.queryHash, q);
   };
   if (stored && stored.buster === mine.buster) stored.clientState.queries.forEach(keep);
-  mine.clientState.queries.forEach(keep);
+  mine.clientState.queries.map(firstPageOnly).forEach(keep);
   return { timestamp: now, buster: mine.buster, clientState: { mutations: [], queries: [...byHash.values()] } };
+}
+
+/**
+ * The record less any read the browser can't store (a function or a DOM object somewhere in its value). Every read of the project shares the
+ * record, so one such value would otherwise fail the whole write, silently, and stop every hub's reads being kept.
+ */
+export function cloneable(c: PersistedClient): PersistedClient {
+  try {
+    structuredClone(c);
+    return c;
+  } catch {
+    const queries = c.clientState.queries.filter((q) => {
+      try {
+        structuredClone(q);
+        return true;
+      } catch {
+        console.warn("[query cache] not kept between visits, its value can't be stored:", q.queryHash);
+        return false;
+      }
+    });
+    return { ...c, clientState: { ...c.clientState, queries } };
+  }
 }
 
 /** Reads the record and writes `change(record)` back in one transaction, so two frames saving at once never lose each other's reads. */
@@ -68,7 +100,7 @@ function update(id: string, change: (stored: PersistedClient | undefined) => Per
     const get = s.get(id);
     get.onsuccess = () => {
       const next = change(get.result as PersistedClient | undefined);
-      if (next) s.put(next, id);
+      if (next) s.put(cloneable(next), id);
     };
   }).then(() => undefined, () => undefined);
 }

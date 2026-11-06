@@ -3,7 +3,7 @@
 // background, instead of dropping to shimmer rows every time.
 // Each hub is its own iframe, so this cache lasts as long as the hub page does; queryPersist.ts keeps the opted-in reads between visits.
 import * as React from "react";
-import { QueryClient, useQuery, type QueryKey } from "@tanstack/react-query";
+import { QueryCache, QueryClient, useQuery, type Query, type QueryKey } from "@tanstack/react-query";
 
 /** How long a read counts as fresh: remounting within this shows it without asking GitHub again. Same as the old hand-rolled caches. */
 export const STALE_MS = 30_000;
@@ -14,7 +14,24 @@ const transient = (e: unknown) => {
   return g?.kind === "other" && (!g.status || g.status >= 500);
 };
 
+/** GitHub said the sign-in has lapsed ("auth") or this user may not see it ("access"): shapes of GhError. */
+const errorKind = (e: unknown) => (e as { kind?: string } | null)?.kind;
+
+/**
+ * A read that GitHub refuses for sign-in or permission must not go on showing what it showed before: the pages show an error only when
+ * there is nothing else to show, so a lapsed sign-in would leave yesterday's saved rows on screen with no way to sign in. Such a failure
+ * clears the read's value, so every page falls through to its error view, and forgets the saved copy: this read's for "access", every saved
+ * read for "auth". Other failures (rate limit, network) keep what is shown.
+ */
+export function forgetRefused(e: unknown, query: Query<any, any, any, any>): void {
+  const kind = errorKind(e);
+  if (kind !== "auth" && kind !== "access") return;
+  if (query.state.data !== undefined) query.setState({ data: undefined, dataUpdatedAt: 0 });
+  dropListeners.forEach((f) => f(kind === "auth" ? [] : query.queryKey));
+}
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: (e, query) => forgetRefused(e, query) }),
   defaultOptions: {
     queries: {
       staleTime: STALE_MS,

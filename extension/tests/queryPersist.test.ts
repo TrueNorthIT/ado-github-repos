@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, dehydrate } from "@tanstack/react-query";
 import type { PersistedClient } from "@tanstack/react-query-persist-client";
-import { PERSIST_MAX_AGE, clearPersisted, idbPersister, mergeClients, shouldPersist } from "../src/queryPersist";
+import { PERSIST_MAX_AGE, clearPersisted, cloneable, firstPageOnly, idbPersister, mergeClients, shouldPersist } from "../src/queryPersist";
 
 const q = (key: unknown[], data: unknown, at = Date.now()) => ({ queryKey: key, queryHash: JSON.stringify(key), state: { data, dataUpdatedAt: at } as any });
 const client = (rows: unknown, key: unknown[] = ["prs"], buster = "1.0.0"): PersistedClient => ({ timestamp: 1, buster, clientState: { mutations: [], queries: [q(key, rows)] } });
@@ -111,5 +111,34 @@ describe("one record per project", () => {
     await vi.waitFor(async () => expect(Object.keys(dataOf(await saved("org|ann|proj")))).toHaveLength(4));
     await p.forget(["refs"]);
     expect(dataOf(await saved("org|ann|proj"))).toEqual({ '["prs","list","a/b"]': 3, '["refsx"]': 4 });
+  });
+});
+
+describe("firstPageOnly", () => {
+  it("saves a Load more list with its first page only, and leaves other reads alone", () => {
+    const many = q(["refs", "commits"], { pages: [["a"], ["b"], ["c"]], pageParams: [undefined, 2, 3] });
+    expect(firstPageOnly(many).state.data).toEqual({ pages: [["a"]], pageParams: [undefined] });
+    const one = q(["refs", "commits"], { pages: [["a"]], pageParams: [undefined] });
+    expect(firstPageOnly(one)).toBe(one);
+    const plain = q(["prs", "list"], { rows: [1], pages: 3 });
+    expect(firstPageOnly(plain)).toBe(plain);
+  });
+
+  it("is applied when a frame saves", () => {
+    const now = Date.now();
+    const mine: PersistedClient = { timestamp: 1, buster: "1", clientState: { mutations: [], queries: [q(["refs", "commits"], { pages: [[1], [2]], pageParams: [1, 2] }, now)] } };
+    expect(mergeClients(undefined, mine, now).clientState.queries[0].state.data).toEqual({ pages: [[1]], pageParams: [1] });
+  });
+});
+
+describe("cloneable", () => {
+  it("drops only the reads whose value can't be stored", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ok = q(["prs", "list"], [{ at: new Date(0) }]);
+    const bad = q(["refs", "x"], { run: () => 1 });
+    const c: PersistedClient = { timestamp: 1, buster: "1", clientState: { mutations: [], queries: [ok, bad] } };
+    expect(cloneable(c).clientState.queries).toEqual([ok]);
+    const fine: PersistedClient = { timestamp: 1, buster: "1", clientState: { mutations: [], queries: [ok] } };
+    expect(cloneable(fine)).toBe(fine);
   });
 });
